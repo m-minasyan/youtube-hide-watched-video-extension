@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sections now have dropdown functionality with smooth animations
 - Watched Videos and Shorts sections are collapsed by default on first launch
 - Improved UI organization with better visual hierarchy
+- Eye button on video thumbnails always visible with 30% opacity for better discoverability
 
 ### Fixed
 - Individual Video Mode buttons now properly display the selected state on popup load
@@ -22,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed reset functionality to properly reset Individual Mode to default value
 - Quick Toggle buttons (Normal/Dimmed/Hidden) now correctly show active state when all section items have the same mode
 - Quick Toggle button states now update dynamically when individual section settings are changed
+- Eye button hover isolation - only the hovered video's button becomes fully visible
+- Eye button visibility - maintains low opacity for all non-hovered buttons
 
 ## [2.2.0] - 2025-01-23
 

@@ -42,8 +42,8 @@
         left: 50% !important;
         transform: translateX(-50%) !important;
         z-index: 999 !important;
-        background: rgba(0, 0, 0, 0.9) !important;
-        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        background: rgba(0, 0, 0, 0.7) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
         border-radius: 6px !important;
         padding: 6px 8px !important;
         cursor: pointer !important;
@@ -51,10 +51,32 @@
         align-items: center !important;
         justify-content: center !important;
         transition: all 0.2s ease !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.5) !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3) !important;
+        opacity: 0.3 !important;
+      }
+      
+      /* Show button fully on hover of its direct parent thumbnail */
+      yt-thumbnail-view-model:hover > .yt-hwv-eye-button,
+      ytd-thumbnail:hover > .yt-hwv-eye-button {
+        opacity: 1 !important;
+        background: rgba(0, 0, 0, 0.9) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+      }
+      
+      /* Also show when hovering over the specific video container */
+      ytd-rich-item-renderer:hover yt-thumbnail-view-model > .yt-hwv-eye-button,
+      ytd-rich-item-renderer:hover ytd-thumbnail > .yt-hwv-eye-button,
+      yt-lockup-view-model:hover yt-thumbnail-view-model > .yt-hwv-eye-button,
+      ytd-video-renderer:hover ytd-thumbnail > .yt-hwv-eye-button,
+      ytd-grid-video-renderer:hover ytd-thumbnail > .yt-hwv-eye-button,
+      ytd-compact-video-renderer:hover ytd-thumbnail > .yt-hwv-eye-button {
+        opacity: 1 !important;
+        background: rgba(0, 0, 0, 0.9) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
       }
       
       .yt-hwv-eye-button:hover {
+        opacity: 1 !important;
         background: rgba(0, 0, 0, 1) !important;
         transform: translateX(-50%) scale(1.1) !important;
         box-shadow: 0 4px 8px rgba(0,0,0,0.7) !important;
