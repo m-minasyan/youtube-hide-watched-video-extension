@@ -7,26 +7,28 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 ```
 /
 ├── manifest.json           # Extension manifest configuration
-├── background/            # Background scripts
-│   ├── service-worker.js # Main background service worker
-│   └── utils/            # Utility functions
-├── content/              # Content scripts
-│   ├── youtube.js       # YouTube-specific content script
-│   ├── detector.js     # Video detection logic
-│   └── hider.js       # Video hiding implementation
-├── popup/               # Extension popup
-│   ├── popup.html     # Popup HTML
-│   ├── popup.js      # Popup logic
-│   └── popup.css    # Popup styles
-├── options/            # Options page
-│   ├── options.html  # Options HTML
-│   ├── options.js   # Options logic
-│   └── options.css # Options styles
-├── lib/               # Shared libraries
-│   ├── storage.js   # Storage management
-│   └── constants.js # Shared constants
-└── assets/           # Static assets
-    └── icons/       # Extension icons
+├── background.js          # Background script
+├── content.js            # Content script for YouTube pages
+├── popup.html           # Extension popup HTML
+├── popup.js            # Extension popup logic
+├── popup.css          # Extension popup styles
+├── icons/             # Extension icons
+│   ├── icon.svg      # SVG icon source
+│   ├── icon16.png   # 16x16 icon
+│   ├── icon32.png   # 32x32 icon
+│   ├── icon48.png   # 48x48 icon
+│   └── icon128.png  # 128x128 icon
+├── scripts/          # Build and utility scripts
+│   └── build-extension.sh # Creates Chrome Web Store package
+├── dist/            # Built extension packages (generated)
+│   └── *.zip       # Extension ZIP files for distribution
+└── docs/           # Documentation
+    ├── app-flow.md
+    ├── backend-structure.md
+    ├── changelog.md
+    ├── frontend-guidelines.md
+    ├── prd.md
+    └── tech-stack.md
 ```
 
 ## Core Components

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.1.1] - 2025-01-23
 
+### Added
+- Build script for creating Chrome Web Store package (`scripts/build-extension.sh`)
+
 ### Fixed
 - Improved YouTube Shorts detection on homepage
 - Enhanced selector coverage for new YouTube HTML structure

@@ -21,7 +21,9 @@ This document outlines the technology stack used in the YouTube Hide Watched Vid
 ## Development Tools
 
 ### Build Tools
-- **npm**: Package management
+- **Bash Script**: Automated packaging for Chrome Web Store
+- **ZIP**: Extension packaging format
+- **npm**: Package management (if needed)
 - **webpack**: Module bundling (if needed)
 - **Babel**: JavaScript transpilation (if needed)
 
