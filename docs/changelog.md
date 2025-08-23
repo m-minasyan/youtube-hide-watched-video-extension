@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Watched Videos and Shorts sections are collapsed by default on first launch
 - Improved UI organization with better visual hierarchy
 - Eye button on video thumbnails always visible with 30% opacity for better discoverability
+- Eye button now has tabindex="-1" to prevent keyboard focus issues
 
 ### Fixed
 - Individual Video Mode buttons now properly display the selected state on popup load
@@ -25,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Quick Toggle button states now update dynamically when individual section settings are changed
 - Eye button hover isolation - only the hovered video's button becomes fully visible
 - Eye button visibility - maintains low opacity for all non-hovered buttons
+- Fixed aria-hidden accessibility conflict when eye button is focused within aria-hidden parent elements
+- Added automatic removal of aria-hidden attribute from parent elements containing eye buttons to prevent focus trapping
+- Added MutationObserver to handle dynamic aria-hidden attribute changes
 
 ## [2.2.0] - 2025-01-23
 

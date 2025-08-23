@@ -171,6 +171,8 @@
     const button = document.createElement('button');
     button.className = 'yt-hwv-eye-button';
     button.setAttribute('data-video-id', videoId);
+    button.setAttribute('tabindex', '-1');
+    button.setAttribute('aria-label', 'Toggle video visibility');
     
     const currentState = settings.hiddenVideos[videoId] || 'normal';
     if (currentState === 'dimmed') button.classList.add('dimmed');
@@ -246,6 +248,18 @@
       thumbnail.classList.add('yt-hwv-has-eye-button');
       
       logDebug('Added eye button to video:', videoId);
+    });
+    
+    handleAriaHiddenConflicts();
+  }
+  
+  function handleAriaHiddenConflicts() {
+    const eyeButtons = document.querySelectorAll('.yt-hwv-eye-button');
+    eyeButtons.forEach(button => {
+      const ariaHiddenParent = button.closest('[aria-hidden="true"]');
+      if (ariaHiddenParent) {
+        ariaHiddenParent.removeAttribute('aria-hidden');
+      }
     });
   }
   
@@ -496,19 +510,37 @@
 
 
     const observer = new MutationObserver((mutations) => {
-      if (mutations.length === 1 && 
-          (mutations[0].target.classList?.contains('YT-HWV-WATCHED-DIMMED') ||
-           mutations[0].target.classList?.contains('YT-HWV-WATCHED-HIDDEN') ||
-           mutations[0].target.classList?.contains('YT-HWV-SHORTS-DIMMED') ||
-           mutations[0].target.classList?.contains('YT-HWV-SHORTS-HIDDEN'))) {
-        return;
+      let shouldApplyHiding = false;
+      
+      mutations.forEach(mutation => {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'aria-hidden') {
+          const target = mutation.target;
+          if (target.getAttribute('aria-hidden') === 'true' && 
+              target.querySelector('.yt-hwv-eye-button')) {
+            target.removeAttribute('aria-hidden');
+          }
+        } else if (mutation.type === 'childList') {
+          shouldApplyHiding = true;
+        }
+      });
+      
+      if (shouldApplyHiding) {
+        if (mutations.length === 1 && 
+            (mutations[0].target.classList?.contains('YT-HWV-WATCHED-DIMMED') ||
+             mutations[0].target.classList?.contains('YT-HWV-WATCHED-HIDDEN') ||
+             mutations[0].target.classList?.contains('YT-HWV-SHORTS-DIMMED') ||
+             mutations[0].target.classList?.contains('YT-HWV-SHORTS-HIDDEN'))) {
+          return;
+        }
+        debouncedApplyHiding();
       }
-      debouncedApplyHiding();
     });
 
     observer.observe(document.body, {
       childList: true,
-      subtree: true
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['aria-hidden']
     });
 
     const originalOpen = XMLHttpRequest.prototype.open;
