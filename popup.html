@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Hide Watched Videos</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="header-content">
+        <div class="title-section">
+          <h1>YouTube Hide Watched</h1>
+          <p class="subtitle">Control watched videos & shorts visibility</p>
+        </div>
+        <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">
+          <svg class="theme-icon sun-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="theme-icon moon-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="settings-section">
+      <h2>Global Settings</h2>
+      
+      <div class="setting-item">
+        <label for="threshold">
+          Hide videos watched above
+          <span id="threshold-value">10%</span>
+        </label>
+        <div class="slider-container">
+          <span class="slider-label">0%</span>
+          <input type="range" id="threshold" min="0" max="100" value="10" step="5">
+          <span class="slider-label">100%</span>
+        </div>
+      </div>
+      
+      <div class="setting-item">
+        <label for="quick-toggle">Quick Toggle</label>
+        <div class="quick-actions">
+          <button id="toggle-all-normal" class="quick-btn">All Normal</button>
+          <button id="toggle-all-dimmed" class="quick-btn">All Dimmed</button>
+          <button id="toggle-all-hidden" class="quick-btn">All Hidden</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2>Watched Videos</h2>
+      
+      <div class="section-group">
+        <div class="setting-item">
+          <label>Home Page</label>
+          <div class="button-group">
+            <button class="mode-btn" data-section="misc" data-type="watched" data-mode="normal">Normal</button>
+            <button class="mode-btn" data-section="misc" data-type="watched" data-mode="dimmed">Dimmed</button>
+            <button class="mode-btn" data-section="misc" data-type="watched" data-mode="hidden">Hidden</button>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label>Subscriptions</label>
+          <div class="button-group">
+            <button class="mode-btn" data-section="subscriptions" data-type="watched" data-mode="normal">Normal</button>
+            <button class="mode-btn" data-section="subscriptions" data-type="watched" data-mode="dimmed">Dimmed</button>
+            <button class="mode-btn" data-section="subscriptions" data-type="watched" data-mode="hidden">Hidden</button>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label>Channel Videos</label>
+          <div class="button-group">
+            <button class="mode-btn" data-section="channel" data-type="watched" data-mode="normal">Normal</button>
+            <button class="mode-btn" data-section="channel" data-type="watched" data-mode="dimmed">Dimmed</button>
+            <button class="mode-btn" data-section="channel" data-type="watched" data-mode="hidden">Hidden</button>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label>Watch Page</label>
+          <div class="button-group">
+            <button class="mode-btn" data-section="watch" data-type="watched" data-mode="normal">Normal</button>
+            <button class="mode-btn" data-section="watch" data-type="watched" data-mode="dimmed">Dimmed</button>
+            <button class="mode-btn" data-section="watch" data-type="watched" data-mode="hidden">Hidden</button>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label>Trending</label>
+          <div class="button-group">
+            <button class="mode-btn" data-section="trending" data-type="watched" data-mode="normal">Normal</button>
+            <button class="mode-btn" data-section="trending" data-type="watched" data-mode="dimmed">Dimmed</button>
+            <button class="mode-btn" data-section="trending" data-type="watched" data-mode="hidden">Hidden</button>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label>Playlist</label>
+          <div class="button-group">
+            <button class="mode-btn" data-section="playlist" data-type="watched" data-mode="normal">Normal</button>
+            <button class="mode-btn" data-section="playlist" data-type="watched" data-mode="dimmed">Dimmed</button>
+            <button class="mode-btn" data-section="playlist" data-type="watched" data-mode="hidden">Hidden</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2>Shorts</h2>
+      
+      <div class="section-group">
+        <div class="setting-item">
+          <label>Home Page</label>
+          <div class="button-group">
+            <button class="mode-btn" data-section="misc" data-type="shorts" data-mode="normal">Normal</button>
+            <button class="mode-btn" data-section="misc" data-type="shorts" data-mode="dimmed">Dimmed</button>
+            <button class="mode-btn" data-section="misc" data-type="shorts" data-mode="hidden">Hidden</button>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label>Subscriptions</label>
+          <div class="button-group">
+            <button class="mode-btn" data-section="subscriptions" data-type="shorts" data-mode="normal">Normal</button>
+            <button class="mode-btn" data-section="subscriptions" data-type="shorts" data-mode="dimmed">Dimmed</button>
+            <button class="mode-btn" data-section="subscriptions" data-type="shorts" data-mode="hidden">Hidden</button>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label>Channel Videos</label>
+          <div class="button-group">
+            <button class="mode-btn" data-section="channel" data-type="shorts" data-mode="normal">Normal</button>
+            <button class="mode-btn" data-section="channel" data-type="shorts" data-mode="dimmed">Dimmed</button>
+            <button class="mode-btn" data-section="channel" data-type="shorts" data-mode="hidden">Hidden</button>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label>Watch Page</label>
+          <div class="button-group">
+            <button class="mode-btn" data-section="watch" data-type="shorts" data-mode="normal">Normal</button>
+            <button class="mode-btn" data-section="watch" data-type="shorts" data-mode="dimmed">Dimmed</button>
+            <button class="mode-btn" data-section="watch" data-type="shorts" data-mode="hidden">Hidden</button>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label>Trending</label>
+          <div class="button-group">
+            <button class="mode-btn" data-section="trending" data-type="shorts" data-mode="normal">Normal</button>
+            <button class="mode-btn" data-section="trending" data-type="shorts" data-mode="dimmed">Dimmed</button>
+            <button class="mode-btn" data-section="trending" data-type="shorts" data-mode="hidden">Hidden</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <button id="reset-all" class="reset-btn">Reset All Settings</button>
+      <div class="version">Version 2.1.0</div>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
