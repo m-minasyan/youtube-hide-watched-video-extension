@@ -62,9 +62,22 @@
   }
 
   function findWatchedElements() {
-    const watched = document.querySelectorAll('.ytd-thumbnail-overlay-resume-playback-renderer');
+    const selectors = [
+      '.ytd-thumbnail-overlay-resume-playback-renderer',
+      '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
+      '.ytp-progress-bar-played'
+    ];
     
-    const withThreshold = Array.from(watched).filter((bar) => {
+    const watched = [];
+    selectors.forEach(selector => {
+      document.querySelectorAll(selector).forEach(el => {
+        if (!watched.includes(el)) {
+          watched.push(el);
+        }
+      });
+    });
+    
+    const withThreshold = watched.filter((bar) => {
       return bar.style.width && parseInt(bar.style.width, 10) >= settings.threshold;
     });
     
@@ -193,7 +206,9 @@
         watchedItem = (
           item.closest('ytd-rich-item-renderer') ||
           item.closest('ytd-video-renderer') ||
-          item.closest('ytd-grid-video-renderer')
+          item.closest('ytd-grid-video-renderer') ||
+          item.closest('ytm-video-with-context-renderer') ||
+          item.closest('ytm-item-section-renderer')
         );
       }
 

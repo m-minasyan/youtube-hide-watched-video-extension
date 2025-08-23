@@ -5,6 +5,15 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2025-01-23
+
+### Fixed
+- Added support for new YouTube progress bar classes (ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment)
+- Updated content.js to detect multiple progress bar selector variations
+- Fixed test HTML page to use correct YouTube progress bar structure
+- Added support for additional video container elements (ytm-video-with-context-renderer, ytm-item-section-renderer)
+- Plugin now correctly detects and hides watched videos on the main YouTube page
+
 ## [2.1.1] - 2025-01-23
 
 ### Added

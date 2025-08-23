@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube - Plugin Test Page</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #0f0f0f;
+            color: #ffffff;
+            margin: 0;
+            padding-top: 56px;
+        }
+
+        #masthead {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 56px;
+            background-color: #212121;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            z-index: 1000;
+        }
+
+        .masthead-section {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .masthead-section.center {
+            flex-grow: 1;
+            justify-content: center;
+            min-width: 100px;
+            max-width: 650px;
+            margin: 0 40px;
+        }
+
+        #logo {
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        #menu-button {
+            font-size: 24px;
+            margin-right: 20px;
+            cursor: pointer;
+        }
+
+        .search-box {
+            display: flex;
+            width: 100%;
+        }
+
+        .search-box input {
+            width: 100%;
+            background-color: #121212;
+            border: 1px solid #303030;
+            color: #ffffff;
+            padding: 8px 12px;
+            border-radius: 40px 0 0 40px;
+            font-size: 16px;
+        }
+
+        .search-box input:focus {
+            outline: 1px solid #1c62b9;
+        }
+
+        .search-box button {
+            background-color: #303030;
+            border: 1px solid #303030;
+            border-left: none;
+            padding: 0 20px;
+            cursor: pointer;
+            border-radius: 0 40px 40px 0;
+        }
+
+        .user-icons .icon {
+            font-size: 24px;
+            margin-left: 20px;
+            cursor: pointer;
+        }
+
+        .user-icons .avatar {
+            width: 32px;
+            height: 32px;
+            background-color: #555;
+            border-radius: 50%;
+            margin-left: 20px;
+            cursor: pointer;
+        }
+
+        #content {
+            padding: 24px;
+        }
+
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+        }
+
+        ytd-rich-item-renderer {
+            display: block;
+        }
+
+        ytd-video-renderer {
+            display: flex;
+            flex-direction: column;
+            cursor: pointer;
+        }
+
+        .video-thumbnail {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            background-color: #333;
+            border-radius: 12px;
+            position: relative;
+        }
+
+        .video-thumbnail .duration {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        .ytThumbnailOverlayProgressBarHostWatchedProgressBar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background-color: rgba(255, 255, 255, 0.2);
+            z-index: 10;
+        }
+        
+        .ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment {
+            height: 100%;
+            background-color: #ff0000;
+        }
+        
+        .ytThumbnailOverlayProgressBarHostUseLegacyBar {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .video-details {
+            display: flex;
+            margin-top: 12px;
+        }
+
+        .channel-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background-color: #555;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+
+        .video-meta {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .video-title {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 4px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .video-info {
+            font-size: 14px;
+            color: #aaa;
+        }
+        
+        ytd-reel-shelf-renderer {
+            display: block;
+            margin-bottom: 24px;
+        }
+        
+        .shorts-container {
+            display: flex;
+            gap: 16px;
+            overflow-x: auto;
+        }
+        
+        .shorts-item {
+            flex-shrink: 0;
+            width: 200px;
+        }
+        
+        .shorts-thumbnail {
+            width: 100%;
+            aspect-ratio: 9 / 16;
+            background-color: #333;
+            border-radius: 12px;
+            position: relative;
+        }
+        
+        .ytd-thumbnail-overlay-time-status-renderer[aria-label="Shorts"] {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header id="masthead">
+        <div class="masthead-section left">
+            <span id="menu-button">☰</span>
+            <span id="logo">YouTube</span>
+        </div>
+        <div class="masthead-section center">
+            <div class="search-box">
+                <input type="text" placeholder="Search">
+                <button aria-label="Search">🔍</button>
+            </div>
+        </div>
+        <div class="masthead-section right user-icons">
+            <div class="icon" aria-label="Create">➕</div>
+            <div class="icon" aria-label="Notifications">🔔</div>
+            <div class="avatar" aria-label="Account menu"></div>
+        </div>
+    </header>
+
+    <main id="content">
+        
+        <!-- Shorts Section -->
+        <ytd-reel-shelf-renderer is-shorts>
+            <h2 style="margin-bottom: 16px;">Shorts</h2>
+            <div class="shorts-container">
+                <div class="shorts-item">
+                    <a href="/shorts/abc123">
+                        <div class="shorts-thumbnail">
+                            <div class="ytd-thumbnail-overlay-time-status-renderer" aria-label="Shorts">SHORTS</div>
+                        </div>
+                        <div class="video-meta" style="margin-top: 8px;">
+                            <div class="video-title">Amazing Short Video #1</div>
+                            <div class="video-info">10M views</div>
+                        </div>
+                    </a>
+                </div>
+                <div class="shorts-item">
+                    <a href="/shorts/def456">
+                        <div class="shorts-thumbnail">
+                            <div class="ytd-thumbnail-overlay-time-status-renderer" aria-label="Shorts">SHORTS</div>
+                        </div>
+                        <div class="video-meta" style="margin-top: 8px;">
+                            <div class="video-title">Funny Moments Compilation</div>
+                            <div class="video-info">5.2M views</div>
+                        </div>
+                    </a>
+                </div>
+                <div class="shorts-item">
+                    <a href="/shorts/ghi789">
+                        <div class="shorts-thumbnail">
+                            <div class="ytd-thumbnail-overlay-time-status-renderer" aria-label="Shorts">SHORTS</div>
+                        </div>
+                        <div class="video-meta" style="margin-top: 8px;">
+                            <div class="video-title">Quick Tutorial</div>
+                            <div class="video-info">1.8M views</div>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </ytd-reel-shelf-renderer>
+        
+        <!-- Regular Videos Grid -->
+        <div class="video-grid">
+            
+            <!-- Video 1: Watched 75% -->
+            <ytd-rich-item-renderer>
+                <ytd-video-renderer>
+                    <div class="video-thumbnail">
+                        <span class="duration">10:45</span>
+                        <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBar ytThumbnailOverlayProgressBarHostUseLegacyBar">
+                            <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment" style="width: 75%;"></div>
+                        </div>
+                    </div>
+                    <div class="video-details">
+                        <div class="channel-avatar"></div>
+                        <div class="video-meta">
+                            <h3 class="video-title">A Video Title That Can Be Quite Long and Take Up Two Full Lines (75% Watched)</h3>
+                            <div class="video-info">
+                                <span>Channel Name</span>
+                                <br>
+                                <span>1M views • 2 days ago</span>
+                            </div>
+                        </div>
+                    </div>
+                </ytd-video-renderer>
+            </ytd-rich-item-renderer>
+
+            <!-- Video 2: Not watched -->
+            <ytd-rich-item-renderer>
+                <ytd-video-renderer>
+                    <div class="video-thumbnail">
+                        <span class="duration">22:10</span>
+                    </div>
+                    <div class="video-details">
+                        <div class="channel-avatar"></div>
+                        <div class="video-meta">
+                            <h3 class="video-title">A Short Title (Not Watched)</h3>
+                            <div class="video-info">
+                                <span>Another Channel</span>
+                                <br>
+                                <span>15K views • 1 hour ago</span>
+                            </div>
+                        </div>
+                    </div>
+                </ytd-video-renderer>
+            </ytd-rich-item-renderer>
+
+            <!-- Video 3: Watched 100% -->
+            <ytd-rich-item-renderer>
+                <ytd-video-renderer>
+                    <div class="video-thumbnail">
+                        <span class="duration">5:31</span>
+                        <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBar ytThumbnailOverlayProgressBarHostUseLegacyBar">
+                            <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment" style="width: 100%;"></div>
+                        </div>
+                    </div>
+                    <div class="video-details">
+                        <div class="channel-avatar"></div>
+                        <div class="video-meta">
+                            <h3 class="video-title">An Interesting Video About Plugin Development (100% Watched)</h3>
+                            <div class="video-info">
+                                <span>Developer Channel</span>
+                                <br>
+                                <span>500 views • 3 days ago</span>
+                            </div>
+                        </div>
+                    </div>
+                </ytd-video-renderer>
+            </ytd-rich-item-renderer>
+
+            <!-- Video 4: Watched 5% (below threshold) -->
+            <ytd-rich-item-renderer>
+                <ytd-video-renderer>
+                    <div class="video-thumbnail">
+                        <span class="duration">1:12:03</span>
+                        <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBar ytThumbnailOverlayProgressBarHostUseLegacyBar">
+                            <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment" style="width: 5%;"></div>
+                        </div>
+                    </div>
+                    <div class="video-details">
+                        <div class="channel-avatar"></div>
+                        <div class="video-meta">
+                            <h3 class="video-title">A Very Long Livestream or Webinar (5% Watched - Below Threshold)</h3>
+                            <div class="video-info">
+                                <span>Stream Channel</span>
+                                <br>
+                                <span>100K views • 2 weeks ago</span>
+                            </div>
+                        </div>
+                    </div>
+                </ytd-video-renderer>
+            </ytd-rich-item-renderer>
+            
+            <!-- Video 5: Watched 50% -->
+            <ytd-rich-item-renderer>
+                <ytd-video-renderer>
+                    <div class="video-thumbnail">
+                        <span class="duration">15:20</span>
+                        <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBar ytThumbnailOverlayProgressBarHostUseLegacyBar">
+                            <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment" style="width: 50%;"></div>
+                        </div>
+                    </div>
+                    <div class="video-details">
+                        <div class="channel-avatar"></div>
+                        <div class="video-meta">
+                            <h3 class="video-title">Tutorial: Building a Chrome Extension (50% Watched)</h3>
+                            <div class="video-info">
+                                <span>Tech Tutorial Channel</span>
+                                <br>
+                                <span>250K views • 1 week ago</span>
+                            </div>
+                        </div>
+                    </div>
+                </ytd-video-renderer>
+            </ytd-rich-item-renderer>
+            
+            <!-- Video 6: Not watched -->
+            <ytd-rich-item-renderer>
+                <ytd-video-renderer>
+                    <div class="video-thumbnail">
+                        <span class="duration">8:45</span>
+                    </div>
+                    <div class="video-details">
+                        <div class="channel-avatar"></div>
+                        <div class="video-meta">
+                            <h3 class="video-title">Latest Tech News and Updates</h3>
+                            <div class="video-info">
+                                <span>Tech News Daily</span>
+                                <br>
+                                <span>50K views • 3 hours ago</span>
+                            </div>
+                        </div>
+                    </div>
+                </ytd-video-renderer>
+            </ytd-rich-item-renderer>
+            
+            <!-- Video 7: Watched 90% -->
+            <ytd-rich-item-renderer>
+                <ytd-video-renderer>
+                    <div class="video-thumbnail">
+                        <span class="duration">25:15</span>
+                        <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBar ytThumbnailOverlayProgressBarHostUseLegacyBar">
+                            <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment" style="width: 90%;"></div>
+                        </div>
+                    </div>
+                    <div class="video-details">
+                        <div class="channel-avatar"></div>
+                        <div class="video-meta">
+                            <h3 class="video-title">Complete JavaScript Course - Part 1 (90% Watched)</h3>
+                            <div class="video-info">
+                                <span>Coding Academy</span>
+                                <br>
+                                <span>2M views • 1 month ago</span>
+                            </div>
+                        </div>
+                    </div>
+                </ytd-video-renderer>
+            </ytd-rich-item-renderer>
+            
+            <!-- Video 8: Watched 15% -->
+            <ytd-rich-item-renderer>
+                <ytd-video-renderer>
+                    <div class="video-thumbnail">
+                        <span class="duration">45:00</span>
+                        <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBar ytThumbnailOverlayProgressBarHostUseLegacyBar">
+                            <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment" style="width: 15%;"></div>
+                        </div>
+                    </div>
+                    <div class="video-details">
+                        <div class="channel-avatar"></div>
+                        <div class="video-meta">
+                            <h3 class="video-title">Deep Dive into Machine Learning (15% Watched)</h3>
+                            <div class="video-info">
+                                <span>AI Explained</span>
+                                <br>
+                                <span>800K views • 2 weeks ago</span>
+                            </div>
+                        </div>
+                    </div>
+                </ytd-video-renderer>
+            </ytd-rich-item-renderer>
+
+        </div>
+    </main>
+
+</body>
+
+</html>
