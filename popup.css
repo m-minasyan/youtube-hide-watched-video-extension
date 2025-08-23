@@ -442,6 +442,22 @@ footer {
   transform: translateY(0);
 }
 
+.quick-btn-small.active {
+  background: var(--primary-gradient);
+  color: white;
+  border-color: transparent;
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+.quick-btn-small.active[data-toggle-mode="dimmed"] {
+  background: linear-gradient(135deg, #ffa726 0%, #fb8c00 100%);
+}
+
+.quick-btn-small.active[data-toggle-mode="hidden"] {
+  background: linear-gradient(135deg, #ef5350 0%, #e53935 100%);
+}
+
 .collapse-btn {
   background: transparent;
   border: none;

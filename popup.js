@@ -106,6 +106,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         button.classList.remove('active');
       }
     });
+    
+    updateQuickToggleStates(result);
+  }
+  
+  function updateQuickToggleStates(settings) {
+    ['watched', 'shorts'].forEach(type => {
+      const states = type === 'watched' ? DEFAULT_SETTINGS.states.watched : DEFAULT_SETTINGS.states.shorts;
+      const storageKey = type === 'watched' ? STORAGE_KEYS.WATCHED_STATE : STORAGE_KEYS.SHORTS_STATE;
+      
+      const sectionModes = Object.keys(states).map(section => {
+        return settings[`${storageKey}_${section}`] || 'normal';
+      });
+      
+      const allSame = sectionModes.every(mode => mode === sectionModes[0]);
+      const commonMode = allSame ? sectionModes[0] : null;
+      
+      quickToggleButtons.forEach(button => {
+        if (button.dataset.toggleType === type) {
+          if (commonMode && button.dataset.toggleMode === commonMode) {
+            button.classList.add('active');
+          } else {
+            button.classList.remove('active');
+          }
+        }
+      });
+    });
   }
 
   async function saveSettings(key, value) {
@@ -149,6 +175,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         : `${STORAGE_KEYS.SHORTS_STATE}_${section}`;
       
       await saveSettings(storageKey, mode);
+      
+      const allSettings = await chrome.storage.sync.get(null);
+      updateQuickToggleStates(allSettings);
     });
   });
 
@@ -163,6 +192,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     await chrome.storage.sync.set(updates);
     await loadSettings();
+    
+    quickToggleButtons.forEach(button => {
+      if (button.dataset.toggleType === type) {
+        if (button.dataset.toggleMode === mode) {
+          button.classList.add('active');
+        } else {
+          button.classList.remove('active');
+        }
+      }
+    });
     
     chrome.tabs.query({url: '*://*.youtube.com/*'}, (tabs) => {
       tabs.forEach(tab => {

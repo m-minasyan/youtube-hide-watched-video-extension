@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed first installation to automatically select "Dimmed" as default Individual Mode
 - Background script now properly initializes Individual Mode setting on extension install
 - Fixed reset functionality to properly reset Individual Mode to default value
+- Quick Toggle buttons (Normal/Dimmed/Hidden) now correctly show active state when all section items have the same mode
+- Quick Toggle button states now update dynamically when individual section settings are changed
 
 ## [2.2.0] - 2025-01-23
 
