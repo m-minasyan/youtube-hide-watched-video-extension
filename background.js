@@ -2,11 +2,13 @@ chrome.runtime.onInstalled.addListener(async () => {
   const STORAGE_KEYS = {
     THRESHOLD: 'YTHWV_THRESHOLD',
     WATCHED_STATE: 'YTHWV_STATE',
-    SHORTS_STATE: 'YTHWV_STATE_SHORTS'
+    SHORTS_STATE: 'YTHWV_STATE_SHORTS',
+    INDIVIDUAL_MODE: 'YTHWV_INDIVIDUAL_MODE'
   };
 
   const DEFAULT_SETTINGS = {
     threshold: 10,
+    individualMode: 'dimmed',
     states: {
       watched: {
         misc: 'normal',
@@ -30,7 +32,8 @@ chrome.runtime.onInstalled.addListener(async () => {
   
   if (Object.keys(currentSettings).length === 0) {
     const defaultData = {
-      [STORAGE_KEYS.THRESHOLD]: DEFAULT_SETTINGS.threshold
+      [STORAGE_KEYS.THRESHOLD]: DEFAULT_SETTINGS.threshold,
+      [STORAGE_KEYS.INDIVIDUAL_MODE]: DEFAULT_SETTINGS.individualMode
     };
     
     Object.keys(DEFAULT_SETTINGS.states.watched).forEach(section => {

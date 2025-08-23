@@ -4,11 +4,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const resetButton = document.getElementById('reset-all');
   const modeButtons = document.querySelectorAll('.mode-btn');
   const themeToggle = document.getElementById('theme-toggle');
-  const toggleAllNormal = document.getElementById('toggle-all-normal');
-  const toggleAllDimmed = document.getElementById('toggle-all-dimmed');
-  const toggleAllHidden = document.getElementById('toggle-all-hidden');
   const viewHiddenVideosBtn = document.getElementById('view-hidden-videos');
   const individualModeButtons = document.querySelectorAll('.individual-mode');
+  const sectionHeaders = document.querySelectorAll('.section-header');
+  const quickToggleButtons = document.querySelectorAll('.quick-btn-small');
 
   const STORAGE_KEYS = {
     THRESHOLD: 'YTHWV_THRESHOLD',
@@ -42,6 +41,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
+  async function initIndividualMode() {
+    const result = await chrome.storage.sync.get(STORAGE_KEYS.INDIVIDUAL_MODE);
+    let individualMode = result[STORAGE_KEYS.INDIVIDUAL_MODE];
+    
+    if (individualMode === undefined || individualMode === null) {
+      individualMode = DEFAULT_SETTINGS.individualMode;
+      await saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE, individualMode);
+    }
+    
+    individualModeButtons.forEach(button => {
+      button.classList.remove('active');
+      if (button.dataset.mode === individualMode) {
+        button.classList.add('active');
+      }
+    });
+  }
+
   async function initTheme() {
     const result = await chrome.storage.sync.get(STORAGE_KEYS.THEME);
     const theme = result[STORAGE_KEYS.THEME] || DEFAULT_SETTINGS.theme;
@@ -72,15 +88,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const threshold = result[STORAGE_KEYS.THRESHOLD] || DEFAULT_SETTINGS.threshold;
     thresholdSlider.value = threshold;
     thresholdValue.textContent = `${threshold}%`;
-    
-    const individualMode = result[STORAGE_KEYS.INDIVIDUAL_MODE] || DEFAULT_SETTINGS.individualMode;
-    individualModeButtons.forEach(button => {
-      if (button.dataset.mode === individualMode) {
-        button.classList.add('active');
-      } else {
-        button.classList.remove('active');
-      }
-    });
 
     modeButtons.forEach(button => {
       const section = button.dataset.section;
@@ -145,15 +152,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  async function setAllToMode(mode) {
+  async function setTypeToMode(type, mode) {
     const updates = {};
+    const states = type === 'watched' ? DEFAULT_SETTINGS.states.watched : DEFAULT_SETTINGS.states.shorts;
+    const storageKey = type === 'watched' ? STORAGE_KEYS.WATCHED_STATE : STORAGE_KEYS.SHORTS_STATE;
     
-    Object.keys(DEFAULT_SETTINGS.states.watched).forEach(section => {
-      updates[`${STORAGE_KEYS.WATCHED_STATE}_${section}`] = mode;
-    });
-    
-    Object.keys(DEFAULT_SETTINGS.states.shorts).forEach(section => {
-      updates[`${STORAGE_KEYS.SHORTS_STATE}_${section}`] = mode;
+    Object.keys(states).forEach(section => {
+      updates[`${storageKey}_${section}`] = mode;
     });
     
     await chrome.storage.sync.set(updates);
@@ -172,9 +177,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  toggleAllNormal.addEventListener('click', () => setAllToMode('normal'));
-  toggleAllDimmed.addEventListener('click', () => setAllToMode('dimmed'));
-  toggleAllHidden.addEventListener('click', () => setAllToMode('hidden'));
+  sectionHeaders.forEach(header => {
+    header.addEventListener('click', (e) => {
+      if (e.target.closest('.quick-btn-small')) return;
+      
+      const section = header.closest('.settings-section');
+      const content = section.querySelector('.collapsible-content');
+      
+      if (section.classList.contains('collapsed')) {
+        section.classList.remove('collapsed');
+        content.style.display = 'block';
+        setTimeout(() => {
+          content.style.maxHeight = '1000px';
+          content.style.opacity = '1';
+        }, 10);
+      } else {
+        content.style.maxHeight = '0';
+        content.style.opacity = '0';
+        setTimeout(() => {
+          section.classList.add('collapsed');
+          content.style.display = 'none';
+        }, 300);
+      }
+    });
+  });
+
+  quickToggleButtons.forEach(button => {
+    button.addEventListener('click', async () => {
+      const type = button.dataset.toggleType;
+      const mode = button.dataset.toggleMode;
+      await setTypeToMode(type, mode);
+    });
+  });
   
   individualModeButtons.forEach(button => {
     button.addEventListener('click', async () => {
@@ -197,7 +231,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       const defaultData = {
         [STORAGE_KEYS.THRESHOLD]: DEFAULT_SETTINGS.threshold,
-        [STORAGE_KEYS.THEME]: DEFAULT_SETTINGS.theme
+        [STORAGE_KEYS.THEME]: DEFAULT_SETTINGS.theme,
+        [STORAGE_KEYS.INDIVIDUAL_MODE]: DEFAULT_SETTINGS.individualMode
       };
       
       Object.keys(DEFAULT_SETTINGS.states.watched).forEach(section => {
@@ -211,6 +246,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       await chrome.storage.sync.set(defaultData);
       
       await initTheme();
+      await initIndividualMode();
       await loadSettings();
       
       chrome.tabs.query({url: '*://*.youtube.com/*'}, (tabs) => {
@@ -222,5 +258,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   await initTheme();
+  await initIndividualMode();
   await loadSettings();
 });

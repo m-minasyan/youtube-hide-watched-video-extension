@@ -57,15 +57,6 @@
       </div>
       
       <div class="setting-item">
-        <label for="quick-toggle">Quick Toggle</label>
-        <div class="quick-actions">
-          <button id="toggle-all-normal" class="quick-btn">All Normal</button>
-          <button id="toggle-all-dimmed" class="quick-btn">All Dimmed</button>
-          <button id="toggle-all-hidden" class="quick-btn">All Hidden</button>
-        </div>
-      </div>
-      
-      <div class="setting-item">
         <label>Hidden Videos</label>
         <div class="quick-actions">
           <button id="view-hidden-videos" class="quick-btn">View Hidden Videos</button>
@@ -73,10 +64,24 @@
       </div>
     </section>
 
-    <section class="settings-section">
-      <h2>Watched Videos</h2>
+    <section class="settings-section collapsible collapsed">
+      <div class="section-header">
+        <h2>Watched Videos</h2>
+        <div class="header-controls">
+          <div class="quick-toggle-inline">
+            <button class="quick-btn-small" data-toggle-type="watched" data-toggle-mode="normal">Normal</button>
+            <button class="quick-btn-small" data-toggle-type="watched" data-toggle-mode="dimmed">Dimmed</button>
+            <button class="quick-btn-small" data-toggle-type="watched" data-toggle-mode="hidden">Hidden</button>
+          </div>
+          <button class="collapse-btn" aria-label="Toggle section">
+            <svg class="collapse-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+        </div>
+      </div>
       
-      <div class="section-group">
+      <div class="section-group collapsible-content">
         <div class="setting-item">
           <label>Home Page</label>
           <div class="button-group">
@@ -133,10 +138,24 @@
       </div>
     </section>
 
-    <section class="settings-section">
-      <h2>Shorts</h2>
+    <section class="settings-section collapsible collapsed">
+      <div class="section-header">
+        <h2>Shorts</h2>
+        <div class="header-controls">
+          <div class="quick-toggle-inline">
+            <button class="quick-btn-small" data-toggle-type="shorts" data-toggle-mode="normal">Normal</button>
+            <button class="quick-btn-small" data-toggle-type="shorts" data-toggle-mode="dimmed">Dimmed</button>
+            <button class="quick-btn-small" data-toggle-type="shorts" data-toggle-mode="hidden">Hidden</button>
+          </div>
+          <button class="collapse-btn" aria-label="Toggle section">
+            <svg class="collapse-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+        </div>
+      </div>
       
-      <div class="section-group">
+      <div class="section-group collapsible-content">
         <div class="setting-item">
           <label>Home Page</label>
           <div class="button-group">

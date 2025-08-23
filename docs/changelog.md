@@ -5,6 +5,22 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Replaced single Quick Toggle with separate collapsible sections for Watched Videos and Shorts
+- Added individual Quick Toggle buttons for each section (Watched Videos and Shorts)
+- Sections now have dropdown functionality with smooth animations
+- Watched Videos and Shorts sections are collapsed by default on first launch
+- Improved UI organization with better visual hierarchy
+
+### Fixed
+- Individual Video Mode buttons now properly display the selected state on popup load
+- Improved initialization of Individual Mode settings to ensure one button is always selected
+- Fixed first installation to automatically select "Dimmed" as default Individual Mode
+- Background script now properly initializes Individual Mode setting on extension install
+- Fixed reset functionality to properly reset Individual Mode to default value
+
 ## [2.2.0] - 2025-01-23
 
 ### Added
