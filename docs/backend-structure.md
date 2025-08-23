@@ -12,6 +12,9 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 ├── popup.html           # Extension popup HTML
 ├── popup.js            # Extension popup logic
 ├── popup.css          # Extension popup styles
+├── hidden-videos.html   # Hidden videos manager page
+├── hidden-videos.js    # Hidden videos manager logic
+├── hidden-videos.css  # Hidden videos manager styles
 ├── icons/             # Extension icons
 │   ├── icon.svg      # SVG icon source
 │   ├── icon16.png   # 16x16 icon

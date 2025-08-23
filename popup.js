@@ -7,17 +7,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   const toggleAllNormal = document.getElementById('toggle-all-normal');
   const toggleAllDimmed = document.getElementById('toggle-all-dimmed');
   const toggleAllHidden = document.getElementById('toggle-all-hidden');
+  const viewHiddenVideosBtn = document.getElementById('view-hidden-videos');
+  const individualModeButtons = document.querySelectorAll('.individual-mode');
 
   const STORAGE_KEYS = {
     THRESHOLD: 'YTHWV_THRESHOLD',
     WATCHED_STATE: 'YTHWV_STATE',
     SHORTS_STATE: 'YTHWV_STATE_SHORTS',
-    THEME: 'YTHWV_THEME'
+    THEME: 'YTHWV_THEME',
+    HIDDEN_VIDEOS: 'YTHWV_HIDDEN_VIDEOS',
+    INDIVIDUAL_MODE: 'YTHWV_INDIVIDUAL_MODE'
   };
 
   const DEFAULT_SETTINGS = {
     threshold: 10,
     theme: 'light',
+    individualMode: 'dimmed',
     states: {
       watched: {
         misc: 'normal',
@@ -67,6 +72,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const threshold = result[STORAGE_KEYS.THRESHOLD] || DEFAULT_SETTINGS.threshold;
     thresholdSlider.value = threshold;
     thresholdValue.textContent = `${threshold}%`;
+    
+    const individualMode = result[STORAGE_KEYS.INDIVIDUAL_MODE] || DEFAULT_SETTINGS.individualMode;
+    individualModeButtons.forEach(button => {
+      if (button.dataset.mode === individualMode) {
+        button.classList.add('active');
+      } else {
+        button.classList.remove('active');
+      }
+    });
 
     modeButtons.forEach(button => {
       const section = button.dataset.section;
@@ -161,6 +175,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   toggleAllNormal.addEventListener('click', () => setAllToMode('normal'));
   toggleAllDimmed.addEventListener('click', () => setAllToMode('dimmed'));
   toggleAllHidden.addEventListener('click', () => setAllToMode('hidden'));
+  
+  individualModeButtons.forEach(button => {
+    button.addEventListener('click', async () => {
+      const mode = button.dataset.mode;
+      
+      individualModeButtons.forEach(btn => btn.classList.remove('active'));
+      button.classList.add('active');
+      
+      await saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE, mode);
+    });
+  });
+  
+  viewHiddenVideosBtn.addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('hidden-videos.html') });
+  });
 
   resetButton.addEventListener('click', async () => {
     if (confirm('Are you sure you want to reset all settings to default?')) {

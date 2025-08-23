@@ -49,11 +49,26 @@
       </div>
       
       <div class="setting-item">
+        <label for="individual-mode">Individual Video Mode</label>
+        <div class="button-group">
+          <button class="mode-btn individual-mode" data-mode="dimmed">Dimmed</button>
+          <button class="mode-btn individual-mode" data-mode="hidden">Hidden</button>
+        </div>
+      </div>
+      
+      <div class="setting-item">
         <label for="quick-toggle">Quick Toggle</label>
         <div class="quick-actions">
           <button id="toggle-all-normal" class="quick-btn">All Normal</button>
           <button id="toggle-all-dimmed" class="quick-btn">All Dimmed</button>
           <button id="toggle-all-hidden" class="quick-btn">All Hidden</button>
+        </div>
+      </div>
+      
+      <div class="setting-item">
+        <label>Hidden Videos</label>
+        <div class="quick-actions">
+          <button id="view-hidden-videos" class="quick-btn">View Hidden Videos</button>
         </div>
       </div>
     </section>
@@ -171,7 +186,7 @@
 
     <footer>
       <button id="reset-all" class="reset-btn">Reset All Settings</button>
-      <div class="version">Version 2.1.0</div>
+      <div class="version">Version 2.2.0</div>
     </footer>
   </div>
 

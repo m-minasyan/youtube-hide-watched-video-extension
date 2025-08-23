@@ -76,19 +76,25 @@ A browser extension that automatically hides or marks watched videos on YouTube,
 
 ### Advanced Features (Phase 2)
 
-#### 1. Partial Watch Threshold
+#### 1. Individual Video Control
+- Eye icon on each video thumbnail
+- Per-video hide/dim functionality
+- Hidden Videos Manager page
+- Filter and manage hidden videos
+
+#### 2. Partial Watch Threshold
 - Configure minimum watch percentage
 - Custom thresholds per channel
 
-#### 2. Whitelist/Blacklist
+#### 3. Whitelist/Blacklist
 - Exclude specific channels
 - Exclude specific video types
 
-#### 3. Smart Recommendations
+#### 4. Smart Recommendations
 - Hide related watched videos
 - Enhance discovery algorithm
 
-#### 4. Statistics Dashboard
+#### 5. Statistics Dashboard
 - Track hiding statistics
 - Viewing patterns analysis
 

@@ -27,8 +27,10 @@ This document describes the application flow for the YouTube Hide Watched Video 
 
 ### 5. Hiding Mechanism
 - Watched videos are processed according to user settings
+- Individual videos can be hidden/dimmed via eye icon
 - Visual feedback is provided for hidden content
 - User can toggle visibility if needed
+- Hidden videos are tracked and manageable
 
 ## Technical Flow
 
@@ -51,6 +53,7 @@ This document describes the application flow for the YouTube Hide Watched Video 
 
 ## State Management
 - User preferences stored in browser storage
+- Individual video hide states persisted
 - Session state maintained in memory
 - Synchronization across tabs
 

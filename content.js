@@ -4,13 +4,17 @@
   const STORAGE_KEYS = {
     THRESHOLD: 'YTHWV_THRESHOLD',
     WATCHED_STATE: 'YTHWV_STATE',
-    SHORTS_STATE: 'YTHWV_STATE_SHORTS'
+    SHORTS_STATE: 'YTHWV_STATE_SHORTS',
+    HIDDEN_VIDEOS: 'YTHWV_HIDDEN_VIDEOS',
+    INDIVIDUAL_MODE: 'YTHWV_INDIVIDUAL_MODE'
   };
 
   let settings = {
     threshold: 10,
     watchedStates: {},
-    shortsStates: {}
+    shortsStates: {},
+    hiddenVideos: {},
+    individualMode: 'dimmed'
   };
 
   const logDebug = (...msgs) => {
@@ -29,6 +33,51 @@
       .YT-HWV-SHORTS-HIDDEN { display: none !important }
       .YT-HWV-SHORTS-DIMMED { opacity: 0.3 }
       .YT-HWV-HIDDEN-ROW-PARENT { padding-bottom: 10px }
+      .YT-HWV-INDIVIDUAL-HIDDEN { display: none !important }
+      .YT-HWV-INDIVIDUAL-DIMMED { opacity: 0.3 }
+      
+      .yt-hwv-eye-button {
+        position: absolute !important;
+        top: 8px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        z-index: 999 !important;
+        background: rgba(0, 0, 0, 0.9) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        border-radius: 6px !important;
+        padding: 6px 8px !important;
+        cursor: pointer !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        transition: all 0.2s ease !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.5) !important;
+      }
+      
+      .yt-hwv-eye-button:hover {
+        background: rgba(0, 0, 0, 1) !important;
+        transform: translateX(-50%) scale(1.1) !important;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.7) !important;
+      }
+      
+      .yt-hwv-eye-button svg {
+        width: 20px !important;
+        height: 20px !important;
+        fill: white !important;
+        pointer-events: none !important;
+      }
+      
+      .yt-hwv-eye-button.hidden svg {
+        fill: #ff4444 !important;
+      }
+      
+      .yt-hwv-eye-button.dimmed svg {
+        fill: #ffaa00 !important;
+      }
+      
+      ytd-thumbnail, yt-thumbnail-view-model, #dismissible, #thumbnail-container {
+        position: relative !important;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -37,6 +86,8 @@
     const result = await chrome.storage.sync.get(null);
     
     settings.threshold = result[STORAGE_KEYS.THRESHOLD] || 10;
+    settings.hiddenVideos = result[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
+    settings.individualMode = result[STORAGE_KEYS.INDIVIDUAL_MODE] || 'dimmed';
     
     const sections = ['misc', 'subscriptions', 'channel', 'watch', 'trending', 'playlist'];
     sections.forEach(section => {
@@ -59,6 +110,155 @@
     if (href.includes('/playlist?')) return 'playlist';
     
     return 'misc';
+  }
+  
+  function getVideoId(element) {
+    const links = element.querySelectorAll('a[href*="/watch?v="], a[href*="/shorts/"]');
+    for (const link of links) {
+      const href = link.getAttribute('href');
+      if (href) {
+        const match = href.match(/\/watch\?v=([^&]+)/);
+        if (match) return match[1];
+        
+        const shortsMatch = href.match(/\/shorts\/([^?]+)/);
+        if (shortsMatch) return shortsMatch[1];
+      }
+    }
+    return null;
+  }
+  
+  async function saveHiddenVideo(videoId, state) {
+    if (!videoId) return;
+    
+    const result = await chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS);
+    const hiddenVideos = result[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
+    
+    if (state === 'normal') {
+      delete hiddenVideos[videoId];
+    } else {
+      hiddenVideos[videoId] = state;
+    }
+    
+    settings.hiddenVideos = hiddenVideos;
+    await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
+  }
+  
+  function createEyeButton(videoContainer, videoId) {
+    if (!videoId) return null;
+    
+    const button = document.createElement('button');
+    button.className = 'yt-hwv-eye-button';
+    button.setAttribute('data-video-id', videoId);
+    
+    const currentState = settings.hiddenVideos[videoId] || 'normal';
+    if (currentState === 'dimmed') button.classList.add('dimmed');
+    if (currentState === 'hidden') button.classList.add('hidden');
+    
+    button.innerHTML = `
+      <svg viewBox="0 0 24 24">
+        <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+      </svg>
+    `;
+    
+    button.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const currentState = settings.hiddenVideos[videoId] || 'normal';
+      const states = ['normal', settings.individualMode];
+      const currentIndex = currentState === 'normal' ? 0 : 1;
+      const nextIndex = (currentIndex + 1) % states.length;
+      const nextState = states[nextIndex];
+      
+      await saveHiddenVideo(videoId, nextState);
+      
+      button.classList.remove('dimmed', 'hidden');
+      if (nextState === 'dimmed') button.classList.add('dimmed');
+      if (nextState === 'hidden') button.classList.add('hidden');
+      
+      applyIndividualHiding();
+    });
+    
+    return button;
+  }
+  
+  function addEyeButtons() {
+    // Support both old and new YouTube elements
+    const thumbnails = document.querySelectorAll(
+      'yt-thumbnail-view-model:not(.yt-hwv-has-eye-button), ' +
+      'ytd-thumbnail:not(.yt-hwv-has-eye-button)'
+    );
+    
+    logDebug('Found thumbnails:', thumbnails.length);
+    
+    thumbnails.forEach(thumbnail => {
+      const existingButton = thumbnail.querySelector('.yt-hwv-eye-button');
+      if (existingButton) return;
+      
+      // Find the link that contains the video ID
+      const link = thumbnail.closest('a') || thumbnail.querySelector('a');
+      if (!link) return;
+      
+      const href = link.getAttribute('href');
+      if (!href) return;
+      
+      // Extract video ID
+      let videoId = null;
+      const watchMatch = href.match(/\/watch\?v=([^&]+)/);
+      const shortsMatch = href.match(/\/shorts\/([^?]+)/);
+      
+      if (watchMatch) {
+        videoId = watchMatch[1];
+      } else if (shortsMatch) {
+        videoId = shortsMatch[1];
+      }
+      
+      if (!videoId) return;
+      
+      const eyeButton = createEyeButton(null, videoId);
+      if (!eyeButton) return;
+      
+      // Make thumbnail relative positioned for button placement
+      thumbnail.style.position = 'relative';
+      thumbnail.appendChild(eyeButton);
+      thumbnail.classList.add('yt-hwv-has-eye-button');
+      
+      logDebug('Added eye button to video:', videoId);
+    });
+  }
+  
+  function applyIndividualHiding() {
+    document.querySelectorAll('.YT-HWV-INDIVIDUAL-DIMMED').forEach(el => el.classList.remove('YT-HWV-INDIVIDUAL-DIMMED'));
+    document.querySelectorAll('.YT-HWV-INDIVIDUAL-HIDDEN').forEach(el => el.classList.remove('YT-HWV-INDIVIDUAL-HIDDEN'));
+    
+    Object.entries(settings.hiddenVideos).forEach(([videoId, state]) => {
+      // Find by data attribute
+      const elements = document.querySelectorAll(`[data-video-id="${videoId}"]`);
+      elements.forEach(element => {
+        const container = element.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model');
+        if (container) {
+          if (state === 'dimmed') {
+            container.classList.add('YT-HWV-INDIVIDUAL-DIMMED');
+          } else if (state === 'hidden') {
+            container.classList.add('YT-HWV-INDIVIDUAL-HIDDEN');
+          }
+        }
+      });
+      
+      // Find by video links
+      const links = document.querySelectorAll(`a[href*="/watch?v=${videoId}"], a[href*="/shorts/${videoId}"]`);
+      links.forEach(link => {
+        // Support both old and new container types
+        const container = link.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model');
+        if (container) {
+          if (state === 'dimmed') {
+            container.classList.add('YT-HWV-INDIVIDUAL-DIMMED');
+          } else if (state === 'hidden') {
+            container.classList.add('YT-HWV-INDIVIDUAL-HIDDEN');
+          }
+        }
+      });
+    });
   }
 
   function findWatchedElements() {
@@ -250,6 +450,10 @@
     logDebug('Applying hiding/dimming');
     updateClassOnWatchedItems();
     updateClassOnShortsItems();
+    setTimeout(() => {
+      addEyeButtons();
+      applyIndividualHiding();
+    }, 500);
   }
 
   const debounce = function(func, wait) {
@@ -266,6 +470,8 @@
     injectStyles();
     await loadSettings();
     applyHiding();
+    
+
 
     const observer = new MutationObserver((mutations) => {
       if (mutations.length === 1 && 

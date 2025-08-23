@@ -5,6 +5,29 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2025-01-23
+
+### Added
+- Individual video hiding/dimming with eye icon on each video thumbnail
+- Eye icon button in the center-top of each video card for quick hide/dim toggle
+- Individual mode setting to choose between Dimmed and Hidden for individual videos
+- New Hidden Videos Manager page to view and manage all individually hidden videos
+- Filter options in Hidden Videos Manager (All, Dimmed, Hidden)
+- Statistics display showing total, dimmed, and hidden video counts
+- Ability to toggle state, view on YouTube, or remove videos from hidden list
+- Persistent storage for individually hidden videos across sessions
+- Support for new YouTube elements (yt-thumbnail-view-model, yt-lockup-view-model)
+
+### Changed
+- Enhanced content script to support individual video management
+- Updated popup interface with individual mode selector
+- Improved CSS with new styles for eye buttons and individual states
+- Updated element selectors to work with latest YouTube HTML structure
+
+### Fixed
+- Eye button compatibility with new YouTube thumbnail elements
+- Improved detection of video containers and thumbnails
+
 ## [2.1.2] - 2025-01-23
 
 ### Fixed
