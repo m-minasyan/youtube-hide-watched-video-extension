@@ -75,6 +75,27 @@
         <p>Videos you hide will appear here</p>
       </div>
     </div>
+
+    <div id="pagination-controls" class="pagination">
+      <button id="prev-page" class="page-btn" disabled>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+        Previous
+      </button>
+      <div class="page-info">
+        <span>Page</span>
+        <span id="current-page">1</span>
+        <span>of</span>
+        <span id="total-pages">1</span>
+      </div>
+      <button id="next-page" class="page-btn" disabled>
+        Next
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"></polyline>
+        </svg>
+      </button>
+    </div>
   </div>
 
   <script src="hidden-videos.js"></script>

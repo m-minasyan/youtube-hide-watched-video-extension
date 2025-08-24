@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Pagination</title>
+</head>
+<body>
+  <h1>Test Pagination for Hidden Videos</h1>
+  <p>This page will populate test data for pagination testing.</p>
+  
+  <button id="populate">Populate Test Data (30 videos)</button>
+  <button id="clear">Clear All Data</button>
+  <button id="open-hidden">Open Hidden Videos Page</button>
+  
+  <script>
+    document.getElementById('populate').addEventListener('click', async () => {
+      const testVideos = {};
+      
+      for (let i = 1; i <= 30; i++) {
+        const videoId = `testVideo${i.toString().padStart(3, '0')}`;
+        testVideos[videoId] = i % 3 === 0 ? 'hidden' : 'dimmed';
+      }
+      
+      await chrome.storage.sync.set({ 'YTHWV_HIDDEN_VIDEOS': testVideos });
+      alert('Test data populated: 30 videos (20 dimmed, 10 hidden)');
+    });
+    
+    document.getElementById('clear').addEventListener('click', async () => {
+      await chrome.storage.sync.set({ 'YTHWV_HIDDEN_VIDEOS': {} });
+      alert('All data cleared');
+    });
+    
+    document.getElementById('open-hidden').addEventListener('click', () => {
+      window.location.href = 'hidden-videos.html';
+    });
+  </script>
+</body>
+</html>

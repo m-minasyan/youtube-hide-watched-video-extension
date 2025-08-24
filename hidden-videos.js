@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let hiddenVideos = {};
   let currentFilter = 'all';
+  let currentPage = 1;
+  const videosPerPage = 12;
 
   async function initTheme() {
     const result = await chrome.storage.sync.get(STORAGE_KEYS.THEME);
@@ -57,6 +59,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     hiddenCount.textContent = hidden;
   }
 
+  function updatePaginationControls(totalVideos, totalPages) {
+    const paginationControls = document.getElementById('pagination-controls');
+    const prevBtn = document.getElementById('prev-page');
+    const nextBtn = document.getElementById('next-page');
+    const currentPageSpan = document.getElementById('current-page');
+    const totalPagesSpan = document.getElementById('total-pages');
+    
+    if (totalVideos === 0) {
+      paginationControls.style.display = 'none';
+      return;
+    }
+    
+    paginationControls.style.display = 'flex';
+    currentPageSpan.textContent = currentPage;
+    totalPagesSpan.textContent = totalPages;
+    
+    prevBtn.disabled = currentPage === 1;
+    nextBtn.disabled = currentPage === totalPages;
+  }
+
   function renderVideos() {
     const videos = Object.entries(hiddenVideos);
     
@@ -64,6 +86,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (currentFilter !== 'all') {
       filteredVideos = videos.filter(([_, state]) => state === currentFilter);
     }
+
+    const totalPages = Math.ceil(filteredVideos.length / videosPerPage);
+    currentPage = Math.min(currentPage, Math.max(1, totalPages));
+    
+    updatePaginationControls(filteredVideos.length, totalPages);
 
     if (filteredVideos.length === 0) {
       videosContainer.innerHTML = `
@@ -81,7 +108,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    videosContainer.innerHTML = filteredVideos.map(([videoId, state]) => {
+    const startIndex = (currentPage - 1) * videosPerPage;
+    const endIndex = startIndex + videosPerPage;
+    const paginatedVideos = filteredVideos.slice(startIndex, endIndex);
+
+    videosContainer.innerHTML = paginatedVideos.map(([videoId, state]) => {
       const isShorts = videoId.length < 15;
       const videoUrl = isShorts 
         ? `https://www.youtube.com/shorts/${videoId}`
@@ -147,8 +178,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       filterButtons.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentFilter = btn.dataset.filter;
+      currentPage = 1;
       renderVideos();
     });
+  });
+
+  document.getElementById('prev-page').addEventListener('click', () => {
+    if (currentPage > 1) {
+      currentPage--;
+      renderVideos();
+    }
+  });
+
+  document.getElementById('next-page').addEventListener('click', () => {
+    const videos = Object.entries(hiddenVideos);
+    let filteredVideos = videos;
+    if (currentFilter !== 'all') {
+      filteredVideos = videos.filter(([_, state]) => state === currentFilter);
+    }
+    const totalPages = Math.ceil(filteredVideos.length / videosPerPage);
+    
+    if (currentPage < totalPages) {
+      currentPage++;
+      renderVideos();
+    }
   });
 
   clearAllBtn.addEventListener('click', async () => {

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Pagination for Hidden Videos Manager page with 12 videos per page
+- Navigation controls with Previous/Next buttons and page indicator
+- Automatic pagination reset when switching filters
+
 ### Changed
 - Replaced single Quick Toggle with separate collapsible sections for Watched Videos and Shorts
 - Added individual Quick Toggle buttons for each section (Watched Videos and Shorts)
