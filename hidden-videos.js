@@ -7,7 +7,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const themeToggle = document.getElementById('theme-toggle');
   const filterButtons = document.querySelectorAll('.filter-btn');
   const clearAllBtn = document.getElementById('clear-all');
-  const backBtn = document.getElementById('back-to-settings');
   const videosContainer = document.getElementById('videos-container');
   const totalCount = document.getElementById('total-count');
   const dimmedCount = document.getElementById('dimmed-count');
@@ -209,10 +208,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: {} });
       await loadHiddenVideos();
     }
-  });
-
-  backBtn.addEventListener('click', () => {
-    window.location.href = 'popup.html';
   });
 
   await initTheme();

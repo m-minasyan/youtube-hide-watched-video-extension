@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic pagination reset when switching filters
 
 ### Changed
+- Removed "Back to Settings" button from Hidden Videos Manager page for cleaner interface
 - Replaced single Quick Toggle with separate collapsible sections for Watched Videos and Shorts
 - Added individual Quick Toggle buttons for each section (Watched Videos and Shorts)
 - Sections now have dropdown functionality with smooth animations
