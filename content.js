@@ -111,6 +111,22 @@
     settings.hiddenVideos = result[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
     settings.individualMode = result[STORAGE_KEYS.INDIVIDUAL_MODE] || 'dimmed';
     
+    // Migrate old format to new format
+    let needsMigration = false;
+    Object.entries(settings.hiddenVideos).forEach(([videoId, data]) => {
+      if (typeof data === 'string') {
+        settings.hiddenVideos[videoId] = {
+          state: data,
+          title: ''
+        };
+        needsMigration = true;
+      }
+    });
+    
+    if (needsMigration) {
+      await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: settings.hiddenVideos });
+    }
+    
     const sections = ['misc', 'subscriptions', 'channel', 'watch', 'trending', 'playlist'];
     sections.forEach(section => {
       settings.watchedStates[section] = result[`${STORAGE_KEYS.WATCHED_STATE}_${section}`] || 'normal';
@@ -149,7 +165,7 @@
     return null;
   }
   
-  async function saveHiddenVideo(videoId, state) {
+  async function saveHiddenVideo(videoId, state, title = null) {
     if (!videoId) return;
     
     const result = await chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS);
@@ -158,7 +174,10 @@
     if (state === 'normal') {
       delete hiddenVideos[videoId];
     } else {
-      hiddenVideos[videoId] = state;
+      hiddenVideos[videoId] = {
+        state: state,
+        title: title || hiddenVideos[videoId]?.title || ''
+      };
     }
     
     settings.hiddenVideos = hiddenVideos;
@@ -174,7 +193,8 @@
     button.setAttribute('tabindex', '-1');
     button.setAttribute('aria-label', 'Toggle video visibility');
     
-    const currentState = settings.hiddenVideos[videoId] || 'normal';
+    const hiddenVideoData = settings.hiddenVideos[videoId];
+    const currentState = hiddenVideoData?.state || hiddenVideoData || 'normal';
     if (currentState === 'dimmed') button.classList.add('dimmed');
     if (currentState === 'hidden') button.classList.add('hidden');
     
@@ -188,13 +208,56 @@
       e.preventDefault();
       e.stopPropagation();
       
-      const currentState = settings.hiddenVideos[videoId] || 'normal';
+      const hiddenVideoData = settings.hiddenVideos[videoId];
+      const currentState = hiddenVideoData?.state || hiddenVideoData || 'normal';
       const states = ['normal', settings.individualMode];
       const currentIndex = currentState === 'normal' ? 0 : 1;
       const nextIndex = (currentIndex + 1) % states.length;
       const nextState = states[nextIndex];
       
-      await saveHiddenVideo(videoId, nextState);
+      let videoTitle = '';
+      const container = button.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model');
+      if (container) {
+        // Try multiple selectors to find the title
+        const titleSelectors = [
+          '#video-title',
+          '#video-title-link',
+          'a#video-title',
+          'h3.title',
+          'h3 a',
+          'h4 a',
+          '.title-and-badge a',
+          'ytm-shorts-lockup-view-model-v2 .shortsLockupViewModelHostTextContent',
+          'yt-formatted-string#video-title',
+          'span#video-title'
+        ];
+        
+        let titleElement = null;
+        for (const selector of titleSelectors) {
+          titleElement = container.querySelector(selector);
+          if (titleElement && !titleElement.classList.contains('yt-hwv-eye-button')) {
+            break;
+          }
+        }
+        
+        if (titleElement) {
+          // Try to get title from various attributes and properties
+          videoTitle = titleElement.getAttribute('title') || 
+                      titleElement.getAttribute('aria-label') || 
+                      titleElement.textContent?.trim() || 
+                      '';
+          
+          // Clean up the title (remove view count and other metadata that might be in aria-label)
+          if (videoTitle.includes(' - ')) {
+            videoTitle = videoTitle.split(' - ')[0];
+          }
+          if (videoTitle.includes(' by ')) {
+            videoTitle = videoTitle.split(' by ')[0];
+          }
+        }
+      }
+      
+      await saveHiddenVideo(videoId, nextState, videoTitle);
       
       button.classList.remove('dimmed', 'hidden');
       if (nextState === 'dimmed') button.classList.add('dimmed');
@@ -247,6 +310,53 @@
       thumbnail.appendChild(eyeButton);
       thumbnail.classList.add('yt-hwv-has-eye-button');
       
+      // If video is already hidden but has no title, try to capture it now
+      const hiddenVideoData = settings.hiddenVideos[videoId];
+      if (hiddenVideoData && (!hiddenVideoData.title || hiddenVideoData.title === '')) {
+        const container = thumbnail.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model');
+        if (container) {
+          const titleSelectors = [
+            '#video-title',
+            '#video-title-link',
+            'a#video-title',
+            'h3.title',
+            'h3 a',
+            'h4 a',
+            '.title-and-badge a',
+            'yt-formatted-string#video-title',
+            'span#video-title'
+          ];
+          
+          let titleElement = null;
+          for (const selector of titleSelectors) {
+            titleElement = container.querySelector(selector);
+            if (titleElement && !titleElement.classList.contains('yt-hwv-eye-button')) {
+              break;
+            }
+          }
+          
+          if (titleElement) {
+            let videoTitle = titleElement.getAttribute('title') || 
+                          titleElement.getAttribute('aria-label') || 
+                          titleElement.textContent?.trim() || 
+                          '';
+            
+            // Clean up the title
+            if (videoTitle.includes(' - ')) {
+              videoTitle = videoTitle.split(' - ')[0];
+            }
+            if (videoTitle.includes(' by ')) {
+              videoTitle = videoTitle.split(' by ')[0];
+            }
+            
+            if (videoTitle && videoTitle !== 'Toggle video visibility') {
+              // Update the title in storage
+              saveHiddenVideo(videoId, hiddenVideoData.state || hiddenVideoData, videoTitle);
+            }
+          }
+        }
+      }
+      
       logDebug('Added eye button to video:', videoId);
     });
     
@@ -267,7 +377,9 @@
     document.querySelectorAll('.YT-HWV-INDIVIDUAL-DIMMED').forEach(el => el.classList.remove('YT-HWV-INDIVIDUAL-DIMMED'));
     document.querySelectorAll('.YT-HWV-INDIVIDUAL-HIDDEN').forEach(el => el.classList.remove('YT-HWV-INDIVIDUAL-HIDDEN'));
     
-    Object.entries(settings.hiddenVideos).forEach(([videoId, state]) => {
+    Object.entries(settings.hiddenVideos).forEach(([videoId, data]) => {
+      const state = data?.state || data;
+      
       // Find by data attribute
       const elements = document.querySelectorAll(`[data-video-id="${videoId}"]`);
       elements.forEach(element => {

@@ -44,14 +44,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function loadHiddenVideos() {
     const result = await chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS);
     hiddenVideos = result[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
+    
+    // Migrate old format to new format
+    let needsMigration = false;
+    Object.entries(hiddenVideos).forEach(([videoId, data]) => {
+      if (typeof data === 'string') {
+        hiddenVideos[videoId] = {
+          state: data,
+          title: ''
+        };
+        needsMigration = true;
+      }
+    });
+    
+    if (needsMigration) {
+      await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
+    }
+    
     updateStats();
     renderVideos();
   }
 
   function updateStats() {
     const videos = Object.entries(hiddenVideos);
-    const dimmed = videos.filter(([_, state]) => state === 'dimmed').length;
-    const hidden = videos.filter(([_, state]) => state === 'hidden').length;
+    const dimmed = videos.filter(([_, data]) => {
+      const state = data?.state || data;
+      return state === 'dimmed';
+    }).length;
+    const hidden = videos.filter(([_, data]) => {
+      const state = data?.state || data;
+      return state === 'hidden';
+    }).length;
     
     totalCount.textContent = videos.length;
     dimmedCount.textContent = dimmed;
@@ -83,7 +106,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     let filteredVideos = videos;
     if (currentFilter !== 'all') {
-      filteredVideos = videos.filter(([_, state]) => state === currentFilter);
+      filteredVideos = videos.filter(([_, data]) => {
+        const state = data?.state || data;
+        return state === currentFilter;
+      });
     }
 
     const totalPages = Math.ceil(filteredVideos.length / videosPerPage);
@@ -111,19 +137,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     const endIndex = startIndex + videosPerPage;
     const paginatedVideos = filteredVideos.slice(startIndex, endIndex);
 
-    videosContainer.innerHTML = paginatedVideos.map(([videoId, state]) => {
+    videosContainer.innerHTML = paginatedVideos.map(([videoId, data]) => {
+      const state = data?.state || data;
+      const title = data?.title || '';
       const isShorts = videoId.length < 15;
       const videoUrl = isShorts 
         ? `https://www.youtube.com/shorts/${videoId}`
         : `https://www.youtube.com/watch?v=${videoId}`;
       const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
       
+      const displayTitle = title || (isShorts ? 'YouTube Shorts' : 'YouTube Video');
+      
       return `
         <div class="video-card ${state}" data-video-id="${videoId}">
           <div class="video-info">
             <img src="${thumbnailUrl}" alt="Video thumbnail" class="video-thumbnail" onerror="this.style.display='none'">
             <div class="video-details">
-              <div class="video-title">${isShorts ? 'YouTube Shorts' : 'YouTube Video'}</div>
+              <div class="video-title">${displayTitle}</div>
               <div class="video-id">${videoId}</div>
             </div>
           </div>
@@ -157,8 +187,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
       await loadHiddenVideos();
     } else if (action === 'toggle') {
-      const currentState = hiddenVideos[videoId];
-      hiddenVideos[videoId] = currentState === 'dimmed' ? 'hidden' : 'dimmed';
+      const currentData = hiddenVideos[videoId];
+      const currentState = currentData?.state || currentData;
+      const title = currentData?.title || '';
+      const newState = currentState === 'dimmed' ? 'hidden' : 'dimmed';
+      hiddenVideos[videoId] = {
+        state: newState,
+        title: title
+      };
       await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
       await loadHiddenVideos();
     } else if (action === 'view') {

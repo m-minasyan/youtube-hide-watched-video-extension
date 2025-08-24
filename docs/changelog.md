@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pagination for Hidden Videos Manager page with 12 videos per page
 - Navigation controls with Previous/Next buttons and page indicator
 - Automatic pagination reset when switching filters
+- Video titles are now captured and displayed in Hidden Videos Manager page
 
 ### Changed
 - Removed "Back to Settings" button from Hidden Videos Manager page for cleaner interface
@@ -24,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Centered action buttons (Hide, View on YouTube, Remove) in video cards on Hidden Videos Manager page
 
 ### Fixed
+- Hidden Videos Manager now displays actual video titles instead of generic "YouTube Shorts" or "YouTube Video" text
+- Fixed issue where "Toggle video visibility" was captured instead of actual video title
+- Improved title capture logic with multiple selector fallbacks
+- Video titles are now properly extracted and cleaned from metadata
+- Titles are automatically captured for previously hidden videos when page loads
+- Added backwards compatibility for previously hidden videos
 - Individual Video Mode buttons now properly display the selected state on popup load
 - Improved initialization of Individual Mode settings to ensure one button is always selected
 - Fixed first installation to automatically select "Dimmed" as default Individual Mode

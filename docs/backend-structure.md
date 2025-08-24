@@ -73,6 +73,7 @@ Content Script <-> Background Script <-> Popup/Options
 - `messaging.send(message)` - Send messages between components
 - `detector.isWatched(video)` - Check if video is watched
 - `hider.hide(element)` - Hide video element
+- `saveHiddenVideo(videoId, state, title)` - Save hidden video with title
 
 ### Browser APIs Used
 - chrome.storage
