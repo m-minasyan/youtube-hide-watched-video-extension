@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Immediate visibility toggle for individually hidden videos - videos can now be unhidden without page reload
+- Real-time visual feedback when clicking the eye button to hide/unhide videos
 - Comprehensive unit test suite for business logic using Jest framework
 - Test coverage for settings initialization, video detection, hiding logic, theme management, and pagination
 - Test utilities for mocking Chrome APIs and DOM elements

@@ -29,9 +29,11 @@ This document describes the application flow for the YouTube Hide Watched Video 
 ### 5. Hiding Mechanism
 - Watched videos are processed according to user settings
 - Individual videos can be hidden/dimmed via eye icon
-- Visual feedback is provided for hidden content
-- User can toggle visibility if needed
+- Videos can be immediately unhidden by clicking the eye icon again (no page reload required)
+- Visual feedback is provided instantly for hidden/unhidden content
+- User can toggle visibility in real-time
 - Hidden videos are tracked and manageable
+- State changes are immediately reflected in the UI
 
 ## Technical Flow
 

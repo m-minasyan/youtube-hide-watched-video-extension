@@ -50,6 +50,8 @@ This document provides guidelines for frontend development of the YouTube Hide W
 - Preserve YouTube's native experience
 - Smooth animations
 - Respect user preferences
+- Immediate visual feedback for hide/unhide actions
+- Real-time state changes without page reload
 
 ## Styling Guidelines
 

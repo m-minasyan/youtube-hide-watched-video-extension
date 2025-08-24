@@ -243,6 +243,16 @@
       if (nextState === 'dimmed') button.classList.add('dimmed');
       if (nextState === 'hidden') button.classList.add('hidden');
       
+      // Immediately update the video visibility
+      if (container) {
+        container.classList.remove('YT-HWV-INDIVIDUAL-DIMMED', 'YT-HWV-INDIVIDUAL-HIDDEN');
+        if (nextState === 'dimmed') {
+          container.classList.add('YT-HWV-INDIVIDUAL-DIMMED');
+        } else if (nextState === 'hidden') {
+          container.classList.add('YT-HWV-INDIVIDUAL-HIDDEN');
+        }
+      }
+      
       applyIndividualHiding();
     });
     
@@ -360,10 +370,13 @@
     Object.entries(settings.hiddenVideos).forEach(([videoId, data]) => {
       const state = data?.state || data;
       
+      // Skip normal state videos (they should be visible)
+      if (state === 'normal') return;
+      
       // Find by data attribute
       const elements = document.querySelectorAll(`[data-video-id="${videoId}"]`);
       elements.forEach(element => {
-        const container = element.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model');
+        const container = element.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model');
         if (container) {
           if (state === 'dimmed') {
             container.classList.add('YT-HWV-INDIVIDUAL-DIMMED');
@@ -377,7 +390,7 @@
       const links = document.querySelectorAll(`a[href*="/watch?v=${videoId}"], a[href*="/shorts/${videoId}"]`);
       links.forEach(link => {
         // Support both old and new container types
-        const container = link.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model');
+        const container = link.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model');
         if (container) {
           if (state === 'dimmed') {
             container.classList.add('YT-HWV-INDIVIDUAL-DIMMED');
