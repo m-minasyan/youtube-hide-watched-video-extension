@@ -364,6 +364,17 @@ describe('Business Logic - Performance Optimization', () => {
 
 describe('Business Logic - Error Handling', () => {
   describe('Safe Storage Operations', () => {
+    let originalConsoleError;
+
+    beforeEach(() => {
+      originalConsoleError = console.error;
+      console.error = jest.fn();
+    });
+
+    afterEach(() => {
+      console.error = originalConsoleError;
+    });
+
     const safeStorageGet = async (key, defaultValue = null) => {
       try {
         const result = await chrome.storage.sync.get(key);
@@ -401,7 +412,6 @@ describe('Business Logic - Error Handling', () => {
 
     test('should return default value on storage error', async () => {
       chrome.storage.sync.get.mockRejectedValue(new Error('Storage error'));
-      console.error = jest.fn();
       
       const value = await safeStorageGet(STORAGE_KEYS.THRESHOLD, 10);
       expect(value).toBe(10);
@@ -426,6 +436,17 @@ describe('Business Logic - Error Handling', () => {
   });
 
   describe('DOM Operation Safety', () => {
+    let originalConsoleError;
+
+    beforeEach(() => {
+      originalConsoleError = console.error;
+      console.error = jest.fn();
+    });
+
+    afterEach(() => {
+      console.error = originalConsoleError;
+    });
+
     const safeQuerySelector = (parent, selector) => {
       try {
         return parent.querySelector(selector);
@@ -456,7 +477,6 @@ describe('Business Logic - Error Handling', () => {
 
     test('should return null on invalid selector', () => {
       const parent = document.createElement('div');
-      console.error = jest.fn();
       
       const result = safeQuerySelector(parent, '!!!invalid');
       expect(result).toBeNull();

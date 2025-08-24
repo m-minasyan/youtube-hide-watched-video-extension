@@ -19,13 +19,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `messagingAndMigration.test.js` - Message passing, URL section detection, data migration
   - `domManipulation.test.js` - DOM manipulation, video element detection, eye button management
   - `advancedBusinessLogic.test.js` - Debouncing, storage synchronization, mutation observers, performance optimization, error handling
-- 171 unit tests covering all core business logic areas
+  - `coreBusinessLogic.test.js` - Core video detection, title extraction, state management, section detection, settings validation, cache management, error recovery
+  - `integrationTests.test.js` - Component communication, storage synchronization, multi-tab sync, complete workflows
+  - `edgeCases.test.js` - Concurrent operations, large data handling, DOM mutations, network failures, memory management
+  - `performanceTests.test.js` - Debouncing performance, DOM query optimization, caching, memory leak prevention, batch processing
+- 234 unit tests covering all core business logic areas with focus on:
+  - Real implementation testing rather than isolated functions
+  - Integration between components
+  - Edge cases and error scenarios
+  - Performance optimization strategies
+  - Memory management and leak prevention
 - Pagination for Hidden Videos Manager page with 12 videos per page
 - Navigation controls with Previous/Next buttons and page indicator
 - Automatic pagination reset when switching filters
 - Video titles are now captured and displayed in Hidden Videos Manager page
 - Automatic theme detection based on system/Chrome preferences (uses 'auto' as default)
 - Comprehensive YouTube DOM structure analysis documentation (docs/youtube-dom-analysis.md) for future automation and feature development
+
+### Fixed
+- Suppressed console.error outputs in test suite for cleaner test results
+  - Added proper console.error mocking with setup/teardown in error handling tests
+  - Fixed console.error outputs in coreBusinessLogic.test.js and advancedBusinessLogic.test.js
+  - Tests now run cleanly without displaying expected error messages from error handling scenarios
 
 ### Changed
 - Theme now defaults to 'auto' which detects system preference on popup open
