@@ -7,6 +7,7 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 ```
 /
 ├── manifest.json           # Extension manifest configuration
+├── package.json           # Node.js dependencies and scripts
 ├── background.js          # Background script
 ├── content.js            # Content script for YouTube pages
 ├── popup.html           # Extension popup HTML
@@ -21,8 +22,17 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 │   ├── icon32.png   # 32x32 icon
 │   ├── icon48.png   # 48x48 icon
 │   └── icon128.png  # 128x128 icon
+├── tests/            # Unit tests
+│   ├── setup.js     # Jest setup and Chrome API mocks
+│   ├── testUtils.js # Test utilities and helpers
+│   ├── background.test.js # Background script tests
+│   ├── content.test.js    # Content script tests
+│   ├── popup.test.js      # Popup logic tests
+│   ├── hiddenVideos.test.js # Hidden videos manager tests
+│   └── cssClasses.test.js   # CSS class application tests
 ├── scripts/          # Build and utility scripts
-│   └── build-extension.sh # Creates Chrome Web Store package
+│   ├── build-extension.sh # Creates Chrome Web Store package
+│   └── run_tests_local.sh # Runs all tests
 ├── dist/            # Built extension packages (generated)
 │   └── *.zip       # Extension ZIP files for distribution
 └── docs/           # Documentation

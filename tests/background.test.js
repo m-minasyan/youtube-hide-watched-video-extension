@@ -1,0 +1,121 @@
+const { STORAGE_KEYS, DEFAULT_SETTINGS, mockChromeStorage } = require('./testUtils');
+
+describe('Background Script - Settings Initialization', () => {
+  let storageData;
+  let onInstalledCallback;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.resetModules();
+    storageData = mockChromeStorage();
+    
+    chrome.runtime.onInstalled.addListener.mockImplementation((callback) => {
+      onInstalledCallback = callback;
+    });
+    
+    require('../background.js');
+  });
+
+  test('should initialize default settings on extension install', async () => {
+    await onInstalledCallback({ reason: 'install' });
+
+    expect(chrome.storage.sync.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        [STORAGE_KEYS.THRESHOLD]: DEFAULT_SETTINGS.threshold,
+        [STORAGE_KEYS.INDIVIDUAL_MODE]: DEFAULT_SETTINGS.individualMode,
+        [STORAGE_KEYS.THEME]: 'auto'
+      })
+    );
+  });
+
+  test('should set default watched states for all sections', async () => {
+    await onInstalledCallback({ reason: 'install' });
+
+    const sections = ['misc', 'subscriptions', 'channel', 'watch', 'trending', 'playlist'];
+    
+    sections.forEach(section => {
+      expect(chrome.storage.sync.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          [`${STORAGE_KEYS.WATCHED_STATE}_${section}`]: 'normal'
+        })
+      );
+    });
+  });
+
+  test('should set default shorts states for all sections except playlist', async () => {
+    await onInstalledCallback({ reason: 'install' });
+
+    const sections = ['misc', 'subscriptions', 'channel', 'watch', 'trending'];
+    
+    sections.forEach(section => {
+      expect(chrome.storage.sync.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          [`${STORAGE_KEYS.SHORTS_STATE}_${section}`]: 'normal'
+        })
+      );
+    });
+    
+    expect(chrome.storage.sync.set).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        [`${STORAGE_KEYS.SHORTS_STATE}_playlist`]: expect.anything()
+      })
+    );
+  });
+
+  test('should not initialize settings on extension update', async () => {
+    await onInstalledCallback({ reason: 'update' });
+    
+    expect(chrome.storage.sync.set).not.toHaveBeenCalled();
+  });
+
+  test('should not initialize settings on browser update', async () => {
+    await onInstalledCallback({ reason: 'browser_update' });
+    
+    expect(chrome.storage.sync.set).not.toHaveBeenCalled();
+  });
+});
+
+describe('Background Script - Tab Updates', () => {
+  let onTabUpdatedCallback;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.resetModules();
+    
+    chrome.tabs.onUpdated.addListener.mockImplementation((callback) => {
+      onTabUpdatedCallback = callback;
+    });
+    
+    require('../background.js');
+  });
+
+  test('should send message to YouTube tabs when page completes loading', () => {
+    const tabId = 123;
+    const tab = { url: 'https://www.youtube.com/watch?v=test' };
+    
+    onTabUpdatedCallback(tabId, { status: 'complete' }, tab);
+    
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(
+      tabId,
+      { action: 'pageUpdated' }
+    );
+  });
+
+  test('should not send message to non-YouTube tabs', () => {
+    const tabId = 123;
+    const tab = { url: 'https://www.google.com' };
+    
+    onTabUpdatedCallback(tabId, { status: 'complete' }, tab);
+    
+    expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
+  });
+
+  test('should not send message when status is not complete', () => {
+    const tabId = 123;
+    const tab = { url: 'https://www.youtube.com/watch?v=test' };
+    
+    onTabUpdatedCallback(tabId, { status: 'loading' }, tab);
+    
+    expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
+  });
+});

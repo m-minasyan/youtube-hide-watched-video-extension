@@ -28,9 +28,11 @@ This document outlines the technology stack used in the YouTube Hide Watched Vid
 - **Babel**: JavaScript transpilation (if needed)
 
 ### Testing
-- **Jest**: Unit testing framework
-- **Puppeteer**: E2E testing
+- **Jest**: Unit testing framework (v29.7.0)
+- **jest-environment-jsdom**: DOM environment for Jest
+- **@testing-library/jest-dom**: Additional Jest matchers
 - **Chrome DevTools**: Manual testing and debugging
+- **Puppeteer**: E2E testing (planned)
 
 ### Code Quality
 - **ESLint**: JavaScript linting
@@ -61,8 +63,10 @@ This document outlines the technology stack used in the YouTube Hide Watched Vid
 - None (vanilla JavaScript preferred for performance)
 
 ### Development Dependencies
+- Jest (v29.7.0) - Testing framework
+- jest-environment-jsdom (v29.7.0) - DOM testing environment
+- @testing-library/jest-dom (v6.1.5) - Jest matchers
 - Build tools as listed above
-- Testing frameworks
 - Linting and formatting tools
 
 ## Browser Support

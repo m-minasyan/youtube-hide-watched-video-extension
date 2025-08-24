@@ -1,0 +1,36 @@
+{
+  "name": "youtube-hide-watched-video-extension",
+  "version": "2.2.0",
+  "description": "Browser extension to hide watched videos on YouTube",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.1.5",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "setupFilesAfterEnv": ["<rootDir>/tests/setup.js"],
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "*.js",
+      "!tests/**",
+      "!scripts/**",
+      "!dist/**"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 20,
+        "functions": 20,
+        "lines": 20,
+        "statements": 20
+      }
+    }
+  }
+}

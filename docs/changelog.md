@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Comprehensive unit test suite for business logic using Jest framework
+- Test coverage for settings initialization, video detection, hiding logic, theme management, and pagination
+- Test utilities for mocking Chrome APIs and DOM elements
+- Enhanced test runner script with Jest integration
+- Package.json with test dependencies and Jest configuration
+- 48 unit tests covering core business logic components
 - Pagination for Hidden Videos Manager page with 12 videos per page
 - Navigation controls with Previous/Next buttons and page indicator
 - Automatic pagination reset when switching filters

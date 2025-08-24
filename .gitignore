@@ -1,3 +1,12 @@
-icons/.DS_Store
+node_modules/
+dist/
+coverage/
 .DS_Store
-dist
+*.log
+npm-debug.log*
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+package-lock.json

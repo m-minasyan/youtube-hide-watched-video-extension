@@ -7,6 +7,7 @@ echo "🧪 Running Extension Tests..."
 echo "================================"
 
 ERRORS=0
+WARNINGS=0
 
 cd "$PROJECT_ROOT" || exit 1
 
@@ -79,6 +80,7 @@ check_js_syntax() {
 check_js_syntax "background.js"
 check_js_syntax "content.js"
 check_js_syntax "popup.js"
+check_js_syntax "hidden-videos.js"
 
 echo ""
 echo "🔍 Checking CSS syntax..."
@@ -88,34 +90,77 @@ if [ -f "popup.css" ]; then
         echo "✅ popup.css appears valid"
     else
         echo "⚠️  popup.css may contain issues (manual review recommended)"
+        ((WARNINGS++))
+    fi
+fi
+
+if [ -f "hidden-videos.css" ]; then
+    if ! grep -E '(^[^}]*$|{[^}]*$)' hidden-videos.css | grep -q ';;' ; then
+        echo "✅ hidden-videos.css appears valid"
+    else
+        echo "⚠️  hidden-videos.css may contain issues (manual review recommended)"
+        ((WARNINGS++))
     fi
 fi
 
 echo ""
 echo "🔍 Checking HTML structure..."
 
-if [ -f "popup.html" ]; then
-    if grep -q '<!DOCTYPE html>' popup.html && \
-       grep -q '<html' popup.html && \
-       grep -q '</html>' popup.html; then
-        echo "✅ popup.html has valid structure"
+check_html_structure() {
+    local file=$1
+    if [ -f "$file" ]; then
+        if grep -q '<!DOCTYPE html>' "$file" && \
+           grep -q '<html' "$file" && \
+           grep -q '</html>' "$file"; then
+            echo "✅ $file has valid structure"
+        else
+            echo "❌ $file missing basic HTML structure"
+            ((ERRORS++))
+        fi
+    fi
+}
+
+check_html_structure "popup.html"
+check_html_structure "hidden-videos.html"
+
+echo ""
+echo "🧪 Running Unit Tests..."
+echo "------------------------"
+
+if [ -f "package.json" ] && command -v npm &> /dev/null; then
+    echo "Installing test dependencies..."
+    npm install --silent 2>/dev/null || {
+        echo "⚠️  Failed to install dependencies. Running tests anyway..."
+        ((WARNINGS++))
+    }
+    
+    echo "Running Jest tests..."
+    if npm test 2>&1; then
+        echo "✅ All unit tests passed!"
     else
-        echo "❌ popup.html missing basic HTML structure"
+        echo "❌ Unit tests failed!"
         ((ERRORS++))
     fi
+else
+    echo "⚠️  Jest not configured or npm not available. Skipping unit tests."
+    ((WARNINGS++))
 fi
 
 echo ""
 echo "================================"
 
 if [ $ERRORS -eq 0 ]; then
-    echo "✨ All tests passed!"
+    if [ $WARNINGS -eq 0 ]; then
+        echo "✨ All tests passed!"
+    else
+        echo "✅ Tests passed with $WARNINGS warning(s)"
+    fi
     echo ""
     echo "📦 Ready to build extension package:"
     echo "   Run: ./scripts/build-extension.sh"
     exit 0
 else
-    echo "❌ Tests failed with $ERRORS error(s)"
+    echo "❌ Tests failed with $ERRORS error(s) and $WARNINGS warning(s)"
     echo ""
     echo "Please fix the errors above before building."
     exit 1
