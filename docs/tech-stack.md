@@ -33,6 +33,16 @@ This document outlines the technology stack used in the YouTube Hide Watched Vid
 - **@testing-library/jest-dom**: Additional Jest matchers
 - **Chrome DevTools**: Manual testing and debugging
 - **Puppeteer**: E2E testing (planned)
+- **Test Coverage**: 171+ unit tests covering all business logic areas
+  - Settings management and initialization
+  - Video detection and hiding logic
+  - Theme management and persistence
+  - Pagination and filtering
+  - Message passing between components
+  - DOM manipulation and mutation observers
+  - Storage synchronization
+  - Error handling and performance optimization
+  - Debouncing and caching mechanisms
 
 ### Code Quality
 - **ESLint**: JavaScript linting

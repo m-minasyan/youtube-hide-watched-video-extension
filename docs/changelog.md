@@ -13,7 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test utilities for mocking Chrome APIs and DOM elements
 - Enhanced test runner script with Jest integration
 - Package.json with test dependencies and Jest configuration
-- 48 unit tests covering core business logic components
+- Added extensive business logic test files:
+  - `businessLogic.test.js` - Settings management, video detection, hiding/dimming states, individual video management
+  - `themeAndPagination.test.js` - Theme auto-detection, switching, persistence, and pagination logic
+  - `messagingAndMigration.test.js` - Message passing, URL section detection, data migration
+  - `domManipulation.test.js` - DOM manipulation, video element detection, eye button management
+  - `advancedBusinessLogic.test.js` - Debouncing, storage synchronization, mutation observers, performance optimization, error handling
+- 171 unit tests covering all core business logic areas
 - Pagination for Hidden Videos Manager page with 12 videos per page
 - Navigation controls with Previous/Next buttons and page indicator
 - Automatic pagination reset when switching filters
