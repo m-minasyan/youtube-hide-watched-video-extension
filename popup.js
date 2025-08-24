@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const DEFAULT_SETTINGS = {
     threshold: 10,
-    theme: 'light',
+    theme: 'auto',
     individualMode: 'dimmed',
     states: {
       watched: {
@@ -60,7 +60,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function initTheme() {
     const result = await chrome.storage.sync.get(STORAGE_KEYS.THEME);
-    const theme = result[STORAGE_KEYS.THEME] || DEFAULT_SETTINGS.theme;
+    let theme = result[STORAGE_KEYS.THEME];
+    
+    if (!theme || theme === 'auto') {
+      const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      theme = isDarkMode ? 'dark' : 'light';
+      
+      if (!result[STORAGE_KEYS.THEME]) {
+        await saveSettings(STORAGE_KEYS.THEME, theme);
+      }
+    }
     
     if (theme === 'dark') {
       document.documentElement.setAttribute('data-theme', 'dark');

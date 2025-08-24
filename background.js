@@ -1,14 +1,16 @@
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   const STORAGE_KEYS = {
     THRESHOLD: 'YTHWV_THRESHOLD',
     WATCHED_STATE: 'YTHWV_STATE',
     SHORTS_STATE: 'YTHWV_STATE_SHORTS',
-    INDIVIDUAL_MODE: 'YTHWV_INDIVIDUAL_MODE'
+    INDIVIDUAL_MODE: 'YTHWV_INDIVIDUAL_MODE',
+    THEME: 'YTHWV_THEME'
   };
 
   const DEFAULT_SETTINGS = {
     threshold: 10,
     individualMode: 'dimmed',
+    theme: 'auto',
     states: {
       watched: {
         misc: 'normal',
@@ -28,12 +30,11 @@ chrome.runtime.onInstalled.addListener(async () => {
     }
   };
 
-  const currentSettings = await chrome.storage.sync.get(null);
-  
-  if (Object.keys(currentSettings).length === 0) {
+  if (details.reason === 'install') {
     const defaultData = {
       [STORAGE_KEYS.THRESHOLD]: DEFAULT_SETTINGS.threshold,
-      [STORAGE_KEYS.INDIVIDUAL_MODE]: DEFAULT_SETTINGS.individualMode
+      [STORAGE_KEYS.INDIVIDUAL_MODE]: DEFAULT_SETTINGS.individualMode,
+      [STORAGE_KEYS.THEME]: 'auto'
     };
     
     Object.keys(DEFAULT_SETTINGS.states.watched).forEach(section => {
@@ -45,7 +46,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     });
     
     await chrome.storage.sync.set(defaultData);
-    console.log('YouTube Hide Watched Videos: Default settings initialized');
+    console.log('YouTube Hide Watched Videos: Default settings initialized with auto theme');
   }
 });
 

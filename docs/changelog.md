@@ -12,8 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Navigation controls with Previous/Next buttons and page indicator
 - Automatic pagination reset when switching filters
 - Video titles are now captured and displayed in Hidden Videos Manager page
+- Automatic theme detection based on system/Chrome preferences (uses 'auto' as default)
 
 ### Changed
+- Theme now defaults to 'auto' which detects system preference on popup open
+- Theme detection happens in popup/hidden-videos pages using window.matchMedia API
 - Removed "Back to Settings" button from Hidden Videos Manager page for cleaner interface
 - Replaced single Quick Toggle with separate collapsible sections for Watched Videos and Shorts
 - Added individual Quick Toggle buttons for each section (Watched Videos and Shorts)

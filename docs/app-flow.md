@@ -8,7 +8,8 @@ This document describes the application flow for the YouTube Hide Watched Video 
 ### 1. Extension Installation
 - User installs the extension from the browser store
 - Extension icon appears in the browser toolbar
-- Default settings are applied
+- Default settings are applied with theme set to 'auto'
+- Theme automatically detected when popup opens based on system preference
 
 ### 2. First Time Setup
 - User clicks on extension icon

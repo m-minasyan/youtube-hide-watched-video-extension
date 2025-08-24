@@ -19,7 +19,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function initTheme() {
     const result = await chrome.storage.sync.get(STORAGE_KEYS.THEME);
-    const theme = result[STORAGE_KEYS.THEME] || 'light';
+    let theme = result[STORAGE_KEYS.THEME];
+    
+    if (!theme || theme === 'auto') {
+      const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      theme = isDarkMode ? 'dark' : 'light';
+      
+      if (!result[STORAGE_KEYS.THEME]) {
+        await chrome.storage.sync.set({ [STORAGE_KEYS.THEME]: theme });
+      }
+    }
     
     if (theme === 'dark') {
       document.documentElement.setAttribute('data-theme', 'dark');

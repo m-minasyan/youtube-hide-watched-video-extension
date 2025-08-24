@@ -41,6 +41,7 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 - Handles browser events
 - Coordinates between different parts of the extension
 - Manages persistent state
+- Sets default theme to 'auto' on installation
 
 ### Content Scripts
 - Injected into YouTube pages
