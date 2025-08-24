@@ -45,7 +45,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const result = await chrome.storage.sync.get(STORAGE_KEYS.INDIVIDUAL_MODE);
     let individualMode = result[STORAGE_KEYS.INDIVIDUAL_MODE];
     
-    if (individualMode === undefined || individualMode === null) {
+    if (!individualMode) {
       individualMode = DEFAULT_SETTINGS.individualMode;
       await saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE, individualMode);
     }
@@ -56,6 +56,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         button.classList.add('active');
       }
     });
+    
+    const hasActiveButton = Array.from(individualModeButtons).some(btn => btn.classList.contains('active'));
+    if (!hasActiveButton && individualModeButtons.length > 0) {
+      const dimmedButton = Array.from(individualModeButtons).find(btn => btn.dataset.mode === 'dimmed');
+      if (dimmedButton) {
+        dimmedButton.classList.add('active');
+        await saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE, 'dimmed');
+      }
+    }
   }
 
   async function initTheme() {
@@ -99,6 +108,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     thresholdValue.textContent = `${threshold}%`;
 
     modeButtons.forEach(button => {
+      if (button.classList.contains('individual-mode')) {
+        return;
+      }
+      
       const section = button.dataset.section;
       const type = button.dataset.type;
       const mode = button.dataset.mode;
@@ -294,8 +307,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       await chrome.storage.sync.set(defaultData);
       
       await initTheme();
-      await initIndividualMode();
       await loadSettings();
+      await initIndividualMode();
       
       chrome.tabs.query({url: '*://*.youtube.com/*'}, (tabs) => {
         tabs.forEach(tab => {
@@ -306,6 +319,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   await initTheme();
-  await initIndividualMode();
   await loadSettings();
+  await initIndividualMode();
 });

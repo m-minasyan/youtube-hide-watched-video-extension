@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Centered action buttons (Hide, View on YouTube, Remove) in video cards on Hidden Videos Manager page
 
 ### Fixed
+- Fixed Individual Mode "Dimmed" button not being selected by default on first installation
+- Fixed loadSettings() function interfering with Individual Mode button states
+- Individual Mode buttons are now properly excluded from regular mode button processing
+- Corrected initialization order to ensure Individual Mode is set after loading other settings
 - Hidden Videos Manager now displays actual video titles instead of generic "YouTube Shorts" or "YouTube Video" text
 - Fixed issue where "Toggle video visibility" was captured instead of actual video title
 - Improved title capture logic with multiple selector fallbacks
