@@ -55,26 +55,6 @@
         opacity: 0.3 !important;
       }
       
-      /* Show button fully on hover of its direct parent thumbnail */
-      yt-thumbnail-view-model:hover > .yt-hwv-eye-button,
-      ytd-thumbnail:hover > .yt-hwv-eye-button {
-        opacity: 1 !important;
-        background: rgba(0, 0, 0, 0.9) !important;
-        border: 1px solid rgba(255, 255, 255, 0.2) !important;
-      }
-      
-      /* Also show when hovering over the specific video container */
-      ytd-rich-item-renderer:hover yt-thumbnail-view-model > .yt-hwv-eye-button,
-      ytd-rich-item-renderer:hover ytd-thumbnail > .yt-hwv-eye-button,
-      yt-lockup-view-model:hover yt-thumbnail-view-model > .yt-hwv-eye-button,
-      ytd-video-renderer:hover ytd-thumbnail > .yt-hwv-eye-button,
-      ytd-grid-video-renderer:hover ytd-thumbnail > .yt-hwv-eye-button,
-      ytd-compact-video-renderer:hover ytd-thumbnail > .yt-hwv-eye-button {
-        opacity: 1 !important;
-        background: rgba(0, 0, 0, 0.9) !important;
-        border: 1px solid rgba(255, 255, 255, 0.2) !important;
-      }
-      
       .yt-hwv-eye-button:hover {
         opacity: 1 !important;
         background: rgba(0, 0, 0, 1) !important;

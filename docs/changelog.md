@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added MutationObserver to handle dynamic aria-hidden attribute changes
 - Fixed video cards height on Hidden Videos Manager page to properly fit content
 - Fixed theme toggle button on Hidden Videos Manager page showing both sun and moon icons in dark theme
+- Fixed eye icon blinking when hovering over video thumbnail - icon now only becomes visible when directly hovering over it
 
 ## [2.2.0] - 2025-01-23
 
