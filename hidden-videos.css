@@ -89,11 +89,21 @@ header {
 .theme-icon {
   width: 20px;
   height: 20px;
+}
+
+.sun-icon {
+  display: block;
+}
+
+.moon-icon {
   display: none;
 }
 
-[data-theme="dark"] .moon-icon,
-:not([data-theme]) .sun-icon {
+[data-theme="dark"] .sun-icon {
+  display: none;
+}
+
+[data-theme="dark"] .moon-icon {
   display: block;
 }
 
