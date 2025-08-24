@@ -4,12 +4,14 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     WATCHED_STATE: 'YTHWV_STATE',
     SHORTS_STATE: 'YTHWV_STATE_SHORTS',
     INDIVIDUAL_MODE: 'YTHWV_INDIVIDUAL_MODE',
+    INDIVIDUAL_MODE_ENABLED: 'YTHWV_INDIVIDUAL_MODE_ENABLED',
     THEME: 'YTHWV_THEME'
   };
 
   const DEFAULT_SETTINGS = {
     threshold: 10,
     individualMode: 'dimmed',
+    individualModeEnabled: true,
     theme: 'auto',
     states: {
       watched: {
@@ -34,6 +36,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     const defaultData = {
       [STORAGE_KEYS.THRESHOLD]: DEFAULT_SETTINGS.threshold,
       [STORAGE_KEYS.INDIVIDUAL_MODE]: DEFAULT_SETTINGS.individualMode,
+      [STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED]: DEFAULT_SETTINGS.individualModeEnabled,
       [STORAGE_KEYS.THEME]: 'auto'
     };
     

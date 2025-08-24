@@ -6,7 +6,8 @@
     WATCHED_STATE: 'YTHWV_STATE',
     SHORTS_STATE: 'YTHWV_STATE_SHORTS',
     HIDDEN_VIDEOS: 'YTHWV_HIDDEN_VIDEOS',
-    INDIVIDUAL_MODE: 'YTHWV_INDIVIDUAL_MODE'
+    INDIVIDUAL_MODE: 'YTHWV_INDIVIDUAL_MODE',
+    INDIVIDUAL_MODE_ENABLED: 'YTHWV_INDIVIDUAL_MODE_ENABLED'
   };
 
   let settings = {
@@ -14,7 +15,8 @@
     watchedStates: {},
     shortsStates: {},
     hiddenVideos: {},
-    individualMode: 'dimmed'
+    individualMode: 'dimmed',
+    individualModeEnabled: true
   };
 
   const logDebug = (...msgs) => {
@@ -90,6 +92,8 @@
     settings.threshold = result[STORAGE_KEYS.THRESHOLD] || 10;
     settings.hiddenVideos = result[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
     settings.individualMode = result[STORAGE_KEYS.INDIVIDUAL_MODE] || 'dimmed';
+    settings.individualModeEnabled = result[STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED] !== undefined ? 
+      result[STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED] : true;
     
     // Migrate old format to new format
     let needsMigration = false;
@@ -260,6 +264,18 @@
   }
   
   function addEyeButtons() {
+    // Check if Individual Mode is enabled
+    if (!settings.individualModeEnabled) {
+      // Remove existing eye buttons if Individual Mode is disabled
+      const existingButtons = document.querySelectorAll('.yt-hwv-eye-button');
+      existingButtons.forEach(button => button.remove());
+      
+      const thumbnails = document.querySelectorAll('.yt-hwv-has-eye-button');
+      thumbnails.forEach(thumbnail => thumbnail.classList.remove('yt-hwv-has-eye-button'));
+      
+      return;
+    }
+    
     // Support both old and new YouTube elements
     const thumbnails = document.querySelectorAll(
       'yt-thumbnail-view-model:not(.yt-hwv-has-eye-button), ' +
@@ -364,8 +380,14 @@
   }
   
   function applyIndividualHiding() {
+    // Remove all individual hiding classes first
     document.querySelectorAll('.YT-HWV-INDIVIDUAL-DIMMED').forEach(el => el.classList.remove('YT-HWV-INDIVIDUAL-DIMMED'));
     document.querySelectorAll('.YT-HWV-INDIVIDUAL-HIDDEN').forEach(el => el.classList.remove('YT-HWV-INDIVIDUAL-HIDDEN'));
+    
+    // Only apply individual hiding if the feature is enabled
+    if (!settings.individualModeEnabled) {
+      return;
+    }
     
     Object.entries(settings.hiddenVideos).forEach(([videoId, data]) => {
       const state = data?.state || data;

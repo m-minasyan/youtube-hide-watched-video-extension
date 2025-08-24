@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Individual Video Mode toggle switch to enable/disable the per-video hide/dim feature
+- Visual indicator and disable state for Individual Mode options when toggled off
+- Smooth transition animations for enabling/disabling Individual Mode options
+- Individual Mode enabled state is now persisted in storage
+- Automatic removal of eye buttons when Individual Mode is disabled
 - Immediate visibility toggle for individually hidden videos - videos can now be unhidden without page reload
 - Real-time visual feedback when clicking the eye button to hide/unhide videos
 - Comprehensive unit test suite for business logic using Jest framework

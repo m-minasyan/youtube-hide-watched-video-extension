@@ -23,13 +23,14 @@ This document provides guidelines for frontend development of the YouTube Hide W
 - Clean, modern design with gradient header
 - Theme toggle with sun/moon icons
 - Clear toggle switches with three states (Normal, Dimmed, Hidden)
-- Individual mode selector for per-video hiding
+- Individual Mode toggle switch to enable/disable per-video controls
+- Individual mode selector for per-video hiding (enabled/disabled based on toggle)
 - Collapsible sections for Watched Videos and Shorts with dropdown functionality
 - Separate Quick Toggle buttons for each section (Watched Videos and Shorts)
 - Link to Hidden Videos Manager
 - Intuitive icons and visual feedback
 - Responsive layout with 420px width
-- Smooth animations and transitions for dropdowns
+- Smooth animations and transitions for dropdowns and toggle switches
 
 ### Hidden Videos Manager
 - Full-page interface for managing hidden videos

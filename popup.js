@@ -8,6 +8,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const individualModeButtons = document.querySelectorAll('.individual-mode');
   const sectionHeaders = document.querySelectorAll('.section-header');
   const quickToggleButtons = document.querySelectorAll('.quick-btn-small');
+  const individualModeToggle = document.getElementById('individual-mode-toggle');
+  const individualModeOptions = document.getElementById('individual-mode-options');
 
   const STORAGE_KEYS = {
     THRESHOLD: 'YTHWV_THRESHOLD',
@@ -15,13 +17,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     SHORTS_STATE: 'YTHWV_STATE_SHORTS',
     THEME: 'YTHWV_THEME',
     HIDDEN_VIDEOS: 'YTHWV_HIDDEN_VIDEOS',
-    INDIVIDUAL_MODE: 'YTHWV_INDIVIDUAL_MODE'
+    INDIVIDUAL_MODE: 'YTHWV_INDIVIDUAL_MODE',
+    INDIVIDUAL_MODE_ENABLED: 'YTHWV_INDIVIDUAL_MODE_ENABLED'
   };
 
   const DEFAULT_SETTINGS = {
     threshold: 10,
     theme: 'auto',
     individualMode: 'dimmed',
+    individualModeEnabled: true,
     states: {
       watched: {
         misc: 'normal',
@@ -42,12 +46,30 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   async function initIndividualMode() {
-    const result = await chrome.storage.sync.get(STORAGE_KEYS.INDIVIDUAL_MODE);
+    const result = await chrome.storage.sync.get([
+      STORAGE_KEYS.INDIVIDUAL_MODE,
+      STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED
+    ]);
+    
     let individualMode = result[STORAGE_KEYS.INDIVIDUAL_MODE];
+    let individualModeEnabled = result[STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED];
+    
+    if (individualModeEnabled === undefined) {
+      individualModeEnabled = DEFAULT_SETTINGS.individualModeEnabled;
+      await saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED, individualModeEnabled);
+    }
     
     if (!individualMode) {
       individualMode = DEFAULT_SETTINGS.individualMode;
       await saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE, individualMode);
+    }
+    
+    individualModeToggle.checked = individualModeEnabled;
+    
+    if (individualModeEnabled) {
+      individualModeOptions.classList.remove('disabled');
+    } else {
+      individualModeOptions.classList.add('disabled');
     }
     
     individualModeButtons.forEach(button => {
@@ -271,6 +293,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
   
+  individualModeToggle.addEventListener('change', async () => {
+    const enabled = individualModeToggle.checked;
+    await saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED, enabled);
+    
+    if (enabled) {
+      individualModeOptions.classList.remove('disabled');
+    } else {
+      individualModeOptions.classList.add('disabled');
+    }
+  });
+  
   individualModeButtons.forEach(button => {
     button.addEventListener('click', async () => {
       const mode = button.dataset.mode;
@@ -293,7 +326,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const defaultData = {
         [STORAGE_KEYS.THRESHOLD]: DEFAULT_SETTINGS.threshold,
         [STORAGE_KEYS.THEME]: DEFAULT_SETTINGS.theme,
-        [STORAGE_KEYS.INDIVIDUAL_MODE]: DEFAULT_SETTINGS.individualMode
+        [STORAGE_KEYS.INDIVIDUAL_MODE]: DEFAULT_SETTINGS.individualMode,
+        [STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED]: DEFAULT_SETTINGS.individualModeEnabled
       };
       
       Object.keys(DEFAULT_SETTINGS.states.watched).forEach(section => {
