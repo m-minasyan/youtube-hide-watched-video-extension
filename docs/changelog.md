@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved UI organization with better visual hierarchy
 - Eye button on video thumbnails always visible with 30% opacity for better discoverability
 - Eye button now has tabindex="-1" to prevent keyboard focus issues
+- Centered action buttons (Hide, View on YouTube, Remove) in video cards on Hidden Videos Manager page
 
 ### Fixed
 - Individual Video Mode buttons now properly display the selected state on popup load
@@ -29,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed aria-hidden accessibility conflict when eye button is focused within aria-hidden parent elements
 - Added automatic removal of aria-hidden attribute from parent elements containing eye buttons to prevent focus trapping
 - Added MutationObserver to handle dynamic aria-hidden attribute changes
+- Fixed video cards height on Hidden Videos Manager page to properly fit content
 
 ## [2.2.0] - 2025-01-23
 

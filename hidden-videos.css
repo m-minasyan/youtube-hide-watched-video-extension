@@ -212,6 +212,7 @@ header {
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;
   min-height: 400px;
+  align-items: start;
 }
 
 .video-card {
@@ -221,6 +222,9 @@ header {
   padding: 12px;
   transition: var(--transition);
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  height: fit-content;
 }
 
 .video-card:hover {
@@ -278,7 +282,7 @@ header {
   margin-top: 12px;
   display: flex;
   gap: 8px;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
 .video-action-btn {
