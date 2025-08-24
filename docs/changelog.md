@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic pagination reset when switching filters
 - Video titles are now captured and displayed in Hidden Videos Manager page
 - Automatic theme detection based on system/Chrome preferences (uses 'auto' as default)
+- Comprehensive YouTube DOM structure analysis documentation (docs/youtube-dom-analysis.md) for future automation and feature development
 
 ### Changed
 - Theme now defaults to 'auto' which detects system preference on popup open
@@ -50,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed theme toggle button on Hidden Videos Manager page showing both sun and moon icons in dark theme
 - Fixed eye icon blinking when hovering over video thumbnail - icon now only becomes visible when directly hovering over it
 
-## [2.2.0] - 2025-01-23
+## [2.2.0] - 2025-08-23
 
 ### Added
 - Individual video hiding/dimming with eye icon on each video thumbnail
@@ -73,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Eye button compatibility with new YouTube thumbnail elements
 - Improved detection of video containers and thumbnails
 
-## [2.1.2] - 2025-01-23
+## [2.1.2] - 2025-08-23
 
 ### Fixed
 - Added support for new YouTube progress bar classes (ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment)
@@ -82,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for additional video container elements (ytm-video-with-context-renderer, ytm-item-section-renderer)
 - Plugin now correctly detects and hides watched videos on the main YouTube page
 
-## [2.1.1] - 2025-01-23
+## [2.1.1] - 2025-08-23
 
 ### Added
 - Build script for creating Chrome Web Store package (`scripts/build-extension.sh`)
@@ -96,7 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - More robust handling of reel-item-endpoint links
 - Added fallback selectors for different Shorts container variations
 
-## [2.1.0] - 2025-01-23
+## [2.1.0] - 2025-08-23
 
 ### Added
 - Dark theme support with toggle button in the header
