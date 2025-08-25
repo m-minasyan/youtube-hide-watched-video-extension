@@ -194,7 +194,7 @@ npm test
 
 ## 📝 Changelog
 
-### Version 2.2.0 (Latest)
+### Version 2.4.2 (Latest)
 - Added individual video hiding with eye icon
 - Implemented Hidden Videos Manager page
 - Added dark theme support with auto-detection
