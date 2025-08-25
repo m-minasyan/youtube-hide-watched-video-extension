@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Comprehensive README update with detailed feature descriptions, installation methods, usage guide, technical architecture overview, and complete project documentation
+
+### Added
 - Individual Video Mode toggle switch to enable/disable the per-video hide/dim feature
 - Visual indicator and disable state for Individual Mode options when toggled off
 - Smooth transition animations for enabling/disabling Individual Mode options
