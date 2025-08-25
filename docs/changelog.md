@@ -5,7 +5,7 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.4.0] - 2025-01-26
 
 ### Added
 - Comprehensive README update with detailed feature descriptions, installation methods, usage guide, technical architecture overview, and complete project documentation
