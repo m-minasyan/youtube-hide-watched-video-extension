@@ -282,28 +282,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   sectionHeaders.forEach(header => {
-    header.addEventListener('click', (e) => {
-      if (e.target.closest('.quick-btn-small')) return;
-      
-      const section = header.closest('.settings-section');
-      const content = section.querySelector('.collapsible-content');
-      
-      if (section.classList.contains('collapsed')) {
-        section.classList.remove('collapsed');
-        content.style.display = 'block';
-        setTimeout(() => {
-          content.style.maxHeight = '1000px';
-          content.style.opacity = '1';
-        }, 10);
-      } else {
-        content.style.maxHeight = '0';
-        content.style.opacity = '0';
-        setTimeout(() => {
-          section.classList.add('collapsed');
-          content.style.display = 'none';
-        }, 300);
-      }
-    });
+    const collapseBtn = header.querySelector('.collapse-btn');
+    if (collapseBtn) {
+      collapseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        
+        const section = header.closest('.settings-section');
+        const content = section.querySelector('.collapsible-content');
+        
+        if (section.classList.contains('collapsed')) {
+          section.classList.remove('collapsed');
+          content.style.display = 'block';
+          setTimeout(() => {
+            content.style.maxHeight = '1000px';
+            content.style.opacity = '1';
+          }, 10);
+        } else {
+          content.style.maxHeight = '0';
+          content.style.opacity = '0';
+          setTimeout(() => {
+            section.classList.add('collapsed');
+            content.style.display = 'none';
+          }, 300);
+        }
+      });
+    }
   });
 
   quickToggleButtons.forEach(button => {

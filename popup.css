@@ -404,7 +404,7 @@ footer {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
-  cursor: pointer;
+  cursor: default;
   user-select: none;
 }
 
@@ -460,7 +460,7 @@ footer {
 
 .collapse-btn {
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   padding: 4px;
   cursor: pointer;
   display: flex;
@@ -474,6 +474,7 @@ footer {
 .collapse-btn:hover {
   background: var(--bg-tertiary);
   color: var(--text-primary);
+  border-color: var(--border-color);
 }
 
 .collapse-icon {

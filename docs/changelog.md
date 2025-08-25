@@ -5,6 +5,14 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.2] - 2025-01-27
+
+### Changed
+- Modified dropdown behavior for Watched Videos and Shorts sections - dropdowns now only open via the collapse button (">") instead of clicking anywhere on the header
+- Improved UX by making the interaction more explicit and preventing accidental toggles
+- Updated section header cursor from pointer to default to better indicate clickable areas
+- Enhanced collapse button hover state with subtle border for better visual feedback
+
 ## [2.4.1] - 2025-01-27
 
 ### Fixed

@@ -30,6 +30,8 @@ This document provides guidelines for frontend development of the YouTube Hide W
 - Individual Mode toggle switch to enable/disable per-video controls
 - Individual mode selector for per-video hiding (enabled/disabled based on toggle)
 - Collapsible sections for Watched Videos and Shorts with dropdown functionality
+  - Dropdowns are controlled exclusively via collapse button (">") for explicit interaction
+  - Section headers have default cursor to indicate non-clickable areas
 - Separate Quick Toggle buttons for each section (Watched Videos and Shorts)
 - Link to Hidden Videos Manager
 - Intuitive icons and visual feedback
