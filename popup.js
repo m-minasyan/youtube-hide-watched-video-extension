@@ -218,10 +218,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? `${STORAGE_KEYS.WATCHED_STATE}_${section}`
         : `${STORAGE_KEYS.SHORTS_STATE}_${section}`;
       
-      await saveSettings(storageKey, mode);
-      
-      const allSettings = await chrome.storage.sync.get(null);
-      updateQuickToggleStates(allSettings);
+      saveSettings(storageKey, mode).then(async () => {
+        const allSettings = await chrome.storage.sync.get(null);
+        updateQuickToggleStates(allSettings);
+      }).catch(error => {
+        console.error('Failed to save settings:', error);
+        siblingButtons.forEach(btn => btn.classList.remove('active'));
+        loadSettings();
+      });
     });
   });
 
@@ -234,8 +238,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       updates[`${storageKey}_${section}`] = mode;
     });
     
-    await chrome.storage.sync.set(updates);
-    await loadSettings();
+    modeButtons.forEach(button => {
+      if (!button.classList.contains('individual-mode')) {
+        const btnType = button.dataset.type;
+        const btnMode = button.dataset.mode;
+        
+        if (btnType === type) {
+          if (btnMode === mode) {
+            button.classList.add('active');
+          } else {
+            button.classList.remove('active');
+          }
+        }
+      }
+    });
     
     quickToggleButtons.forEach(button => {
       if (button.dataset.toggleType === type) {
@@ -247,16 +263,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
     
-    chrome.tabs.query({url: '*://*.youtube.com/*'}, (tabs) => {
-      tabs.forEach(tab => {
-        Object.keys(updates).forEach(key => {
-          chrome.tabs.sendMessage(tab.id, {
-            action: 'settingsUpdated',
-            key: key,
-            value: mode
-          }).catch(() => {});
+    chrome.storage.sync.set(updates).then(() => {
+      chrome.tabs.query({url: '*://*.youtube.com/*'}, (tabs) => {
+        tabs.forEach(tab => {
+          Object.keys(updates).forEach(key => {
+            chrome.tabs.sendMessage(tab.id, {
+              action: 'settingsUpdated',
+              key: key,
+              value: mode
+            }).catch(() => {});
+          });
         });
       });
+    }).catch(error => {
+      console.error('Failed to save type mode settings:', error);
+      loadSettings();
     });
   }
 
@@ -289,19 +310,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     button.addEventListener('click', async () => {
       const type = button.dataset.toggleType;
       const mode = button.dataset.toggleMode;
-      await setTypeToMode(type, mode);
+      
+      quickToggleButtons.forEach(btn => {
+        if (btn.dataset.toggleType === type) {
+          btn.classList.remove('active');
+        }
+      });
+      button.classList.add('active');
+      
+      setTypeToMode(type, mode).catch(error => {
+        console.error('Failed to set type mode:', error);
+        loadSettings();
+      });
     });
   });
   
   individualModeToggle.addEventListener('change', async () => {
     const enabled = individualModeToggle.checked;
-    await saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED, enabled);
     
     if (enabled) {
       individualModeOptions.classList.remove('disabled');
     } else {
       individualModeOptions.classList.add('disabled');
     }
+    
+    saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED, enabled).catch(error => {
+      console.error('Failed to save individual mode toggle:', error);
+      individualModeToggle.checked = !enabled;
+      if (!enabled) {
+        individualModeOptions.classList.remove('disabled');
+      } else {
+        individualModeOptions.classList.add('disabled');
+      }
+    });
   });
   
   individualModeButtons.forEach(button => {
@@ -311,7 +352,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       individualModeButtons.forEach(btn => btn.classList.remove('active'));
       button.classList.add('active');
       
-      await saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE, mode);
+      saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE, mode).catch(error => {
+        console.error('Failed to save individual mode:', error);
+        initIndividualMode();
+      });
     });
   });
   

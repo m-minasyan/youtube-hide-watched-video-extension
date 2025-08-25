@@ -315,8 +315,8 @@ input[type="range"]::-moz-range-thumb:hover {
 .mode-btn.active {
   background: var(--primary-gradient);
   color: white;
-  box-shadow: var(--shadow-sm);
-  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  transform: scale(1.02);
 }
 
 .mode-btn.active::before {
@@ -446,8 +446,8 @@ footer {
   background: var(--primary-gradient);
   color: white;
   border-color: transparent;
-  font-weight: 600;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
+  transform: scale(1.05);
 }
 
 .quick-btn-small.active[data-toggle-mode="dimmed"] {

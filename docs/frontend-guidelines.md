@@ -16,6 +16,10 @@ This document provides guidelines for frontend development of the YouTube Hide W
 - Efficient selectors
 - Debounced event handlers
 - Lazy loading where appropriate
+- Immediate UI feedback before async operations
+- Non-blocking user interactions
+- Avoid font-weight changes in interactive states to prevent layout reflow
+- Use transform and shadow properties for visual feedback instead of layout-affecting properties
 
 ## UI Components
 
@@ -72,6 +76,7 @@ This document provides guidelines for frontend development of the YouTube Hide W
   - Dimmed state: Orange gradient
   - Hidden state: Red gradient
   - Dark theme optimized colors for reduced eye strain
+- Active states use shadow and transform effects for visual feedback without layout reflow
 
 ### Typography
 - System fonts for performance

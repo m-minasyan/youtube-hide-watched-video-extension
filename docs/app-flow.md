@@ -47,6 +47,8 @@ This document describes the application flow for the YouTube Hide Watched Video 
 2. Video element detection
 3. Watch status verification
 4. Hide/show decision making
+5. Immediate UI feedback on user interactions
+6. Asynchronous state persistence in background
 
 ### Background Script Operations
 1. Manages extension state

@@ -5,6 +5,16 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2025-01-27
+
+### Fixed
+- Fixed UI latency issue in popup interface where mode selection buttons had delayed visual feedback
+- Removed font-weight changes from active button states to eliminate layout reflow delays
+- Replaced bold text with enhanced visual indicators (shadow and subtle scale) for active buttons
+- Optimized button click handlers to provide immediate active state changes before async operations
+- Improved user experience with instantaneous UI response to all button interactions
+- Enhanced error handling to gracefully revert UI state on save failures
+
 ## [2.4.0] - 2025-01-26
 
 ### Added
