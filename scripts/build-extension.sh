@@ -23,6 +23,11 @@ cp popup.html "$BUILD_DIR/"
 cp popup.js "$BUILD_DIR/"
 cp popup.css "$BUILD_DIR/"
 
+# Include Hidden Videos Manager page files
+cp hidden-videos.html "$BUILD_DIR/"
+cp hidden-videos.js "$BUILD_DIR/"
+cp hidden-videos.css "$BUILD_DIR/"
+
 cp -r icons "$BUILD_DIR/"
 
 echo "✅ Files copied successfully"

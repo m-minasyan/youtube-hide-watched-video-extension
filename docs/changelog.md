@@ -5,6 +5,12 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.3] - 2025-09-05
+
+### Fixed
+- Packaged build now includes the Hidden Videos Manager page files (`hidden-videos.html`, `hidden-videos.css`, `hidden-videos.js`). This resolves `ERR_FILE_NOT_FOUND` when clicking “View Hidden Videos”.
+- Updated `scripts/build-extension.sh` to copy the Hidden Videos Manager assets into the build directory and ZIP package.
+
 ## [2.4.2] - 2025-01-27
 
 ### Changed

@@ -152,6 +152,13 @@ npm install
 npm test
 ```
 
+## 🩺 Troubleshooting
+
+- View Hidden Videos opens ERR_FILE_NOT_FOUND:
+  - Cause: An older build package missed bundling the Hidden Videos Manager page (`hidden-videos.html/css/js`).
+  - Status: Fixed in v2.4.3 by updating the build script to include these files.
+  - Fix locally: Reload the unpacked extension from the repo root or rebuild using `./scripts/build-extension.sh`, then click “Reload” in `chrome://extensions/`.
+
 ## 🔒 Privacy & Security
 
 This extension:
@@ -184,6 +191,8 @@ npm test
 # Build for distribution
 ./scripts/build-extension.sh
 ```
+
+The build script bundles all required assets, including the Hidden Videos Manager page (`hidden-videos.html`, `hidden-videos.css`, `hidden-videos.js`). If you previously saw ERR_FILE_NOT_FOUND when clicking “View Hidden Videos”, rebuild and reload the extension.
 
 ### Contributing
 1. Fork the repository
