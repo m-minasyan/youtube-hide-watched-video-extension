@@ -77,7 +77,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function loadHiddenVideos() {
     const cursorIndex = hiddenVideosState.currentPage - 1;
-    const cursor = hiddenVideosState.pageCursors[cursorIndex] || null;
+    const cursor = cursorIndex < hiddenVideosState.pageCursors.length ? hiddenVideosState.pageCursors[cursorIndex] : null;
     const stateFilter = hiddenVideosState.filter === 'all' ? null : hiddenVideosState.filter;
     const result = await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.GET_PAGE, {
       state: stateFilter,
@@ -86,7 +86,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     hiddenVideosState.items = Array.isArray(result?.items) ? result.items : [];
     hiddenVideosState.hasMore = Boolean(result?.hasMore);
-    hiddenVideosState.pageCursors[hiddenVideosState.currentPage] = result?.nextCursor || null;
+    if (hiddenVideosState.currentPage < hiddenVideosState.pageCursors.length) {
+      hiddenVideosState.pageCursors[hiddenVideosState.currentPage] = result?.nextCursor || null;
+    } else {
+      hiddenVideosState.pageCursors.push(result?.nextCursor || null);
+    }
     renderVideos();
   }
 
@@ -121,9 +125,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const totalPagesSpan = document.getElementById('total-pages');
     const totalVideos = getTotalVideosForCurrentFilter();
     let totalPages = Math.max(1, Math.ceil(Math.max(totalVideos, 0) / videosPerPage));
-    if (hiddenVideosState.hasMore && totalPages <= hiddenVideosState.currentPage) {
-      totalPages = hiddenVideosState.currentPage + 1;
-    }
     if (totalVideos === 0 && hiddenVideosState.items.length === 0) {
       paginationControls.style.display = 'none';
       return;
@@ -221,9 +222,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     await refreshStats();
     const totalVideos = getTotalVideosForCurrentFilter();
+    const itemsRemaining = hiddenVideosState.items.length - 1;
     const maxPages = Math.max(1, Math.ceil(Math.max(totalVideos, 0) / videosPerPage));
-    if (hiddenVideosState.currentPage > maxPages) {
-      hiddenVideosState.currentPage = maxPages;
+    if (hiddenVideosState.currentPage > maxPages || (itemsRemaining === 0 && hiddenVideosState.currentPage > 1)) {
+      hiddenVideosState.currentPage = Math.max(1, maxPages);
+      hiddenVideosState.pageCursors = hiddenVideosState.pageCursors.slice(0, hiddenVideosState.currentPage);
     }
     await loadHiddenVideos();
   }
@@ -271,9 +274,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   chrome.runtime.onMessage.addListener((message) => {
     if (message && message.type === 'HIDDEN_VIDEOS_EVENT') {
-      hiddenVideosState.pageCursors = [null];
-      hiddenVideosState.currentPage = 1;
-      refreshStats().then(() => loadHiddenVideos()).catch(() => {});
+      refreshStats().then(async () => {
+        const totalVideos = getTotalVideosForCurrentFilter();
+        const maxPages = Math.max(1, Math.ceil(Math.max(totalVideos, 0) / videosPerPage));
+        
+        if (hiddenVideosState.currentPage > maxPages && maxPages > 0) {
+          hiddenVideosState.currentPage = maxPages;
+          hiddenVideosState.pageCursors = hiddenVideosState.pageCursors.slice(0, hiddenVideosState.currentPage);
+        }
+        
+        await loadHiddenVideos();
+      }).catch(() => {});
     }
   });
 });

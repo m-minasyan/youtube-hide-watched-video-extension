@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed pagination issue in Hidden Videos Manager where deleting a video would incorrectly reset page cursors and create phantom pages
+- Improved pagination state management to properly maintain current page position after video deletion
+- Fixed cursor array management to preserve pagination state across operations
+- Removed logic that was incorrectly adding extra pages when hasMore flag was set
+- Ensured proper page redirect only when the current page becomes empty after deletion
 - Eliminated brief unhide flicker for individually hidden videos by preserving classes on unaffected cards during toggle operations.
 - Ensured the packaged build bundles the background service worker module directory so registration succeeds in production installs.
 - Prevented individual hide toggles from reverting when late IndexedDB reads resolve after user actions by tracking cache timestamps in the content script.
