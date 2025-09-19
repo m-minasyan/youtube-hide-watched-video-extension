@@ -87,35 +87,64 @@
   }
 
   async function loadSettings() {
-    const result = await chrome.storage.sync.get(null);
+    const [syncResult, localResult] = await Promise.all([
+      chrome.storage.sync.get(null),
+      chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS)
+    ]);
     
-    settings.threshold = result[STORAGE_KEYS.THRESHOLD] || 10;
-    settings.hiddenVideos = result[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
-    settings.individualMode = result[STORAGE_KEYS.INDIVIDUAL_MODE] || 'dimmed';
-    settings.individualModeEnabled = result[STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED] !== undefined ? 
-      result[STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED] : true;
+    settings.threshold = syncResult[STORAGE_KEYS.THRESHOLD] || 10;
+    settings.individualMode = syncResult[STORAGE_KEYS.INDIVIDUAL_MODE] || 'dimmed';
+    settings.individualModeEnabled = syncResult[STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED] !== undefined ? 
+      syncResult[STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED] : true;
     
-    // Migrate old format to new format
-    let needsMigration = false;
-    Object.entries(settings.hiddenVideos).forEach(([videoId, data]) => {
-      if (typeof data === 'string') {
-        settings.hiddenVideos[videoId] = {
-          state: data,
-          title: ''
-        };
-        needsMigration = true;
-      }
-    });
+    const syncHiddenVideos = syncResult[STORAGE_KEYS.HIDDEN_VIDEOS];
+    let hiddenVideos = localResult[STORAGE_KEYS.HIDDEN_VIDEOS];
+    let shouldPersist = false;
+    const now = Date.now();
     
-    if (needsMigration) {
-      await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: settings.hiddenVideos });
+    if ((!hiddenVideos || Object.keys(hiddenVideos).length === 0) && syncHiddenVideos) {
+      hiddenVideos = syncHiddenVideos;
+      shouldPersist = true;
+    }
+    
+    const normalizedHiddenVideos = {};
+    if (hiddenVideos) {
+      Object.entries(hiddenVideos).forEach(([videoId, data]) => {
+        if (typeof data === 'string') {
+          normalizedHiddenVideos[videoId] = {
+            state: data,
+            title: '',
+            updatedAt: now
+          };
+          shouldPersist = true;
+        } else {
+          normalizedHiddenVideos[videoId] = {
+            state: data.state,
+            title: data.title || '',
+            updatedAt: data.updatedAt || now
+          };
+          if (!data.updatedAt) {
+            shouldPersist = true;
+          }
+        }
+      });
+    }
+    
+    settings.hiddenVideos = normalizedHiddenVideos;
+    
+    if (shouldPersist) {
+      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: normalizedHiddenVideos });
+    }
+    
+    if (syncHiddenVideos) {
+      await chrome.storage.sync.remove(STORAGE_KEYS.HIDDEN_VIDEOS);
     }
     
     const sections = ['misc', 'subscriptions', 'channel', 'watch', 'trending', 'playlist'];
     sections.forEach(section => {
-      settings.watchedStates[section] = result[`${STORAGE_KEYS.WATCHED_STATE}_${section}`] || 'normal';
+      settings.watchedStates[section] = syncResult[`${STORAGE_KEYS.WATCHED_STATE}_${section}`] || 'normal';
       if (section !== 'playlist') {
-        settings.shortsStates[section] = result[`${STORAGE_KEYS.SHORTS_STATE}_${section}`] || 'normal';
+        settings.shortsStates[section] = syncResult[`${STORAGE_KEYS.SHORTS_STATE}_${section}`] || 'normal';
       }
     });
     
@@ -152,7 +181,7 @@
   async function saveHiddenVideo(videoId, state, title = null) {
     if (!videoId) return;
     
-    const result = await chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS);
+    const result = await chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS);
     const hiddenVideos = result[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
     
     if (state === 'normal') {
@@ -160,12 +189,13 @@
     } else {
       hiddenVideos[videoId] = {
         state: state,
-        title: title || hiddenVideos[videoId]?.title || ''
+        title: title || hiddenVideos[videoId]?.title || '',
+        updatedAt: Date.now()
       };
     }
     
     settings.hiddenVideos = hiddenVideos;
-    await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
+    await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
   }
   
   function createEyeButton(videoContainer, videoId) {

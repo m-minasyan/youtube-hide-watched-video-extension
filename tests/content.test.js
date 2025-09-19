@@ -148,7 +148,7 @@ describe('Content Script - Hidden Videos Management', () => {
   const saveHiddenVideo = async (videoId, state, title = null) => {
     if (!videoId) return;
     
-    const result = await chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS);
+    const result = await chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS);
     const hiddenVideos = result[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
     
     if (state === 'normal') {
@@ -160,14 +160,14 @@ describe('Content Script - Hidden Videos Management', () => {
       };
     }
     
-    await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
+    await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
     return hiddenVideos;
   };
 
   test('should save hidden video with state and title', async () => {
     const result = await saveHiddenVideo('video123', 'hidden', 'Test Video');
     
-    expect(chrome.storage.sync.set).toHaveBeenCalledWith({
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({
       [STORAGE_KEYS.HIDDEN_VIDEOS]: {
         'video123': {
           state: 'hidden',
@@ -178,13 +178,13 @@ describe('Content Script - Hidden Videos Management', () => {
   });
 
   test('should update existing video state', async () => {
-    storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = {
+    storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {
       'video123': { state: 'dimmed', title: 'Original Title' }
     };
     
     await saveHiddenVideo('video123', 'hidden');
     
-    expect(chrome.storage.sync.set).toHaveBeenCalledWith({
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({
       [STORAGE_KEYS.HIDDEN_VIDEOS]: {
         'video123': {
           state: 'hidden',
@@ -195,19 +195,40 @@ describe('Content Script - Hidden Videos Management', () => {
   });
 
   test('should remove video when state is normal', async () => {
-    storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = {
+    storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {
       'video123': { state: 'hidden', title: 'Test Video' }
     };
     
     await saveHiddenVideo('video123', 'normal');
     
-    expect(chrome.storage.sync.set).toHaveBeenCalledWith({
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({
       [STORAGE_KEYS.HIDDEN_VIDEOS]: {}
     });
   });
 
   test('should not save if videoId is null', async () => {
     await saveHiddenVideo(null, 'hidden');
-    expect(chrome.storage.sync.set).not.toHaveBeenCalled();
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+  });
+
+  test('should persist large hidden video datasets using local storage', async () => {
+    const largeSet = {};
+    for (let i = 0; i < 120; i++) {
+      largeSet[`video${i}`] = {
+        state: 'hidden',
+        title: 'x'.repeat(150)
+      };
+    }
+    storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = largeSet;
+
+    const result = await saveHiddenVideo('newVideo', 'hidden', 'y'.repeat(150));
+
+    expect(Object.keys(result)).toHaveLength(121);
+    expect(result['newVideo']).toEqual({ state: 'hidden', title: 'y'.repeat(150) });
+
+    const lastCall = chrome.storage.local.set.mock.calls[chrome.storage.local.set.mock.calls.length - 1][0];
+    const savedVideos = lastCall[STORAGE_KEYS.HIDDEN_VIDEOS];
+    expect(Object.keys(savedVideos)).toHaveLength(121);
+    expect(savedVideos['newVideo'].title.length).toBe(150);
   });
 });

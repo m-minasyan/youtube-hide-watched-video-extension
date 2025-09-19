@@ -369,6 +369,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   resetButton.addEventListener('click', async () => {
     if (confirm('Are you sure you want to reset all settings to default?')) {
       await chrome.storage.sync.clear();
+      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: {} });
       
       const defaultData = {
         [STORAGE_KEYS.THRESHOLD]: DEFAULT_SETTINGS.threshold,

@@ -60,34 +60,104 @@ function createMockVideoElement(options = {}) {
   return element;
 }
 
-function mockChromeStorage(data = {}) {
-  chrome.storage.sync.get.mockImplementation((keys) => {
+function mockChromeStorage(initial = {}) {
+  const syncData = { ...(initial.sync || {}) };
+  const localData = { ...(initial.local || {}) };
+
+  const resolveGet = (keys, store) => {
     if (Array.isArray(keys)) {
       const result = {};
       keys.forEach(key => {
-        if (data[key] !== undefined) {
-          result[key] = data[key];
+        if (store[key] !== undefined) {
+          result[key] = store[key];
         }
       });
-      return Promise.resolve(result);
-    } else if (keys === null) {
-      return Promise.resolve(data);
-    } else if (typeof keys === 'object') {
+      return result;
+    }
+    if (keys === null || keys === undefined) {
+      return { ...store };
+    }
+    if (typeof keys === 'object') {
       const result = {};
       Object.keys(keys).forEach(key => {
-        result[key] = data[key] !== undefined ? data[key] : keys[key];
+        result[key] = store[key] !== undefined ? store[key] : keys[key];
       });
-      return Promise.resolve(result);
+      return result;
     }
-    return Promise.resolve(data[keys] !== undefined ? { [keys]: data[keys] } : {});
+    return store[keys] !== undefined ? { [keys]: store[keys] } : {};
+  };
+
+  chrome.storage.sync.get.mockImplementation((keys, callback) => {
+    const result = resolveGet(keys, syncData);
+    if (typeof callback === 'function') {
+      callback(result);
+    }
+    return Promise.resolve(result);
   });
-  
-  chrome.storage.sync.set.mockImplementation((items) => {
-    Object.assign(data, items);
+
+  chrome.storage.sync.set.mockImplementation((items, callback) => {
+    Object.assign(syncData, items);
+    if (typeof callback === 'function') {
+      callback();
+    }
     return Promise.resolve();
   });
-  
-  return data;
+
+  chrome.storage.sync.remove.mockImplementation((keys, callback) => {
+    const entries = Array.isArray(keys) ? keys : [keys];
+    entries.forEach(key => {
+      delete syncData[key];
+    });
+    if (typeof callback === 'function') {
+      callback();
+    }
+    return Promise.resolve();
+  });
+
+  chrome.storage.sync.clear.mockImplementation((callback) => {
+    Object.keys(syncData).forEach(key => delete syncData[key]);
+    if (typeof callback === 'function') {
+      callback();
+    }
+    return Promise.resolve();
+  });
+
+  chrome.storage.local.get.mockImplementation((keys, callback) => {
+    const result = resolveGet(keys, localData);
+    if (typeof callback === 'function') {
+      callback(result);
+    }
+    return Promise.resolve(result);
+  });
+
+  chrome.storage.local.set.mockImplementation((items, callback) => {
+    Object.assign(localData, items);
+    if (typeof callback === 'function') {
+      callback();
+    }
+    return Promise.resolve();
+  });
+
+  chrome.storage.local.remove.mockImplementation((keys, callback) => {
+    const entries = Array.isArray(keys) ? keys : [keys];
+    entries.forEach(key => {
+      delete localData[key];
+    });
+    if (typeof callback === 'function') {
+      callback();
+    }
+    return Promise.resolve();
+  });
+
+  chrome.storage.local.clear.mockImplementation((callback) => {
+    Object.keys(localData).forEach(key => delete localData[key]);
+    if (typeof callback === 'function') {
+      callback();
+    }
+    return Promise.resolve();
+  });
+
+  return { sync: syncData, local: localData };
 }
 
 function setLocation(url) {

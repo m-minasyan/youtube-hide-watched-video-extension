@@ -37,7 +37,7 @@ describe('Business Logic - Settings Management', () => {
     });
 
     test('should handle partial settings correctly', async () => {
-      storageData[STORAGE_KEYS.THRESHOLD] = 50;
+      storageData.sync[STORAGE_KEYS.THRESHOLD] = 50;
       
       const loadSettings = async () => {
         const result = await chrome.storage.sync.get(null);
@@ -55,8 +55,8 @@ describe('Business Logic - Settings Management', () => {
 
   describe('Settings Reset', () => {
     test('should reset all settings to defaults', async () => {
-      storageData[STORAGE_KEYS.THRESHOLD] = 75;
-      storageData[STORAGE_KEYS.INDIVIDUAL_MODE] = 'hidden';
+      storageData.sync[STORAGE_KEYS.THRESHOLD] = 75;
+      storageData.sync[STORAGE_KEYS.INDIVIDUAL_MODE] = 'hidden';
       
       const resetSettings = async () => {
         await chrome.storage.sync.clear();
@@ -272,7 +272,7 @@ describe('Business Logic - Individual Video Management', () => {
     const saveHiddenVideo = async (videoId, state, title = null) => {
       if (!videoId) return;
       
-      const result = await chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS);
+      const result = await chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS);
       const hiddenVideos = result[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
       
       if (state === 'normal') {
@@ -284,14 +284,14 @@ describe('Business Logic - Individual Video Management', () => {
         };
       }
       
-      await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
+      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
       return hiddenVideos;
     };
 
     test('should save video with dimmed state', async () => {
       const result = await saveHiddenVideo('video123', 'dimmed', 'Test Video');
       
-      expect(chrome.storage.sync.set).toHaveBeenCalledWith({
+      expect(chrome.storage.local.set).toHaveBeenCalledWith({
         [STORAGE_KEYS.HIDDEN_VIDEOS]: {
           'video123': { state: 'dimmed', title: 'Test Video' }
         }
@@ -301,7 +301,7 @@ describe('Business Logic - Individual Video Management', () => {
     test('should save video with hidden state', async () => {
       const result = await saveHiddenVideo('video456', 'hidden', 'Another Video');
       
-      expect(chrome.storage.sync.set).toHaveBeenCalledWith({
+      expect(chrome.storage.local.set).toHaveBeenCalledWith({
         [STORAGE_KEYS.HIDDEN_VIDEOS]: {
           'video456': { state: 'hidden', title: 'Another Video' }
         }
@@ -309,25 +309,25 @@ describe('Business Logic - Individual Video Management', () => {
     });
 
     test('should remove video when state is normal', async () => {
-      storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = {
+      storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {
         'video789': { state: 'hidden', title: 'Old Video' }
       };
       
       await saveHiddenVideo('video789', 'normal');
       
-      expect(chrome.storage.sync.set).toHaveBeenCalledWith({
+      expect(chrome.storage.local.set).toHaveBeenCalledWith({
         [STORAGE_KEYS.HIDDEN_VIDEOS]: {}
       });
     });
 
     test('should preserve title when updating state', async () => {
-      storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = {
+      storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {
         'video111': { state: 'dimmed', title: 'Preserved Title' }
       };
       
       await saveHiddenVideo('video111', 'hidden');
       
-      expect(chrome.storage.sync.set).toHaveBeenCalledWith({
+      expect(chrome.storage.local.set).toHaveBeenCalledWith({
         [STORAGE_KEYS.HIDDEN_VIDEOS]: {
           'video111': { state: 'hidden', title: 'Preserved Title' }
         }
@@ -336,7 +336,7 @@ describe('Business Logic - Individual Video Management', () => {
 
     test('should not save if videoId is null', async () => {
       await saveHiddenVideo(null, 'hidden');
-      expect(chrome.storage.sync.set).not.toHaveBeenCalled();
+      expect(chrome.storage.local.set).not.toHaveBeenCalled();
     });
   });
 });

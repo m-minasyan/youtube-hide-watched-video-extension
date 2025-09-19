@@ -51,23 +51,49 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function loadHiddenVideos() {
-    const result = await chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS);
-    hiddenVideos = result[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
+    const [localResult, syncResult] = await Promise.all([
+      chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS),
+      chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS)
+    ]);
+    let storedVideos = localResult[STORAGE_KEYS.HIDDEN_VIDEOS];
+    const syncHiddenVideos = syncResult[STORAGE_KEYS.HIDDEN_VIDEOS];
+    let shouldPersist = false;
+    const now = Date.now();
     
-    // Migrate old format to new format
-    let needsMigration = false;
-    Object.entries(hiddenVideos).forEach(([videoId, data]) => {
-      if (typeof data === 'string') {
-        hiddenVideos[videoId] = {
-          state: data,
-          title: ''
-        };
-        needsMigration = true;
-      }
-    });
+    if ((!storedVideos || Object.keys(storedVideos).length === 0) && syncHiddenVideos) {
+      storedVideos = syncHiddenVideos;
+      shouldPersist = true;
+    }
     
-    if (needsMigration) {
-      await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
+    hiddenVideos = {};
+    if (storedVideos) {
+      Object.entries(storedVideos).forEach(([videoId, data]) => {
+        if (typeof data === 'string') {
+          hiddenVideos[videoId] = {
+            state: data,
+            title: '',
+            updatedAt: now
+          };
+          shouldPersist = true;
+        } else {
+          hiddenVideos[videoId] = {
+            state: data.state,
+            title: data.title || '',
+            updatedAt: data.updatedAt || now
+          };
+          if (!data.updatedAt) {
+            shouldPersist = true;
+          }
+        }
+      });
+    }
+    
+    if (shouldPersist) {
+      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
+    }
+    
+    if (syncHiddenVideos) {
+      await chrome.storage.sync.remove(STORAGE_KEYS.HIDDEN_VIDEOS);
     }
     
     updateStats();
@@ -193,7 +219,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     if (action === 'remove') {
       delete hiddenVideos[videoId];
-      await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
+      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
       await loadHiddenVideos();
     } else if (action === 'toggle') {
       const currentData = hiddenVideos[videoId];
@@ -202,9 +228,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       const newState = currentState === 'dimmed' ? 'hidden' : 'dimmed';
       hiddenVideos[videoId] = {
         state: newState,
-        title: title
+        title: title,
+        updatedAt: Date.now()
       };
-      await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
+      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
       await loadHiddenVideos();
     } else if (action === 'view') {
       const isShorts = videoId.length < 15;
@@ -250,7 +277,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   clearAllBtn.addEventListener('click', async () => {
     if (confirm('Are you sure you want to remove all hidden videos?')) {
-      await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: {} });
+      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: {} });
+      await chrome.storage.sync.remove(STORAGE_KEYS.HIDDEN_VIDEOS);
       await loadHiddenVideos();
     }
   });
@@ -259,7 +287,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadHiddenVideos();
   
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'sync' && changes[STORAGE_KEYS.HIDDEN_VIDEOS]) {
+    if (area === 'local' && changes[STORAGE_KEYS.HIDDEN_VIDEOS]) {
       loadHiddenVideos();
     }
   });

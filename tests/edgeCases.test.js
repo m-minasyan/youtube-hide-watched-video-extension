@@ -29,7 +29,7 @@ describe('Edge Cases and Complex Scenarios', () => {
       const processVideo = async (videoId, delay) => {
         await new Promise(resolve => setTimeout(resolve, delay));
         
-        const current = await chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS);
+        const current = await chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS);
         const videos = current[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
         
         videos[videoId] = {
@@ -37,7 +37,7 @@ describe('Edge Cases and Complex Scenarios', () => {
           timestamp: Date.now()
         };
         
-        await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: videos });
+        await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: videos });
         return videos;
       };
       
@@ -63,8 +63,8 @@ describe('Edge Cases and Complex Scenarios', () => {
         };
       }
       
-      await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: largeVideoSet });
-      const result = await chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS);
+      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: largeVideoSet });
+      const result = await chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS);
       
       expect(Object.keys(result[STORAGE_KEYS.HIDDEN_VIDEOS])).toHaveLength(1000);
     });
@@ -140,15 +140,13 @@ describe('Error Recovery and Resilience', () => {
     test('should gracefully handle storage quota exceeded', async () => {
       const handleStorageError = async (data) => {
         try {
-          await chrome.storage.sync.set(data);
+          await chrome.storage.local.set(data);
           return { success: true };
         } catch (error) {
           if (error.message.includes('QUOTA_BYTES')) {
-            // Fallback: Remove old entries
-            const current = await chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS);
+            const current = await chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS);
             const videos = current[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
             
-            // Remove oldest 25% of videos
             const sorted = Object.entries(videos).sort((a, b) => 
               (a[1].timestamp || 0) - (b[1].timestamp || 0)
             );
@@ -158,18 +156,18 @@ describe('Error Recovery and Resilience', () => {
               delete videos[sorted[i][0]];
             }
             
-            await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: videos });
+            await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: videos });
             return { success: true, cleaned: toRemove };
           }
           return { success: false, error: error.message };
         }
       };
       
-      chrome.storage.sync.set.mockRejectedValueOnce(
+      chrome.storage.local.set.mockRejectedValueOnce(
         new Error('QUOTA_BYTES quota exceeded')
       );
       
-      storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = {
+      storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {
         'old1': { state: 'hidden', timestamp: 1000 },
         'old2': { state: 'dimmed', timestamp: 2000 },
         'new1': { state: 'hidden', timestamp: 9000 },
@@ -212,9 +210,9 @@ describe('Error Recovery and Resilience', () => {
         }
       };
       
-      storageData[STORAGE_KEYS.THRESHOLD] = 'invalid';
-      storageData[STORAGE_KEYS.INDIVIDUAL_MODE] = 'corrupted';
-      storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = 'not an object';
+      storageData.sync[STORAGE_KEYS.THRESHOLD] = 'invalid';
+      storageData.sync[STORAGE_KEYS.INDIVIDUAL_MODE] = 'corrupted';
+      storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = 'not an object';
       
       const settings = await loadSafeSettings();
       

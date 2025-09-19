@@ -51,7 +51,7 @@ describe('Business Logic - Theme Management', () => {
     });
 
     test('should respect manually set theme over auto', async () => {
-      storageData[STORAGE_KEYS.THEME] = 'dark';
+      storageData.sync[STORAGE_KEYS.THEME] = 'dark';
       window.matchMedia = jest.fn(() => ({ matches: false }));
       
       const theme = await detectAndApplyTheme();
@@ -112,7 +112,7 @@ describe('Business Logic - Theme Management', () => {
     });
 
     test('should handle theme reset to auto', async () => {
-      storageData[STORAGE_KEYS.THEME] = 'dark';
+      storageData.sync[STORAGE_KEYS.THEME] = 'dark';
       
       await chrome.storage.sync.set({ [STORAGE_KEYS.THEME]: 'auto' });
       

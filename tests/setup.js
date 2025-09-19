@@ -22,11 +22,23 @@ global.chrome = {
         }
         return Promise.resolve();
       }),
+      remove: jest.fn(() => Promise.resolve()),
       clear: jest.fn(() => Promise.resolve())
     },
     local: {
-      get: jest.fn(() => Promise.resolve({})),
-      set: jest.fn(() => Promise.resolve()),
+      get: jest.fn((keys, callback) => {
+        if (callback) {
+          callback({});
+        }
+        return Promise.resolve({});
+      }),
+      set: jest.fn((data, callback) => {
+        if (callback) {
+          callback();
+        }
+        return Promise.resolve();
+      }),
+      remove: jest.fn(() => Promise.resolve()),
       clear: jest.fn(() => Promise.resolve())
     }
   },

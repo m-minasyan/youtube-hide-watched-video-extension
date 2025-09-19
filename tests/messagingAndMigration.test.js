@@ -285,7 +285,7 @@ describe('Business Logic - Data Migration', () => {
 
   describe('Hidden Videos Format Migration', () => {
     const migrateHiddenVideos = async () => {
-      const result = await chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS);
+      const result = await chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS);
       let hiddenVideos = result[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
       let needsMigration = false;
       
@@ -300,14 +300,14 @@ describe('Business Logic - Data Migration', () => {
       });
       
       if (needsMigration) {
-        await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
+        await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
       }
       
       return { hiddenVideos, migrated: needsMigration };
     };
 
     test('should migrate string format to object format', async () => {
-      storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = {
+      storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {
         'abc123': 'hidden',
         'def456': 'dimmed'
       };
@@ -320,18 +320,18 @@ describe('Business Logic - Data Migration', () => {
     });
 
     test('should not migrate if already in new format', async () => {
-      storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = {
+      storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {
         'abc123': { state: 'hidden', title: 'Video Title' }
       };
       
       const result = await migrateHiddenVideos();
       
       expect(result.migrated).toBe(false);
-      expect(chrome.storage.sync.set).not.toHaveBeenCalled();
+      expect(chrome.storage.local.set).not.toHaveBeenCalled();
     });
 
     test('should handle mixed formats correctly', async () => {
-      storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = {
+      storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {
         'abc123': 'hidden',
         'def456': { state: 'dimmed', title: 'Existing Title' },
         'ghi789': 'dimmed'
@@ -346,7 +346,7 @@ describe('Business Logic - Data Migration', () => {
     });
 
     test('should handle empty hidden videos', async () => {
-      storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = {};
+      storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {};
       
       const result = await migrateHiddenVideos();
       

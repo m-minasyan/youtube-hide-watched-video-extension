@@ -187,30 +187,47 @@ describe('Integration Tests - Full User Workflows', () => {
 
   describe('Settings Migration Workflow', () => {
     const migrateSettings = async () => {
-      const oldData = await chrome.storage.sync.get(null);
+      const [syncData, localData] = await Promise.all([
+        chrome.storage.sync.get(null),
+        chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS)
+      ]);
       const newData = {};
+      const syncHiddenVideos = syncData[STORAGE_KEYS.HIDDEN_VIDEOS] || syncData.hiddenVideos;
+      let sourceHiddenVideos = localData[STORAGE_KEYS.HIDDEN_VIDEOS];
+      const now = Date.now();
       
-      // Migrate old format to new format
-      if (oldData.hiddenVideos) {
+      if ((!sourceHiddenVideos || Object.keys(sourceHiddenVideos).length === 0) && syncHiddenVideos) {
+        sourceHiddenVideos = syncHiddenVideos;
+      }
+      
+      if (sourceHiddenVideos) {
         const migrated = {};
-        
-        for (const [videoId, value] of Object.entries(oldData.hiddenVideos)) {
+        Object.entries(sourceHiddenVideos).forEach(([videoId, value]) => {
           if (typeof value === 'string') {
             migrated[videoId] = {
               state: value,
               title: '',
-              timestamp: Date.now()
+              updatedAt: now
             };
           } else {
-            migrated[videoId] = value;
+            migrated[videoId] = {
+              state: value.state,
+              title: value.title || '',
+              updatedAt: value.updatedAt || now
+            };
           }
-        }
-        
+        });
         newData[STORAGE_KEYS.HIDDEN_VIDEOS] = migrated;
+        await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: migrated });
+      } else {
+        await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: {} });
       }
       
-      // Migrate theme settings
-      if (!oldData[STORAGE_KEYS.THEME]) {
+      if (syncHiddenVideos) {
+        await chrome.storage.sync.remove([STORAGE_KEYS.HIDDEN_VIDEOS, 'hiddenVideos']);
+      }
+      
+      if (!syncData[STORAGE_KEYS.THEME]) {
         newData[STORAGE_KEYS.THEME] = 'auto';
       }
       
@@ -219,7 +236,7 @@ describe('Integration Tests - Full User Workflows', () => {
     };
 
     test('should migrate old video format to new format', async () => {
-      storageData.hiddenVideos = {
+      storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {
         'video1': 'dimmed',
         'video2': 'hidden'
       };
@@ -228,7 +245,7 @@ describe('Integration Tests - Full User Workflows', () => {
       
       expect(migrated[STORAGE_KEYS.HIDDEN_VIDEOS]['video1']).toHaveProperty('state', 'dimmed');
       expect(migrated[STORAGE_KEYS.HIDDEN_VIDEOS]['video1']).toHaveProperty('title', '');
-      expect(migrated[STORAGE_KEYS.HIDDEN_VIDEOS]['video1']).toHaveProperty('timestamp');
+      expect(migrated[STORAGE_KEYS.HIDDEN_VIDEOS]['video1']).toHaveProperty('updatedAt');
     });
 
     test('should add default theme if missing', async () => {

@@ -41,7 +41,7 @@ describe('Popup - Theme Management', () => {
   });
 
   test('should respect saved theme preference', async () => {
-    storageData[STORAGE_KEYS.THEME] = 'light';
+    storageData.sync[STORAGE_KEYS.THEME] = 'light';
     
     const theme = await initTheme();
     
@@ -103,7 +103,7 @@ describe('Popup - Individual Mode Management', () => {
   });
 
   test('should preserve existing individual mode', async () => {
-    storageData[STORAGE_KEYS.INDIVIDUAL_MODE] = 'hidden';
+    storageData.sync[STORAGE_KEYS.INDIVIDUAL_MODE] = 'hidden';
     
     const mode = await initIndividualMode();
     

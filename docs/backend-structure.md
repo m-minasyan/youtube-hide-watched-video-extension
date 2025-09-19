@@ -64,6 +64,7 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 - Settings persistence
 - Cache management
 - Cross-tab synchronization
+- Hidden video metadata persisted in `chrome.storage.local` with automatic migration from legacy sync storage
 
 ## Communication Flow
 

@@ -9,7 +9,7 @@ describe('Hidden Videos Manager - Data Migration', () => {
   });
 
   const migrateHiddenVideos = async () => {
-    const result = await chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS);
+    const result = await chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS);
     let hiddenVideos = result[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
     
     let needsMigration = false;
@@ -24,21 +24,21 @@ describe('Hidden Videos Manager - Data Migration', () => {
     });
     
     if (needsMigration) {
-      await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
+      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
     }
     
     return hiddenVideos;
   };
 
   test('should migrate old string format to new object format', async () => {
-    storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = {
+    storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {
       'video1': 'hidden',
       'video2': 'dimmed'
     };
     
     const migrated = await migrateHiddenVideos();
     
-    expect(chrome.storage.sync.set).toHaveBeenCalledWith({
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({
       [STORAGE_KEYS.HIDDEN_VIDEOS]: {
         'video1': { state: 'hidden', title: '' },
         'video2': { state: 'dimmed', title: '' }
@@ -47,24 +47,24 @@ describe('Hidden Videos Manager - Data Migration', () => {
   });
 
   test('should not migrate if already in new format', async () => {
-    storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = {
+    storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {
       'video1': { state: 'hidden', title: 'Test Video' }
     };
     
     await migrateHiddenVideos();
     
-    expect(chrome.storage.sync.set).not.toHaveBeenCalled();
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
   });
 
   test('should handle mixed format correctly', async () => {
-    storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = {
+    storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {
       'video1': 'hidden',
       'video2': { state: 'dimmed', title: 'Existing Video' }
     };
     
     const migrated = await migrateHiddenVideos();
     
-    expect(chrome.storage.sync.set).toHaveBeenCalledWith({
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({
       [STORAGE_KEYS.HIDDEN_VIDEOS]: {
         'video1': { state: 'hidden', title: '' },
         'video2': { state: 'dimmed', title: 'Existing Video' }

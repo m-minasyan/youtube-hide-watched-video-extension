@@ -203,7 +203,7 @@ describe('Core Business Logic - Hiding and State Management', () => {
 
   describe('Individual Video Management', () => {
     const saveIndividualVideo = async (videoId, state, title = '') => {
-      const result = await chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS);
+      const result = await chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS);
       const hiddenVideos = result[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
       
       if (state === 'normal') {
@@ -212,7 +212,7 @@ describe('Core Business Logic - Hiding and State Management', () => {
         hiddenVideos[videoId] = { state, title };
       }
       
-      await chrome.storage.sync.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
+      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
       return hiddenVideos;
     };
 
@@ -226,7 +226,7 @@ describe('Core Business Logic - Hiding and State Management', () => {
     });
 
     test('should remove video when state is normal', async () => {
-      storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = {
+      storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {
         'video123': { state: 'hidden', title: 'Test' }
       };
       
@@ -235,7 +235,7 @@ describe('Core Business Logic - Hiding and State Management', () => {
     });
 
     test('should update existing video state', async () => {
-      storageData[STORAGE_KEYS.HIDDEN_VIDEOS] = {
+      storageData.local[STORAGE_KEYS.HIDDEN_VIDEOS] = {
         'video123': { state: 'dimmed', title: 'Original' }
       };
       

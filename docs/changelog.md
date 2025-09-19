@@ -5,6 +5,13 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.4] - 2025-09-19
+
+### Fixed
+- Migrated individually hidden video storage to `chrome.storage.local` to eliminate the previous ~62 item cap caused by sync storage quotas.
+- Added automatic migration and metadata normalization for legacy hidden video records in both content script and Hidden Videos Manager.
+- Expanded automated coverage to verify large-volume hidden video persistence and regression scenarios.
+
 ## [2.4.3] - 2025-09-05
 
 ### Fixed
