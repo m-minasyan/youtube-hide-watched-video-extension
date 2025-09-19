@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2025-09-19
+
+### Added
+
+- IndexedDB-backed storage layer for individually hidden videos with batched APIs and pagination support.
+- Background service worker messaging that fronts all hidden video CRUD operations and keeps UI caches in sync across tabs.
+- Developer utilities for exporting or clearing the hidden video database via `hidden-videos-db-tools.js`.
+
+### Changed
+
+- Hidden video persistence no longer relies on `chrome.storage`; legacy data is migrated into IndexedDB on startup and cleaned up after success.
+- Content scripts and management UI now fetch hidden video state through the new message-based API with in-memory caching for visible items.
+- Automated test suite expanded to cover IndexedDB behaviors and service messaging.
+
 ### Fixed
 
 - Fixed pagination issue in Hidden Videos Manager where deleting a video would incorrectly reset page cursors and create phantom pages
@@ -21,20 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hardened background and popup messaging by replacing the service worker module loader with a cached static import that satisfies ServiceWorkerGlobalScope restrictions without sacrificing async resiliency.
 - Added background initialization regression tests to ensure the service worker eagerly warms the hidden videos store on load and runtime restarts.
 - Fixed MV3 service worker registration failures by removing the test-only global hook, keeping the static import path, and exposing a test helper to await the background initialization promise safely.
-
-## [2.5.0] - 2025-10-05
-
-### Added
-
-- IndexedDB-backed storage layer for individually hidden videos with batched APIs and pagination support.
-- Background service worker messaging that fronts all hidden video CRUD operations and keeps UI caches in sync across tabs.
-- Developer utilities for exporting or clearing the hidden video database via `hidden-videos-db-tools.js`.
-
-### Changed
-
-- Hidden video persistence no longer relies on `chrome.storage`; legacy data is migrated into IndexedDB on startup and cleaned up after success.
-- Content scripts and management UI now fetch hidden video state through the new message-based API with in-memory caching for visible items.
-- Automated test suite expanded to cover IndexedDB behaviors and service messaging.
 
 ## [2.4.4] - 2025-09-19
 
