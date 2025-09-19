@@ -13,7 +13,8 @@ This document outlines the technology stack used in the YouTube Hide Watched Vid
 ### Browser APIs
 - **Chrome Extensions Manifest V3**: Extension framework
 - **WebExtensions API**: Cross-browser compatibility layer
-- **Storage API**: Local data persistence
+- **IndexedDB API**: High-volume hidden video storage
+- **Storage API**: Settings persistence
 - **Runtime API**: Background script communication
 - **Tabs API**: Tab management and injection
 - **Scripting API**: Content script injection

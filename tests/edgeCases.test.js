@@ -288,6 +288,174 @@ describe('Error Recovery and Resilience', () => {
   });
 
   describe('Timing and Async Issues', () => {
+    test('should preserve individual hide toggle when initial fetch resolves late', async () => {
+      const videoId = 'race123';
+      const container = document.createElement('ytd-rich-item-renderer');
+      const link = document.createElement('a');
+      link.setAttribute('href', `/watch?v=${videoId}`);
+      const thumbnail = document.createElement('yt-thumbnail-view-model');
+      const thumbnailContent = document.createElement('div');
+      thumbnail.appendChild(thumbnailContent);
+      link.appendChild(thumbnail);
+      container.appendChild(link);
+      document.body.appendChild(container);
+
+      let resolveInitialFetch;
+      chrome.runtime.sendMessage = jest.fn((message) => {
+        if (message.type === 'HIDDEN_VIDEOS_GET_MANY') {
+          return new Promise((resolve) => {
+            resolveInitialFetch = resolve;
+          });
+        }
+        if (message.type === 'HIDDEN_VIDEOS_SET_STATE') {
+          return Promise.resolve({
+            ok: true,
+            result: {
+              record: {
+                videoId: message.videoId,
+                state: message.state,
+                title: message.title || '',
+                updatedAt: 200
+              }
+            }
+          });
+        }
+        return Promise.resolve({ ok: true, result: {} });
+      });
+
+      jest.isolateModules(() => {
+        require('../content.js');
+      });
+
+      document.dispatchEvent(new Event('DOMContentLoaded'));
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      expect(resolveInitialFetch).toBeDefined();
+      const button = document.querySelector('.yt-hwv-eye-button');
+      expect(button).toBeTruthy();
+
+      button.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const card = button.closest('ytd-rich-item-renderer');
+      expect(card).toBeTruthy();
+
+      const waitForClass = async () => {
+        const start = Date.now();
+        while (!card.classList.contains('YT-HWV-INDIVIDUAL-DIMMED') && Date.now() - start < 1000) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      };
+
+      expect(button.classList.contains('dimmed')).toBe(true);
+
+      resolveInitialFetch({
+        ok: true,
+        result: {
+          records: {
+            [videoId]: {
+              videoId,
+              state: 'normal',
+              title: '',
+              updatedAt: 100
+            }
+          }
+        }
+      });
+
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await waitForClass();
+
+      expect(button.classList.contains('dimmed')).toBe(true);
+      expect(card.classList.contains('YT-HWV-INDIVIDUAL-DIMMED')).toBe(true);
+    });
+
+    test('should keep other individually hidden videos stable during toggle', async () => {
+      storageData = mockChromeStorage({
+        sync: {
+          [STORAGE_KEYS.INDIVIDUAL_MODE]: 'hidden',
+          YTHWV_INDIVIDUAL_MODE_ENABLED: true
+        },
+        hiddenVideos: {
+          stable456: {
+            state: 'hidden',
+            title: 'Stable Video',
+            updatedAt: 100
+          }
+        }
+      });
+
+      document.body.innerHTML = '';
+      const createVideoCard = (videoId) => {
+        const card = document.createElement('ytd-rich-item-renderer');
+        const link = document.createElement('a');
+        link.setAttribute('href', `/watch?v=${videoId}`);
+        const thumbnail = document.createElement('yt-thumbnail-view-model');
+        const thumbnailContent = document.createElement('div');
+        thumbnail.appendChild(thumbnailContent);
+        link.appendChild(thumbnail);
+        card.appendChild(link);
+        return card;
+      };
+
+      const toggleCard = createVideoCard('toggle123');
+      const stableCard = createVideoCard('stable456');
+      document.body.appendChild(toggleCard);
+      document.body.appendChild(stableCard);
+
+      const readyStateDescriptor = Object.getOwnPropertyDescriptor(document, 'readyState');
+      Object.defineProperty(document, 'readyState', {
+        configurable: true,
+        get: () => 'loading'
+      });
+
+      jest.isolateModules(() => {
+        require('../content.js');
+      });
+
+      document.dispatchEvent(new Event('DOMContentLoaded'));
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      const buttons = Array.from(document.querySelectorAll('.yt-hwv-eye-button'));
+      expect(buttons).toHaveLength(2);
+
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(stableCard.classList.contains('YT-HWV-INDIVIDUAL-HIDDEN')).toBe(true);
+
+      const originalRemove = stableCard.classList.remove;
+      let hiddenRemovedCount = 0;
+      stableCard.classList.remove = function(...tokens) {
+        if (tokens.includes('YT-HWV-INDIVIDUAL-HIDDEN')) {
+          hiddenRemovedCount += 1;
+        }
+        return originalRemove.apply(this, tokens);
+      };
+
+      try {
+        buttons[0].click();
+        await Promise.resolve();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(hiddenRemovedCount).toBe(0);
+        expect(stableCard.classList.contains('YT-HWV-INDIVIDUAL-HIDDEN')).toBe(true);
+        expect(toggleCard.classList.contains('YT-HWV-INDIVIDUAL-HIDDEN')).toBe(true);
+      } finally {
+        stableCard.classList.remove = originalRemove;
+        if (readyStateDescriptor) {
+          Object.defineProperty(document, 'readyState', readyStateDescriptor);
+        } else {
+          Object.defineProperty(document, 'readyState', {
+            configurable: true,
+            get: () => 'complete'
+          });
+        }
+      }
+    });
+
     test('should handle timeout scenarios', async () => {
       const fetchWithTimeout = async (operation, timeout = 1000) => {
         return Promise.race([

@@ -1,6 +1,11 @@
+require('fake-indexeddb/auto');
+
 global.chrome = {
   runtime: {
     onInstalled: {
+      addListener: jest.fn()
+    },
+    onStartup: {
       addListener: jest.fn()
     },
     sendMessage: jest.fn(() => Promise.resolve()),
@@ -47,7 +52,12 @@ global.chrome = {
       addListener: jest.fn()
     },
     sendMessage: jest.fn(() => Promise.resolve()),
-    query: jest.fn(() => Promise.resolve([]))
+    query: jest.fn((queryInfo, callback) => {
+      if (typeof callback === 'function') {
+        callback([]);
+      }
+      return Promise.resolve([]);
+    })
   }
 };
 

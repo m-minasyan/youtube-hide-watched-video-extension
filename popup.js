@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const quickToggleButtons = document.querySelectorAll('.quick-btn-small');
   const individualModeToggle = document.getElementById('individual-mode-toggle');
   const individualModeOptions = document.getElementById('individual-mode-options');
+  const ensurePromise = (value) => (value && typeof value.then === 'function' ? value : Promise.resolve(value));
 
   const STORAGE_KEYS = {
     THRESHOLD: 'YTHWV_THRESHOLD',
@@ -186,11 +187,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (key !== STORAGE_KEYS.THEME) {
       chrome.tabs.query({url: '*://*.youtube.com/*'}, (tabs) => {
         tabs.forEach(tab => {
-          chrome.tabs.sendMessage(tab.id, {
+          ensurePromise(chrome.tabs.sendMessage(tab.id, {
             action: 'settingsUpdated',
             key: key,
             value: value
-          }).catch(() => {});
+          })).catch(() => {});
         });
       });
     }
@@ -267,11 +268,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       chrome.tabs.query({url: '*://*.youtube.com/*'}, (tabs) => {
         tabs.forEach(tab => {
           Object.keys(updates).forEach(key => {
-            chrome.tabs.sendMessage(tab.id, {
+            ensurePromise(chrome.tabs.sendMessage(tab.id, {
               action: 'settingsUpdated',
               key: key,
               value: mode
-            }).catch(() => {});
+            })).catch(() => {});
           });
         });
       });
@@ -369,7 +370,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   resetButton.addEventListener('click', async () => {
     if (confirm('Are you sure you want to reset all settings to default?')) {
       await chrome.storage.sync.clear();
-      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: {} });
+      try {
+        await chrome.runtime.sendMessage({ type: 'HIDDEN_VIDEOS_CLEAR_ALL' });
+      } catch (error) {
+        console.error('Failed to clear hidden videos data', error);
+      }
       
       const defaultData = {
         [STORAGE_KEYS.THRESHOLD]: DEFAULT_SETTINGS.threshold,
@@ -394,7 +399,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       chrome.tabs.query({url: '*://*.youtube.com/*'}, (tabs) => {
         tabs.forEach(tab => {
-          chrome.tabs.sendMessage(tab.id, {action: 'resetSettings'}).catch(() => {});
+          ensurePromise(chrome.tabs.sendMessage(tab.id, {action: 'resetSettings'})).catch(() => {});
         });
       });
     }

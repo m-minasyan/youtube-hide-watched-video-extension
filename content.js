@@ -10,11 +10,53 @@
     INDIVIDUAL_MODE_ENABLED: 'YTHWV_INDIVIDUAL_MODE_ENABLED'
   };
 
+  const HIDDEN_VIDEO_MESSAGES = {
+    GET_MANY: 'HIDDEN_VIDEOS_GET_MANY',
+    SET_STATE: 'HIDDEN_VIDEOS_SET_STATE'
+  };
+
+  const hiddenVideoCache = new Map();
+  const hiddenVideoTimestamps = new Map();
+  const pendingHiddenVideoRequests = new Map();
+  let individualHidingIteration = 0;
+
+  function getRecordTimestamp(record) {
+    return record && Number.isFinite(record.updatedAt) ? record.updatedAt : -1;
+  }
+
+  function applyCacheUpdate(videoId, record) {
+    if (!videoId) return;
+    if (record) {
+      const timestamp = getRecordTimestamp(record);
+      hiddenVideoCache.set(videoId, record);
+      hiddenVideoTimestamps.set(videoId, timestamp === -1 ? Date.now() : timestamp);
+      return;
+    }
+    hiddenVideoCache.delete(videoId);
+    hiddenVideoTimestamps.set(videoId, Date.now());
+  }
+
+  function mergeFetchedRecord(videoId, record) {
+    if (!videoId) return;
+    const incomingTimestamp = getRecordTimestamp(record);
+    if (hiddenVideoTimestamps.has(videoId)) {
+      const currentTimestamp = hiddenVideoTimestamps.get(videoId);
+      if (incomingTimestamp <= currentTimestamp) {
+        return;
+      }
+    }
+    if (record) {
+      hiddenVideoCache.set(videoId, record);
+      hiddenVideoTimestamps.set(videoId, incomingTimestamp === -1 ? Date.now() : incomingTimestamp);
+      return;
+    }
+    hiddenVideoCache.delete(videoId);
+  }
+
   let settings = {
     threshold: 10,
     watchedStates: {},
     shortsStates: {},
-    hiddenVideos: {},
     individualMode: 'dimmed',
     individualModeEnabled: true
   };
@@ -22,6 +64,190 @@
   const logDebug = (...msgs) => {
     if (DEBUG) console.log('[YT-HWV]', ...msgs);
   };
+
+  async function sendHiddenVideosMessage(type, payload = {}) {
+    try {
+      const response = await chrome.runtime.sendMessage({ type, ...payload });
+      if (!response || !response.ok) {
+        throw new Error(response?.error || 'hidden video message failed');
+      }
+      return response.result;
+    } catch (error) {
+      logDebug('Hidden videos message error', error);
+      throw error;
+    }
+  }
+
+  function getCachedHiddenVideo(videoId) {
+    if (!videoId) return null;
+    return hiddenVideoCache.get(videoId) || null;
+  }
+
+  async function fetchHiddenVideoStates(videoIds) {
+    const ids = Array.isArray(videoIds) ? videoIds.filter(Boolean) : [];
+    if (ids.length === 0) return {};
+    const unique = Array.from(new Set(ids));
+    const result = {};
+    const missing = [];
+    const waiters = [];
+    unique.forEach((videoId) => {
+      if (hiddenVideoCache.has(videoId)) {
+        result[videoId] = getCachedHiddenVideo(videoId);
+        return;
+      }
+      if (pendingHiddenVideoRequests.has(videoId)) {
+        waiters.push(pendingHiddenVideoRequests.get(videoId).then((record) => {
+          result[videoId] = record;
+        }));
+        return;
+      }
+      missing.push(videoId);
+    });
+    if (missing.length > 0) {
+      const fetchPromise = sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.GET_MANY, { ids: missing }).then((response) => {
+        const records = response.records || {};
+        missing.forEach((videoId) => {
+          mergeFetchedRecord(videoId, records[videoId] || null);
+          result[videoId] = getCachedHiddenVideo(videoId);
+        });
+        return records;
+      }).finally(() => {
+        missing.forEach((videoId) => pendingHiddenVideoRequests.delete(videoId));
+      });
+      missing.forEach((videoId) => {
+        const promise = fetchPromise.then(() => getCachedHiddenVideo(videoId));
+        pendingHiddenVideoRequests.set(videoId, promise);
+        waiters.push(promise.then((record) => {
+          result[videoId] = record;
+        }));
+      });
+    }
+    if (waiters.length > 0) {
+      await Promise.all(waiters);
+    }
+    return result;
+  }
+
+  async function setHiddenVideoState(videoId, state, title) {
+    const sanitizedId = videoId ? String(videoId).trim() : '';
+    if (!sanitizedId) return null;
+    const payload = {
+      videoId: sanitizedId,
+      state,
+      title: title || ''
+    };
+    const result = await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.SET_STATE, payload);
+    if (result && result.record) {
+      applyCacheUpdate(sanitizedId, result.record);
+      return result.record;
+    }
+    applyCacheUpdate(sanitizedId, null);
+    return null;
+  }
+
+  function applyStateToEyeButton(button, state) {
+    if (!button) return;
+    button.classList.remove('dimmed', 'hidden');
+    if (state === 'dimmed') {
+      button.classList.add('dimmed');
+    } else if (state === 'hidden') {
+      button.classList.add('hidden');
+    }
+  }
+
+  function extractVideoIdFromHref(href) {
+    if (!href) return null;
+    const watchMatch = href.match(/\/watch\?v=([^&]+)/);
+    if (watchMatch) return watchMatch[1];
+    const shortsMatch = href.match(/\/shorts\/([^?]+)/);
+    if (shortsMatch) return shortsMatch[1];
+    return null;
+  }
+
+  function collectVisibleVideoIds() {
+    const ids = new Set();
+    document.querySelectorAll('[data-ythwv-video-id]').forEach((element) => {
+      const value = element.getAttribute('data-ythwv-video-id');
+      if (value) ids.add(value);
+    });
+    document.querySelectorAll('a[href*="/watch?v="], a[href*="/shorts/"]').forEach((link) => {
+      const id = extractVideoIdFromHref(link.getAttribute('href'));
+      if (id) ids.add(id);
+    });
+    return Array.from(ids);
+  }
+
+  function findVideoContainers(videoId) {
+    const containers = new Set();
+    document.querySelectorAll(`.yt-hwv-eye-button[data-video-id="${videoId}"]`).forEach((button) => {
+      const container = button.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model');
+      if (container) containers.add(container);
+    });
+    document.querySelectorAll(`a[href*="/watch?v=${videoId}"], a[href*="/shorts/${videoId}"]`).forEach((link) => {
+      const container = link.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model');
+      if (container) containers.add(container);
+    });
+    return Array.from(containers);
+  }
+
+  function extractTitleFromContainer(container) {
+    if (!container) return '';
+    const selectors = [
+      '#video-title',
+      '#video-title-link',
+      'a#video-title',
+      'h3.title',
+      'h3 a',
+      'h4 a',
+      '.title-and-badge a',
+      'ytm-shorts-lockup-view-model-v2 .shortsLockupViewModelHostTextContent',
+      'yt-formatted-string#video-title',
+      'span#video-title'
+    ];
+    for (const selector of selectors) {
+      const element = container.querySelector(selector);
+      if (element && !element.classList.contains('yt-hwv-eye-button')) {
+        const text = element.getAttribute('title') || element.getAttribute('aria-label') || element.textContent?.trim() || '';
+        if (!text) return '';
+        if (text.includes(' - ')) {
+          return text.split(' - ')[0];
+        }
+        if (text.includes(' by ')) {
+          return text.split(' by ')[0];
+        }
+        return text;
+      }
+    }
+    return '';
+  }
+
+  function handleHiddenVideosEvent(event) {
+    if (!event || !event.type) return;
+    if (event.type === 'updated' && event.record) {
+      applyCacheUpdate(event.record.videoId, event.record);
+      document.querySelectorAll(`.yt-hwv-eye-button[data-video-id="${event.record.videoId}"]`).forEach((button) => {
+        applyStateToEyeButton(button, event.record.state);
+      });
+      applyIndividualHiding();
+      return;
+    }
+    if (event.type === 'removed' && event.videoId) {
+      applyCacheUpdate(event.videoId, null);
+      document.querySelectorAll(`.yt-hwv-eye-button[data-video-id="${event.videoId}"]`).forEach((button) => {
+        applyStateToEyeButton(button, 'normal');
+      });
+      applyIndividualHiding();
+      return;
+    }
+    if (event.type === 'cleared') {
+      hiddenVideoCache.clear();
+      hiddenVideoTimestamps.clear();
+      document.querySelectorAll('.yt-hwv-eye-button').forEach((button) => {
+        applyStateToEyeButton(button, 'normal');
+      });
+      applyIndividualHiding();
+    }
+  }
 
   function injectStyles() {
     const styleId = 'yt-hwv-styles';
@@ -87,68 +313,19 @@
   }
 
   async function loadSettings() {
-    const [syncResult, localResult] = await Promise.all([
-      chrome.storage.sync.get(null),
-      chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS)
-    ]);
-    
+    const syncResult = await chrome.storage.sync.get(null);
     settings.threshold = syncResult[STORAGE_KEYS.THRESHOLD] || 10;
     settings.individualMode = syncResult[STORAGE_KEYS.INDIVIDUAL_MODE] || 'dimmed';
-    settings.individualModeEnabled = syncResult[STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED] !== undefined ? 
+    settings.individualModeEnabled = syncResult[STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED] !== undefined ?
       syncResult[STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED] : true;
-    
-    const syncHiddenVideos = syncResult[STORAGE_KEYS.HIDDEN_VIDEOS];
-    let hiddenVideos = localResult[STORAGE_KEYS.HIDDEN_VIDEOS];
-    let shouldPersist = false;
-    const now = Date.now();
-    
-    if ((!hiddenVideos || Object.keys(hiddenVideos).length === 0) && syncHiddenVideos) {
-      hiddenVideos = syncHiddenVideos;
-      shouldPersist = true;
-    }
-    
-    const normalizedHiddenVideos = {};
-    if (hiddenVideos) {
-      Object.entries(hiddenVideos).forEach(([videoId, data]) => {
-        if (typeof data === 'string') {
-          normalizedHiddenVideos[videoId] = {
-            state: data,
-            title: '',
-            updatedAt: now
-          };
-          shouldPersist = true;
-        } else {
-          normalizedHiddenVideos[videoId] = {
-            state: data.state,
-            title: data.title || '',
-            updatedAt: data.updatedAt || now
-          };
-          if (!data.updatedAt) {
-            shouldPersist = true;
-          }
-        }
-      });
-    }
-    
-    settings.hiddenVideos = normalizedHiddenVideos;
-    
-    if (shouldPersist) {
-      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: normalizedHiddenVideos });
-    }
-    
-    if (syncHiddenVideos) {
-      await chrome.storage.sync.remove(STORAGE_KEYS.HIDDEN_VIDEOS);
-    }
-    
     const sections = ['misc', 'subscriptions', 'channel', 'watch', 'trending', 'playlist'];
-    sections.forEach(section => {
+    sections.forEach((section) => {
       settings.watchedStates[section] = syncResult[`${STORAGE_KEYS.WATCHED_STATE}_${section}`] || 'normal';
       if (section !== 'playlist') {
         settings.shortsStates[section] = syncResult[`${STORAGE_KEYS.SHORTS_STATE}_${section}`] || 'normal';
       }
     });
-    
-    logDebug('Settings loaded:', settings);
+    logDebug('Settings loaded');
   }
 
   function determineYoutubeSection() {
@@ -179,117 +356,54 @@
   }
   
   async function saveHiddenVideo(videoId, state, title = null) {
-    if (!videoId) return;
-    
-    const result = await chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS);
-    const hiddenVideos = result[STORAGE_KEYS.HIDDEN_VIDEOS] || {};
-    
-    if (state === 'normal') {
-      delete hiddenVideos[videoId];
-    } else {
-      hiddenVideos[videoId] = {
-        state: state,
-        title: title || hiddenVideos[videoId]?.title || '',
-        updatedAt: Date.now()
-      };
-    }
-    
-    settings.hiddenVideos = hiddenVideos;
-    await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
+    if (!videoId) return null;
+    return setHiddenVideoState(videoId, state, title || undefined);
   }
   
   function createEyeButton(videoContainer, videoId) {
     if (!videoId) return null;
-    
     const button = document.createElement('button');
     button.className = 'yt-hwv-eye-button';
     button.setAttribute('data-video-id', videoId);
     button.setAttribute('tabindex', '-1');
     button.setAttribute('aria-label', 'Toggle video visibility');
-    
-    const hiddenVideoData = settings.hiddenVideos[videoId];
-    const currentState = hiddenVideoData?.state || hiddenVideoData || 'normal';
-    if (currentState === 'dimmed') button.classList.add('dimmed');
-    if (currentState === 'hidden') button.classList.add('hidden');
-    
+    const cachedRecord = getCachedHiddenVideo(videoId);
+    applyStateToEyeButton(button, cachedRecord?.state || 'normal');
+    if (!cachedRecord) {
+      fetchHiddenVideoStates([videoId]).then(() => {
+        const refreshed = getCachedHiddenVideo(videoId);
+        applyStateToEyeButton(button, refreshed?.state || 'normal');
+      }).catch(() => {});
+    }
     button.innerHTML = `
       <svg viewBox="0 0 24 24">
         <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
       </svg>
     `;
-    
     button.addEventListener('click', async (e) => {
       e.preventDefault();
       e.stopPropagation();
-      
-      const hiddenVideoData = settings.hiddenVideos[videoId];
-      const currentState = hiddenVideoData?.state || hiddenVideoData || 'normal';
-      const states = ['normal', settings.individualMode];
-      const currentIndex = currentState === 'normal' ? 0 : 1;
-      const nextIndex = (currentIndex + 1) % states.length;
-      const nextState = states[nextIndex];
-      
-      let videoTitle = '';
+      const cached = getCachedHiddenVideo(videoId);
+      const currentState = cached?.state || 'normal';
+      const nextState = currentState === 'normal' ? settings.individualMode : 'normal';
       const container = button.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model');
       if (container) {
-        // Try multiple selectors to find the title
-        const titleSelectors = [
-          '#video-title',
-          '#video-title-link',
-          'a#video-title',
-          'h3.title',
-          'h3 a',
-          'h4 a',
-          '.title-and-badge a',
-          'ytm-shorts-lockup-view-model-v2 .shortsLockupViewModelHostTextContent',
-          'yt-formatted-string#video-title',
-          'span#video-title'
-        ];
-        
-        let titleElement = null;
-        for (const selector of titleSelectors) {
-          titleElement = container.querySelector(selector);
-          if (titleElement && !titleElement.classList.contains('yt-hwv-eye-button')) {
-            break;
-          }
-        }
-        
-        if (titleElement) {
-          // Try to get title from various attributes and properties
-          videoTitle = titleElement.getAttribute('title') || 
-                      titleElement.getAttribute('aria-label') || 
-                      titleElement.textContent?.trim() || 
-                      '';
-          
-          // Clean up the title (remove view count and other metadata that might be in aria-label)
-          if (videoTitle.includes(' - ')) {
-            videoTitle = videoTitle.split(' - ')[0];
-          }
-          if (videoTitle.includes(' by ')) {
-            videoTitle = videoTitle.split(' by ')[0];
-          }
-        }
+        container.setAttribute('data-ythwv-video-id', videoId);
       }
-      
-      await saveHiddenVideo(videoId, nextState, videoTitle);
-      
-      button.classList.remove('dimmed', 'hidden');
-      if (nextState === 'dimmed') button.classList.add('dimmed');
-      if (nextState === 'hidden') button.classList.add('hidden');
-      
-      // Immediately update the video visibility
+      const title = extractTitleFromContainer(container);
+      const record = await saveHiddenVideo(videoId, nextState, title);
+      const effectiveState = record ? record.state : 'normal';
+      applyStateToEyeButton(button, effectiveState);
       if (container) {
         container.classList.remove('YT-HWV-INDIVIDUAL-DIMMED', 'YT-HWV-INDIVIDUAL-HIDDEN');
-        if (nextState === 'dimmed') {
+        if (effectiveState === 'dimmed') {
           container.classList.add('YT-HWV-INDIVIDUAL-DIMMED');
-        } else if (nextState === 'hidden') {
+        } else if (effectiveState === 'hidden') {
           container.classList.add('YT-HWV-INDIVIDUAL-HIDDEN');
         }
       }
-      
       applyIndividualHiding();
     });
-    
     return button;
   }
   
@@ -340,59 +454,26 @@
       
       const eyeButton = createEyeButton(null, videoId);
       if (!eyeButton) return;
-      
-      // Make thumbnail relative positioned for button placement
       thumbnail.style.position = 'relative';
       thumbnail.appendChild(eyeButton);
       thumbnail.classList.add('yt-hwv-has-eye-button');
-      
-      // If video is already hidden but has no title, try to capture it now
-      const hiddenVideoData = settings.hiddenVideos[videoId];
-      if (hiddenVideoData && (!hiddenVideoData.title || hiddenVideoData.title === '')) {
+      thumbnail.setAttribute('data-ythwv-video-id', videoId);
+      const parentContainer = thumbnail.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model');
+      if (parentContainer) {
+        parentContainer.setAttribute('data-ythwv-video-id', videoId);
+      }
+      fetchHiddenVideoStates([videoId]).then(() => {
+        const record = getCachedHiddenVideo(videoId);
+        if (!record || record.title) return;
         const container = thumbnail.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model');
         if (container) {
-          const titleSelectors = [
-            '#video-title',
-            '#video-title-link',
-            'a#video-title',
-            'h3.title',
-            'h3 a',
-            'h4 a',
-            '.title-and-badge a',
-            'yt-formatted-string#video-title',
-            'span#video-title'
-          ];
-          
-          let titleElement = null;
-          for (const selector of titleSelectors) {
-            titleElement = container.querySelector(selector);
-            if (titleElement && !titleElement.classList.contains('yt-hwv-eye-button')) {
-              break;
-            }
-          }
-          
-          if (titleElement) {
-            let videoTitle = titleElement.getAttribute('title') || 
-                          titleElement.getAttribute('aria-label') || 
-                          titleElement.textContent?.trim() || 
-                          '';
-            
-            // Clean up the title
-            if (videoTitle.includes(' - ')) {
-              videoTitle = videoTitle.split(' - ')[0];
-            }
-            if (videoTitle.includes(' by ')) {
-              videoTitle = videoTitle.split(' by ')[0];
-            }
-            
-            if (videoTitle && videoTitle !== 'Toggle video visibility') {
-              // Update the title in storage
-              saveHiddenVideo(videoId, hiddenVideoData.state || hiddenVideoData, videoTitle);
-            }
-          }
+          container.setAttribute('data-ythwv-video-id', videoId);
         }
-      }
-      
+        const videoTitle = extractTitleFromContainer(container);
+        if (videoTitle && videoTitle !== 'Toggle video visibility') {
+          saveHiddenVideo(videoId, record.state, videoTitle);
+        }
+      }).catch(() => {});
       logDebug('Added eye button to video:', videoId);
     });
     
@@ -409,47 +490,64 @@
     });
   }
   
-  function applyIndividualHiding() {
-    // Remove all individual hiding classes first
-    document.querySelectorAll('.YT-HWV-INDIVIDUAL-DIMMED').forEach(el => el.classList.remove('YT-HWV-INDIVIDUAL-DIMMED'));
-    document.querySelectorAll('.YT-HWV-INDIVIDUAL-HIDDEN').forEach(el => el.classList.remove('YT-HWV-INDIVIDUAL-HIDDEN'));
-    
-    // Only apply individual hiding if the feature is enabled
-    if (!settings.individualModeEnabled) {
+  function syncIndividualContainerState(container, state) {
+    if (!container) return;
+    const hasDimmed = container.classList.contains('YT-HWV-INDIVIDUAL-DIMMED');
+    const hasHidden = container.classList.contains('YT-HWV-INDIVIDUAL-HIDDEN');
+    if (state === 'dimmed') {
+      if (hasHidden) {
+        container.classList.remove('YT-HWV-INDIVIDUAL-HIDDEN');
+      }
+      if (!hasDimmed) {
+        container.classList.add('YT-HWV-INDIVIDUAL-DIMMED');
+      }
       return;
     }
-    
-    Object.entries(settings.hiddenVideos).forEach(([videoId, data]) => {
-      const state = data?.state || data;
-      
-      // Skip normal state videos (they should be visible)
-      if (state === 'normal') return;
-      
-      // Find by data attribute
-      const elements = document.querySelectorAll(`[data-video-id="${videoId}"]`);
-      elements.forEach(element => {
-        const container = element.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model');
-        if (container) {
-          if (state === 'dimmed') {
-            container.classList.add('YT-HWV-INDIVIDUAL-DIMMED');
-          } else if (state === 'hidden') {
-            container.classList.add('YT-HWV-INDIVIDUAL-HIDDEN');
-          }
-        }
+    if (state === 'hidden') {
+      if (hasDimmed) {
+        container.classList.remove('YT-HWV-INDIVIDUAL-DIMMED');
+      }
+      if (!hasHidden) {
+        container.classList.add('YT-HWV-INDIVIDUAL-HIDDEN');
+      }
+      return;
+    }
+    if (hasDimmed) {
+      container.classList.remove('YT-HWV-INDIVIDUAL-DIMMED');
+    }
+    if (hasHidden) {
+      container.classList.remove('YT-HWV-INDIVIDUAL-HIDDEN');
+    }
+  }
+  
+  async function applyIndividualHiding() {
+    if (!settings.individualModeEnabled) {
+      document.querySelectorAll('.YT-HWV-INDIVIDUAL-DIMMED, .YT-HWV-INDIVIDUAL-HIDDEN').forEach((el) => {
+        el.classList.remove('YT-HWV-INDIVIDUAL-DIMMED', 'YT-HWV-INDIVIDUAL-HIDDEN');
       });
-      
-      // Find by video links
-      const links = document.querySelectorAll(`a[href*="/watch?v=${videoId}"], a[href*="/shorts/${videoId}"]`);
-      links.forEach(link => {
-        // Support both old and new container types
-        const container = link.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model');
-        if (container) {
-          if (state === 'dimmed') {
-            container.classList.add('YT-HWV-INDIVIDUAL-DIMMED');
-          } else if (state === 'hidden') {
-            container.classList.add('YT-HWV-INDIVIDUAL-HIDDEN');
-          }
-        }
+      return;
+    }
+    individualHidingIteration += 1;
+    const token = individualHidingIteration;
+    const videoIds = collectVisibleVideoIds();
+    if (videoIds.length === 0) {
+      return;
+    }
+    try {
+      await fetchHiddenVideoStates(videoIds);
+    } catch (error) {
+      logDebug('Failed to fetch hidden video states', error);
+      return;
+    }
+    if (token !== individualHidingIteration) {
+      return;
+    }
+    videoIds.forEach((videoId) => {
+      const record = getCachedHiddenVideo(videoId);
+      const state = record?.state || 'normal';
+      const containers = findVideoContainers(videoId);
+      containers.forEach((container) => {
+        syncIndividualContainerState(container, state);
       });
     });
   }
@@ -735,6 +833,8 @@
     } else if (request.action === 'resetSettings') {
       await loadSettings();
       applyHiding();
+    } else if (request.type === 'HIDDEN_VIDEOS_EVENT') {
+      handleHiddenVideosEvent(request.event);
     }
   });
 

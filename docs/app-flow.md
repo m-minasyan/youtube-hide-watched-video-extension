@@ -58,7 +58,7 @@ This document describes the application flow for the YouTube Hide Watched Video 
 
 ## State Management
 - User preferences stored in browser storage
-- Individual video hide states persisted
+- Individual video hide states persisted in IndexedDB via background service worker
 - Session state maintained in memory
 - Synchronization across tabs
 

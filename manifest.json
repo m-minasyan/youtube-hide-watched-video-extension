@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
   "name": "YouTube Hide Watched Videos",
-  "version": "2.4.3",
+  "version": "2.5.0",
   "description": "Hide or dim watched videos and shorts on YouTube with customizable settings and individual video control",
   "permissions": [
-    "storage"
+    "storage",
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "*://*.youtube.com/*",
@@ -38,6 +39,7 @@
     }
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   }
 }

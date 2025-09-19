@@ -52,6 +52,7 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 - Coordinates between different parts of the extension
 - Manages persistent state
 - Sets default theme to 'auto' on installation
+- Normalizes Chrome API calls and statically imports the hidden video module with cached asynchronous initialization so service code stays resilient when APIs return callbacks or delay responses
 
 ### Content Scripts
 - Injected into YouTube pages
@@ -60,11 +61,11 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 - Implements hiding logic
 
 ### Storage Layer
-- Browser storage API wrapper
-- Settings persistence
-- Cache management
-- Cross-tab synchronization
-- Hidden video metadata persisted in `chrome.storage.local` with automatic migration from legacy sync storage
+- IndexedDB-backed hidden video repository exposed through the background service worker
+- Settings persistence remain in `chrome.storage.sync`
+- Lazy caching of visible hidden video state inside content scripts for responsive toggles
+- Batched CRUD endpoints with pagination cursors and state-aware indexing
+- Legacy `chrome.storage` data automatically migrated into IndexedDB on startup before removal
 
 ## Communication Flow
 
@@ -85,9 +86,10 @@ Content Script <-> Background Script <-> Popup/Options
 - `messaging.send(message)` - Send messages between components
 - `detector.isWatched(video)` - Check if video is watched
 - `hider.hide(element)` - Hide video element
-- `saveHiddenVideo(videoId, state, title)` - Save hidden video with title
+- `saveHiddenVideo(videoId, state, title)` - Send hidden video updates to the background store
 
 ### Browser APIs Used
+- indexedDB
 - chrome.storage
 - chrome.runtime
 - chrome.tabs

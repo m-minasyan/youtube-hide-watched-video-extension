@@ -12,10 +12,35 @@ document.addEventListener('DOMContentLoaded', async () => {
   const dimmedCount = document.getElementById('dimmed-count');
   const hiddenCount = document.getElementById('hidden-count');
 
-  let hiddenVideos = {};
-  let currentFilter = 'all';
-  let currentPage = 1;
   const videosPerPage = 12;
+  const hiddenVideosState = {
+    filter: 'all',
+    currentPage: 1,
+    pageCursors: [null],
+    hasMore: false,
+    items: []
+  };
+  let hiddenVideoStats = { total: 0, dimmed: 0, hidden: 0 };
+
+  const HIDDEN_VIDEO_MESSAGES = {
+    GET_PAGE: 'HIDDEN_VIDEOS_GET_PAGE',
+    GET_STATS: 'HIDDEN_VIDEOS_GET_STATS',
+    SET_STATE: 'HIDDEN_VIDEOS_SET_STATE',
+    CLEAR_ALL: 'HIDDEN_VIDEOS_CLEAR_ALL'
+  };
+
+  async function sendHiddenVideosMessage(type, payload = {}) {
+    try {
+      const response = await chrome.runtime.sendMessage({ type, ...payload });
+      if (!response || !response.ok) {
+        throw new Error(response?.error || 'hidden videos request failed');
+      }
+      return response.result;
+    } catch (error) {
+      console.error('Hidden videos manager message failed', error);
+      throw error;
+    }
+  }
 
   async function initTheme() {
     const result = await chrome.storage.sync.get(STORAGE_KEYS.THEME);
@@ -51,108 +76,70 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function loadHiddenVideos() {
-    const [localResult, syncResult] = await Promise.all([
-      chrome.storage.local.get(STORAGE_KEYS.HIDDEN_VIDEOS),
-      chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS)
-    ]);
-    let storedVideos = localResult[STORAGE_KEYS.HIDDEN_VIDEOS];
-    const syncHiddenVideos = syncResult[STORAGE_KEYS.HIDDEN_VIDEOS];
-    let shouldPersist = false;
-    const now = Date.now();
-    
-    if ((!storedVideos || Object.keys(storedVideos).length === 0) && syncHiddenVideos) {
-      storedVideos = syncHiddenVideos;
-      shouldPersist = true;
-    }
-    
-    hiddenVideos = {};
-    if (storedVideos) {
-      Object.entries(storedVideos).forEach(([videoId, data]) => {
-        if (typeof data === 'string') {
-          hiddenVideos[videoId] = {
-            state: data,
-            title: '',
-            updatedAt: now
-          };
-          shouldPersist = true;
-        } else {
-          hiddenVideos[videoId] = {
-            state: data.state,
-            title: data.title || '',
-            updatedAt: data.updatedAt || now
-          };
-          if (!data.updatedAt) {
-            shouldPersist = true;
-          }
-        }
-      });
-    }
-    
-    if (shouldPersist) {
-      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
-    }
-    
-    if (syncHiddenVideos) {
-      await chrome.storage.sync.remove(STORAGE_KEYS.HIDDEN_VIDEOS);
-    }
-    
-    updateStats();
+    const cursorIndex = hiddenVideosState.currentPage - 1;
+    const cursor = hiddenVideosState.pageCursors[cursorIndex] || null;
+    const stateFilter = hiddenVideosState.filter === 'all' ? null : hiddenVideosState.filter;
+    const result = await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.GET_PAGE, {
+      state: stateFilter,
+      cursor,
+      limit: videosPerPage
+    });
+    hiddenVideosState.items = Array.isArray(result?.items) ? result.items : [];
+    hiddenVideosState.hasMore = Boolean(result?.hasMore);
+    hiddenVideosState.pageCursors[hiddenVideosState.currentPage] = result?.nextCursor || null;
     renderVideos();
   }
 
   function updateStats() {
-    const videos = Object.entries(hiddenVideos);
-    const dimmed = videos.filter(([_, data]) => {
-      const state = data?.state || data;
-      return state === 'dimmed';
-    }).length;
-    const hidden = videos.filter(([_, data]) => {
-      const state = data?.state || data;
-      return state === 'hidden';
-    }).length;
-    
-    totalCount.textContent = videos.length;
-    dimmedCount.textContent = dimmed;
-    hiddenCount.textContent = hidden;
+    totalCount.textContent = hiddenVideoStats.total;
+    dimmedCount.textContent = hiddenVideoStats.dimmed;
+    hiddenCount.textContent = hiddenVideoStats.hidden;
   }
 
-  function updatePaginationControls(totalVideos, totalPages) {
+  async function refreshStats() {
+    const result = await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.GET_STATS);
+    hiddenVideoStats = {
+      total: result?.total || 0,
+      dimmed: result?.dimmed || 0,
+      hidden: result?.hidden || 0
+    };
+    updateStats();
+    updatePaginationControls();
+  }
+
+  function getTotalVideosForCurrentFilter() {
+    if (hiddenVideosState.filter === 'all') return hiddenVideoStats.total;
+    if (hiddenVideosState.filter === 'dimmed') return hiddenVideoStats.dimmed;
+    return hiddenVideoStats.hidden;
+  }
+
+  function updatePaginationControls() {
     const paginationControls = document.getElementById('pagination-controls');
     const prevBtn = document.getElementById('prev-page');
     const nextBtn = document.getElementById('next-page');
     const currentPageSpan = document.getElementById('current-page');
     const totalPagesSpan = document.getElementById('total-pages');
-    
-    if (totalVideos === 0) {
+    const totalVideos = getTotalVideosForCurrentFilter();
+    let totalPages = Math.max(1, Math.ceil(Math.max(totalVideos, 0) / videosPerPage));
+    if (hiddenVideosState.hasMore && totalPages <= hiddenVideosState.currentPage) {
+      totalPages = hiddenVideosState.currentPage + 1;
+    }
+    if (totalVideos === 0 && hiddenVideosState.items.length === 0) {
       paginationControls.style.display = 'none';
       return;
     }
-    
     paginationControls.style.display = 'flex';
-    currentPageSpan.textContent = currentPage;
+    currentPageSpan.textContent = hiddenVideosState.currentPage;
     totalPagesSpan.textContent = totalPages;
-    
-    prevBtn.disabled = currentPage === 1;
-    nextBtn.disabled = currentPage === totalPages;
+    prevBtn.disabled = hiddenVideosState.currentPage === 1;
+    nextBtn.disabled = !hiddenVideosState.hasMore;
   }
 
   function renderVideos() {
-    const videos = Object.entries(hiddenVideos);
-    
-    let filteredVideos = videos;
-    if (currentFilter !== 'all') {
-      filteredVideos = videos.filter(([_, data]) => {
-        const state = data?.state || data;
-        return state === currentFilter;
-      });
-    }
-
-    const totalPages = Math.ceil(filteredVideos.length / videosPerPage);
-    currentPage = Math.min(currentPage, Math.max(1, totalPages));
-    
-    updatePaginationControls(filteredVideos.length, totalPages);
-
-    if (filteredVideos.length === 0) {
+    const videos = hiddenVideosState.items;
+    updatePaginationControls();
+    if (videos.length === 0) {
+      const filter = hiddenVideosState.filter;
       videosContainer.innerHTML = `
         <div class="empty-state">
           <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -161,28 +148,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
             <line x1="2" y1="2" x2="22" y2="22"/>
           </svg>
-          <h3>${currentFilter === 'all' ? 'No hidden videos' : `No ${currentFilter} videos`}</h3>
-          <p>${currentFilter === 'all' ? 'Videos you hide will appear here' : `No videos are currently ${currentFilter}`}</p>
+          <h3>${filter === 'all' ? 'No hidden videos' : `No ${filter} videos`}</h3>
+          <p>${filter === 'all' ? 'Videos you hide will appear here' : `No videos are currently ${filter}`}</p>
         </div>
       `;
       return;
     }
-
-    const startIndex = (currentPage - 1) * videosPerPage;
-    const endIndex = startIndex + videosPerPage;
-    const paginatedVideos = filteredVideos.slice(startIndex, endIndex);
-
-    videosContainer.innerHTML = paginatedVideos.map(([videoId, data]) => {
-      const state = data?.state || data;
-      const title = data?.title || '';
+    videosContainer.innerHTML = videos.map((record) => {
+      const videoId = record.videoId;
+      const state = record.state;
+      const title = record.title || '';
       const isShorts = videoId.length < 15;
-      const videoUrl = isShorts 
+      const videoUrl = isShorts
         ? `https://www.youtube.com/shorts/${videoId}`
         : `https://www.youtube.com/watch?v=${videoId}`;
       const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
-      
       const displayTitle = title || (isShorts ? 'YouTube Shorts' : 'YouTube Video');
-      
       return `
         <div class="video-card ${state}" data-video-id="${videoId}">
           <div class="video-info">
@@ -206,8 +187,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>
       `;
     }).join('');
-
-    document.querySelectorAll('.video-action-btn').forEach(btn => {
+    document.querySelectorAll('.video-action-btn').forEach((btn) => {
       btn.addEventListener('click', handleVideoAction);
     });
   }
@@ -216,79 +196,84 @@ document.addEventListener('DOMContentLoaded', async () => {
     e.stopPropagation();
     const action = e.target.dataset.action;
     const videoId = e.target.dataset.videoId;
-    
-    if (action === 'remove') {
-      delete hiddenVideos[videoId];
-      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
-      await loadHiddenVideos();
-    } else if (action === 'toggle') {
-      const currentData = hiddenVideos[videoId];
-      const currentState = currentData?.state || currentData;
-      const title = currentData?.title || '';
-      const newState = currentState === 'dimmed' ? 'hidden' : 'dimmed';
-      hiddenVideos[videoId] = {
-        state: newState,
-        title: title,
-        updatedAt: Date.now()
-      };
-      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: hiddenVideos });
-      await loadHiddenVideos();
-    } else if (action === 'view') {
+    if (!videoId) return;
+    if (action === 'view') {
       const isShorts = videoId.length < 15;
-      const videoUrl = isShorts 
+      const videoUrl = isShorts
         ? `https://www.youtube.com/shorts/${videoId}`
         : `https://www.youtube.com/watch?v=${videoId}`;
       window.open(videoUrl, '_blank');
+      return;
     }
+    if (action === 'remove') {
+      await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.SET_STATE, {
+        videoId,
+        state: 'normal'
+      });
+    } else if (action === 'toggle') {
+      const record = hiddenVideosState.items.find((item) => item.videoId === videoId);
+      const currentState = record?.state || 'dimmed';
+      const nextState = currentState === 'dimmed' ? 'hidden' : 'dimmed';
+      await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.SET_STATE, {
+        videoId,
+        state: nextState
+      });
+    }
+    await refreshStats();
+    const totalVideos = getTotalVideosForCurrentFilter();
+    const maxPages = Math.max(1, Math.ceil(Math.max(totalVideos, 0) / videosPerPage));
+    if (hiddenVideosState.currentPage > maxPages) {
+      hiddenVideosState.currentPage = maxPages;
+    }
+    await loadHiddenVideos();
   }
 
   themeToggle.addEventListener('click', toggleTheme);
 
-  filterButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      filterButtons.forEach(b => b.classList.remove('active'));
+  filterButtons.forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      filterButtons.forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
-      currentFilter = btn.dataset.filter;
-      currentPage = 1;
-      renderVideos();
+      hiddenVideosState.filter = btn.dataset.filter;
+      hiddenVideosState.currentPage = 1;
+      hiddenVideosState.pageCursors = [null];
+      await refreshStats();
+      await loadHiddenVideos();
     });
   });
 
-  document.getElementById('prev-page').addEventListener('click', () => {
-    if (currentPage > 1) {
-      currentPage--;
-      renderVideos();
+  document.getElementById('prev-page').addEventListener('click', async () => {
+    if (hiddenVideosState.currentPage > 1) {
+      hiddenVideosState.currentPage -= 1;
+      await loadHiddenVideos();
     }
   });
 
-  document.getElementById('next-page').addEventListener('click', () => {
-    const videos = Object.entries(hiddenVideos);
-    let filteredVideos = videos;
-    if (currentFilter !== 'all') {
-      filteredVideos = videos.filter(([_, state]) => state === currentFilter);
-    }
-    const totalPages = Math.ceil(filteredVideos.length / videosPerPage);
-    
-    if (currentPage < totalPages) {
-      currentPage++;
-      renderVideos();
-    }
+  document.getElementById('next-page').addEventListener('click', async () => {
+    if (!hiddenVideosState.hasMore) return;
+    hiddenVideosState.currentPage += 1;
+    await loadHiddenVideos();
   });
 
   clearAllBtn.addEventListener('click', async () => {
     if (confirm('Are you sure you want to remove all hidden videos?')) {
-      await chrome.storage.local.set({ [STORAGE_KEYS.HIDDEN_VIDEOS]: {} });
-      await chrome.storage.sync.remove(STORAGE_KEYS.HIDDEN_VIDEOS);
+      await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.CLEAR_ALL);
+      hiddenVideosState.pageCursors = [null];
+      hiddenVideosState.currentPage = 1;
+      await refreshStats();
       await loadHiddenVideos();
     }
   });
 
   await initTheme();
+  await refreshStats();
   await loadHiddenVideos();
   
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes[STORAGE_KEYS.HIDDEN_VIDEOS]) {
-      loadHiddenVideos();
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message && message.type === 'HIDDEN_VIDEOS_EVENT') {
+      hiddenVideosState.pageCursors = [null];
+      hiddenVideosState.currentPage = 1;
+      refreshStats().then(() => loadHiddenVideos()).catch(() => {});
     }
   });
 });

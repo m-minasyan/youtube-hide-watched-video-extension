@@ -93,6 +93,7 @@ This document provides guidelines for frontend development of the YouTube Hide W
 - Async/await for asynchronous operations
 - Destructuring where appropriate
 - Clear variable naming
+- Normalize Chrome API usage to work with promise and callback behaviors
 
 ### DOM Manipulation
 - Use querySelector for single elements

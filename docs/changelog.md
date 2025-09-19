@@ -5,9 +5,36 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Eliminated brief unhide flicker for individually hidden videos by preserving classes on unaffected cards during toggle operations.
+- Ensured the packaged build bundles the background service worker module directory so registration succeeds in production installs.
+- Prevented individual hide toggles from reverting when late IndexedDB reads resolve after user actions by tracking cache timestamps in the content script.
+- Added a race condition regression test to ensure per-video eye button state remains stable under delayed fetch scenarios.
+- Hardened background and popup messaging by replacing the service worker module loader with a cached static import that satisfies ServiceWorkerGlobalScope restrictions without sacrificing async resiliency.
+- Added background initialization regression tests to ensure the service worker eagerly warms the hidden videos store on load and runtime restarts.
+- Fixed MV3 service worker registration failures by removing the test-only global hook, keeping the static import path, and exposing a test helper to await the background initialization promise safely.
+
+## [2.5.0] - 2025-10-05
+
+### Added
+
+- IndexedDB-backed storage layer for individually hidden videos with batched APIs and pagination support.
+- Background service worker messaging that fronts all hidden video CRUD operations and keeps UI caches in sync across tabs.
+- Developer utilities for exporting or clearing the hidden video database via `hidden-videos-db-tools.js`.
+
+### Changed
+
+- Hidden video persistence no longer relies on `chrome.storage`; legacy data is migrated into IndexedDB on startup and cleaned up after success.
+- Content scripts and management UI now fetch hidden video state through the new message-based API with in-memory caching for visible items.
+- Automated test suite expanded to cover IndexedDB behaviors and service messaging.
+
 ## [2.4.4] - 2025-09-19
 
 ### Fixed
+
 - Migrated individually hidden video storage to `chrome.storage.local` to eliminate the previous ~62 item cap caused by sync storage quotas.
 - Added automatic migration and metadata normalization for legacy hidden video records in both content script and Hidden Videos Manager.
 - Expanded automated coverage to verify large-volume hidden video persistence and regression scenarios.
@@ -15,12 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.4.3] - 2025-09-05
 
 ### Fixed
+
 - Packaged build now includes the Hidden Videos Manager page files (`hidden-videos.html`, `hidden-videos.css`, `hidden-videos.js`). This resolves `ERR_FILE_NOT_FOUND` when clicking “View Hidden Videos”.
 - Updated `scripts/build-extension.sh` to copy the Hidden Videos Manager assets into the build directory and ZIP package.
 
 ## [2.4.2] - 2025-01-27
 
 ### Changed
+
 - Modified dropdown behavior for Watched Videos and Shorts sections - dropdowns now only open via the collapse button (">") instead of clicking anywhere on the header
 - Improved UX by making the interaction more explicit and preventing accidental toggles
 - Updated section header cursor from pointer to default to better indicate clickable areas
@@ -29,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.4.1] - 2025-01-27
 
 ### Fixed
+
 - Fixed UI latency issue in popup interface where mode selection buttons had delayed visual feedback
 - Removed font-weight changes from active button states to eliminate layout reflow delays
 - Replaced bold text with enhanced visual indicators (shadow and subtle scale) for active buttons
@@ -39,9 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.4.0] - 2025-01-26
 
 ### Added
+
 - Comprehensive README update with detailed feature descriptions, installation methods, usage guide, technical architecture overview, and complete project documentation
 
 ### Added
+
 - Individual Video Mode toggle switch to enable/disable the per-video hide/dim feature
 - Visual indicator and disable state for Individual Mode options when toggled off
 - Smooth transition animations for enabling/disabling Individual Mode options
@@ -78,12 +110,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive YouTube DOM structure analysis documentation (docs/youtube-dom-analysis.md) for future automation and feature development
 
 ### Fixed
+
 - Suppressed console.error outputs in test suite for cleaner test results
   - Added proper console.error mocking with setup/teardown in error handling tests
   - Fixed console.error outputs in coreBusinessLogic.test.js and advancedBusinessLogic.test.js
   - Tests now run cleanly without displaying expected error messages from error handling scenarios
 
 ### Changed
+
 - Theme now defaults to 'auto' which detects system preference on popup open
 - Theme detection happens in popup/hidden-videos pages using window.matchMedia API
 - Removed "Back to Settings" button from Hidden Videos Manager page for cleaner interface
@@ -97,6 +131,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Centered action buttons (Hide, View on YouTube, Remove) in video cards on Hidden Videos Manager page
 
 ### Fixed
+
 - Fixed Individual Mode "Dimmed" button not being selected by default on first installation
 - Fixed loadSettings() function interfering with Individual Mode button states
 - Individual Mode buttons are now properly excluded from regular mode button processing
@@ -126,6 +161,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.2.0] - 2025-08-23
 
 ### Added
+
 - Individual video hiding/dimming with eye icon on each video thumbnail
 - Eye icon button in the center-top of each video card for quick hide/dim toggle
 - Individual mode setting to choose between Dimmed and Hidden for individual videos
@@ -137,18 +173,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for new YouTube elements (yt-thumbnail-view-model, yt-lockup-view-model)
 
 ### Changed
+
 - Enhanced content script to support individual video management
 - Updated popup interface with individual mode selector
 - Improved CSS with new styles for eye buttons and individual states
 - Updated element selectors to work with latest YouTube HTML structure
 
 ### Fixed
+
 - Eye button compatibility with new YouTube thumbnail elements
 - Improved detection of video containers and thumbnails
 
 ## [2.1.2] - 2025-08-23
 
 ### Fixed
+
 - Added support for new YouTube progress bar classes (ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment)
 - Updated content.js to detect multiple progress bar selector variations
 - Fixed test HTML page to use correct YouTube progress bar structure
@@ -158,10 +197,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.1.1] - 2025-08-23
 
 ### Added
+
 - Build script for creating Chrome Web Store package (`scripts/build-extension.sh`)
 - Privacy policy document (PRIVACY.md)
 
 ### Fixed
+
 - Improved YouTube Shorts detection on homepage
 - Enhanced selector coverage for new YouTube HTML structure
 - Added support for ytm-shorts-lockup-view-model elements
@@ -172,6 +213,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.1.0] - 2025-08-23
 
 ### Added
+
 - Dark theme support with toggle button in the header
 - Theme preference persistence across sessions
 - Quick toggle buttons for setting all videos/shorts to normal, dimmed, or hidden at once
@@ -182,6 +224,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced button states with subtle shadow effects
 
 ### Changed
+
 - Completely redesigned UI with modern, clean aesthetics
 - Improved color scheme with better contrast and readability
 - Refined button groups with better visual feedback
@@ -191,6 +234,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced accessibility with proper ARIA labels
 
 ### Improved
+
 - Overall user experience with more intuitive controls
 - Visual consistency across light and dark themes
 - Performance with optimized CSS transitions
