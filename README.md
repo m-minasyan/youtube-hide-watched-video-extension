@@ -203,14 +203,14 @@ The build script bundles all required assets, including the Hidden Videos Manage
 
 ## 📝 Changelog
 
-### Version 2.4.2 (Latest)
-- Added individual video hiding with eye icon
-- Implemented Hidden Videos Manager page
-- Added dark theme support with auto-detection
-- Introduced collapsible sections with Quick Toggle
-- Enhanced YouTube DOM compatibility
-- Added comprehensive test suite (230+ tests)
-- Improved performance and error handling
+### Version 2.5.0 (Latest)
+- Enhanced storage with IndexedDB for unlimited hidden videos
+- Improved pagination in Hidden Videos Manager
+- Faster and more stable hide/unhide operations
+- Better synchronization across multiple tabs
+- Fixed UI flickering issues
+- Optimized memory usage and performance
+- Rock-solid stability with service worker improvements
 
 See [CHANGELOG.md](docs/changelog.md) for full version history.
 
