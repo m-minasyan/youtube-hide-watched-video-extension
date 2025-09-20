@@ -1,6 +1,6 @@
 {
   "name": "youtube-hide-watched-video-extension",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Browser extension to hide watched videos on YouTube",
   "scripts": {
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",

@@ -5,22 +5,24 @@ A powerful Chrome extension that automatically hides, dims, or manages watched v
 ## 🚀 Features
 
 ### Core Functionality
+
 - **Automatic Detection**: Intelligently detects and processes watched videos based on YouTube's progress indicators
 - **Three Visibility Modes**:
   - **Normal**: Show all content as usual
   - **Dimmed**: Make content semi-transparent for subtle de-emphasis
   - **Hidden**: Completely remove content from view
-- **Individual Video Control**: 
+- **Individual Video Control**:
   - Eye icon on each video thumbnail for instant hide/dim toggle
   - Real-time visibility changes without page reload
   - Persistent state across sessions
-- **Hidden Videos Manager**: 
+- **Hidden Videos Manager**:
   - Dedicated page to view and manage all individually hidden videos
   - Filter by status (All, Dimmed, Hidden)
   - Pagination support (12 videos per page)
   - Quick actions: Toggle state, View on YouTube, Remove from list
 
 ### Advanced Settings
+
 - **Section-Specific Configuration**: Different settings for each YouTube section:
   - Home page
   - Subscriptions
@@ -34,8 +36,9 @@ A powerful Chrome extension that automatically hides, dims, or manages watched v
 - **Quick Toggle Buttons**: Apply settings to all videos/shorts at once
 
 ### User Interface
+
 - **Modern Design**: Clean, intuitive popup interface with smooth animations
-- **Dark/Light Theme**: 
+- **Dark/Light Theme**:
   - Automatic theme detection based on system preferences
   - Manual theme toggle with persistent preference
   - Consistent theming across all extension pages
@@ -46,11 +49,13 @@ A powerful Chrome extension that automatically hides, dims, or manages watched v
 ## 📦 Installation
 
 ### Method 1: From Chrome Web Store
+
 (Coming soon - currently in review)
 
 ### Method 2: From Source (Developer Mode)
 
 1. Download or clone this repository:
+
    ```bash
    git clone https://github.com/m-minasyan/youtube-hide-watched-video-extension.git
    ```
@@ -74,6 +79,7 @@ A powerful Chrome extension that automatically hides, dims, or manages watched v
 ## 🎯 Usage Guide
 
 ### Basic Usage
+
 1. Click the extension icon in your Chrome toolbar
 2. Configure your preferences:
    - Set watched video threshold using the slider
@@ -82,12 +88,14 @@ A powerful Chrome extension that automatically hides, dims, or manages watched v
 3. Navigate to YouTube - settings apply automatically
 
 ### Individual Video Management
+
 1. Enable "Individual Video Mode" in the extension popup
 2. Hover over any video thumbnail on YouTube
 3. Click the eye icon to hide/dim that specific video
 4. Access Hidden Videos Manager from the popup to manage hidden videos
 
 ### Quick Actions
+
 - Use Quick Toggle buttons to set all videos/shorts to the same mode instantly
 - Click section headers to expand/collapse settings groups
 - Toggle theme with the sun/moon icon in the header
@@ -95,6 +103,7 @@ A powerful Chrome extension that automatically hides, dims, or manages watched v
 ## 🏗️ Technical Architecture
 
 ### Project Structure
+
 ```
 /
 ├── manifest.json           # Extension manifest (Manifest V3)
@@ -121,6 +130,7 @@ A powerful Chrome extension that automatically hides, dims, or manages watched v
 ```
 
 ### Technology Stack
+
 - **Core**: Vanilla JavaScript (ES6+), HTML5, CSS3
 - **APIs**: Chrome Extensions Manifest V3, WebExtensions API
 - **Testing**: Jest with 230+ unit tests covering all business logic
@@ -128,6 +138,7 @@ A powerful Chrome extension that automatically hides, dims, or manages watched v
 - **Browser Support**: Chrome 88+, Edge (Chromium), Brave, Opera
 
 ### Key Features Implementation
+
 - **DOM Manipulation**: Efficient selectors supporting latest YouTube HTML structure
 - **State Management**: Chrome Storage API with cross-tab synchronization
 - **Performance**: Debounced operations, caching, and optimized queries
@@ -136,6 +147,7 @@ A powerful Chrome extension that automatically hides, dims, or manages watched v
 ## 🧪 Testing
 
 The extension includes a comprehensive test suite with 230+ unit tests covering:
+
 - Settings management and initialization
 - Video detection and hiding logic
 - Theme management and persistence
@@ -147,6 +159,7 @@ The extension includes a comprehensive test suite with 230+ unit tests covering:
 - Edge cases and error scenarios
 
 Run tests locally:
+
 ```bash
 npm install
 npm test
@@ -162,6 +175,7 @@ npm test
 ## 🔒 Privacy & Security
 
 This extension:
+
 - ✅ **No Data Collection**: Does not collect or transmit any personal data
 - ✅ **Local Storage Only**: All preferences stored locally in Chrome
 - ✅ **Minimal Permissions**: Only requests necessary YouTube access
@@ -172,11 +186,13 @@ This extension:
 ## 🛠️ Development
 
 ### Prerequisites
+
 - Node.js 14+ (for testing)
 - Chrome 88+ for testing
 - Git for version control
 
 ### Setup Development Environment
+
 ```bash
 # Clone the repository
 git clone https://github.com/m-minasyan/youtube-hide-watched-video-extension.git
@@ -195,6 +211,7 @@ npm test
 The build script bundles all required assets, including the Hidden Videos Manager page (`hidden-videos.html`, `hidden-videos.css`, `hidden-videos.js`). If you previously saw ERR_FILE_NOT_FOUND when clicking “View Hidden Videos”, rebuild and reload the extension.
 
 ### Contributing
+
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
@@ -203,7 +220,8 @@ The build script bundles all required assets, including the Hidden Videos Manage
 
 ## 📝 Changelog
 
-### Version 2.5.0 (Latest)
+### Version 2.5.1 (Latest)
+
 - Enhanced storage with IndexedDB for unlimited hidden videos
 - Improved pagination in Hidden Videos Manager
 - Faster and more stable hide/unhide operations
@@ -217,6 +235,7 @@ See [CHANGELOG.md](docs/changelog.md) for full version history.
 ## 🤝 Support
 
 For issues, feature requests, or questions:
+
 - **GitHub Issues**: [Report a bug or request a feature](https://github.com/m-minasyan/youtube-hide-watched-video-extension/issues)
 - **Discussions**: [Join the conversation](https://github.com/m-minasyan/youtube-hide-watched-video-extension/discussions)
 

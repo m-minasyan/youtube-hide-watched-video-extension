@@ -8,7 +8,7 @@ YouTube Hide Watched Video Extension
 
 ### Product Description
 
-A browser extension that automatically hides or marks watched videos on YouTube, helping users focus on unwatched content and improve their browsing experience. Version 2.5.0 introduces enhanced storage capabilities with IndexedDB for unlimited hidden videos and improved performance.
+A browser extension that automatically hides or marks watched videos on YouTube, helping users focus on unwatched content and improve their browsing experience. Version 2.5.1 introduces enhanced storage capabilities with IndexedDB for unlimited hidden videos and improved performance.
 
 ### Target Audience
 
