@@ -5,6 +5,25 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2025-10-10
+
+### Changed
+
+- Refactored content.js from monolithic 848-line IIFE into modular ES6 architecture with 20+ focused modules for improved maintainability and testability.
+
+### Added
+
+- Webpack build pipeline for content script module bundling with Terser minification.
+- Modular content script architecture with clear separation of concerns across utils, storage, detection, UI, hiding, observers, and events layers.
+- Comprehensive content architecture documentation in docs/content-architecture.md.
+- Build script integration to automatically compile content modules before packaging.
+
+### Technical Details
+
+- Content script now built from ES6 modules in content/ directory and bundled via webpack into optimized content.js (~15KB minified).
+- Module structure: utils (constants, logger, debounce, DOM helpers), storage (cache, settings, messaging), detection (video, shorts, section), UI (styles, eye button, accessibility), hiding (individual, watched, shorts), observers (mutation, URL, XHR), events (coordination).
+- No breaking changes - bundled output maintains identical functionality to original monolithic script.
+
 ## [2.5.1] - 2025-09-20
 
 ### Added

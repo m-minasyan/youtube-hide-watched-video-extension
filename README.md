@@ -108,8 +108,18 @@ A powerful Chrome extension that automatically hides, dims, or manages watched v
 /
 ├── manifest.json           # Extension manifest (Manifest V3)
 ├── package.json           # Node.js dependencies and test configuration
+├── webpack.content.config.js # Webpack build configuration
 ├── background.js          # Service worker for extension lifecycle
-├── content.js            # Content script for YouTube manipulation
+├── content.js            # Content script (bundled output)
+├── content/              # Modular content script source (ES6 modules)
+│   ├── index.js         # Main entry point
+│   ├── utils/           # Utilities (constants, logger, debounce, DOM)
+│   ├── storage/         # Storage layer (cache, settings, messaging)
+│   ├── detection/       # Video detection (watched, shorts, sections)
+│   ├── ui/              # UI components (styles, eye button, accessibility)
+│   ├── hiding/          # Hiding logic (individual, watched, shorts)
+│   ├── observers/       # DOM observers (mutation, URL, XHR)
+│   └── events/          # Event handling and coordination
 ├── popup.html/js/css    # Extension popup interface
 ├── hidden-videos.*      # Hidden Videos Manager page
 ├── icons/              # Extension icons (16x16 to 128x128)
@@ -124,6 +134,7 @@ A powerful Chrome extension that automatically hides, dims, or manages watched v
     ├── app-flow.md
     ├── changelog.md
     ├── backend-structure.md
+    ├── content-architecture.md  # Content script module documentation
     ├── frontend-guidelines.md
     ├── tech-stack.md
     └── prd.md
@@ -131,18 +142,21 @@ A powerful Chrome extension that automatically hides, dims, or manages watched v
 
 ### Technology Stack
 
-- **Core**: Vanilla JavaScript (ES6+), HTML5, CSS3
-- **APIs**: Chrome Extensions Manifest V3, WebExtensions API
+- **Core**: Vanilla JavaScript (ES6+ modules), HTML5, CSS3
+- **APIs**: Chrome Extensions Manifest V3, WebExtensions API, IndexedDB
+- **Architecture**: Modular ES6 architecture with webpack bundling
 - **Testing**: Jest with 230+ unit tests covering all business logic
-- **Build Tools**: Bash scripts for packaging and distribution
+- **Build Tools**: Webpack for module bundling, Bash scripts for packaging
 - **Browser Support**: Chrome 88+, Edge (Chromium), Brave, Opera
 
 ### Key Features Implementation
 
+- **Modular Architecture**: Content script built from 20+ ES6 modules with clear separation of concerns
 - **DOM Manipulation**: Efficient selectors supporting latest YouTube HTML structure
-- **State Management**: Chrome Storage API with cross-tab synchronization
-- **Performance**: Debounced operations, caching, and optimized queries
+- **State Management**: IndexedDB for hidden videos, Chrome Storage API for settings with cross-tab sync
+- **Performance**: Debounced operations, lazy caching, optimized webpack bundle (~15KB minified)
 - **Error Handling**: Comprehensive error recovery and fallback mechanisms
+- **Maintainability**: Each module < 200 lines, testable in isolation, easy to extend
 
 ## 🧪 Testing
 
@@ -198,13 +212,19 @@ This extension:
 git clone https://github.com/m-minasyan/youtube-hide-watched-video-extension.git
 cd youtube-hide-watched-video-extension
 
-# Install test dependencies
+# Install dependencies
 npm install
+
+# Build content script modules
+npm run build:content:prod
 
 # Run tests
 npm test
 
-# Build for distribution
+# Watch mode for development
+npm run dev
+
+# Build for distribution (includes content script build)
 ./scripts/build-extension.sh
 ```
 
@@ -220,7 +240,15 @@ The build script bundles all required assets, including the Hidden Videos Manage
 
 ## 📝 Changelog
 
-### Version 2.5.1 (Latest)
+### Version 2.6.0 (Latest)
+
+- Refactored content script into modular ES6 architecture (20+ focused modules)
+- Improved maintainability and testability with clear module boundaries
+- Added webpack build pipeline for optimized bundling (~15KB minified)
+- Comprehensive content architecture documentation added
+- No breaking changes - identical functionality to previous version
+
+### Version 2.5.1
 
 - Enhanced storage with IndexedDB for unlimited hidden videos
 - Improved pagination in Hidden Videos Manager

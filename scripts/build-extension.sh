@@ -11,6 +11,16 @@ echo "================================"
 
 cd "$PROJECT_ROOT" || exit 1
 
+echo "🔨 Building content script modules..."
+npm run build:content:prod
+
+if [ $? -ne 0 ]; then
+  echo "❌ Content script build failed!"
+  exit 1
+fi
+
+echo "✅ Content script built successfully"
+
 rm -rf "$BUILD_DIR" "$DIST_DIR"
 mkdir -p "$BUILD_DIR" "$DIST_DIR"
 

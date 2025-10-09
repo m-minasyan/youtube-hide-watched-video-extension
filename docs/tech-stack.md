@@ -24,9 +24,9 @@ This document outlines the technology stack used in the YouTube Hide Watched Vid
 ### Build Tools
 - **Bash Script**: Automated packaging for Chrome Web Store
 - **ZIP**: Extension packaging format
-- **npm**: Package management (if needed)
-- **webpack**: Module bundling (if needed)
-- **Babel**: JavaScript transpilation (if needed)
+- **npm**: Package management and script runner
+- **webpack (v5.89.0)**: Module bundling for content script
+- **Terser**: JavaScript minification and optimization
 
 ### Testing
 - **Jest**: Unit testing framework (v29.7.0)
@@ -58,15 +58,18 @@ This document outlines the technology stack used in the YouTube Hide Watched Vid
 ## Architecture Patterns
 
 ### Design Patterns
-- **Message Passing**: Component communication
-- **Observer Pattern**: DOM mutation handling
-- **Singleton**: Storage management
-- **Module Pattern**: Code organization
+- **ES6 Modules**: Modular code organization with explicit imports/exports
+- **Message Passing**: Component communication between content and background scripts
+- **Observer Pattern**: DOM mutation handling for dynamic content
+- **Singleton**: Storage management and cache handling
+- **Module Pattern**: Clear separation of concerns across modules
 
 ### Code Organization
-- **Separation of Concerns**: Clear module boundaries
-- **DRY Principle**: Reusable utilities
-- **SOLID Principles**: Maintainable code structure
+- **Modular Architecture**: Content script split into 20+ focused modules
+- **Separation of Concerns**: Clear module boundaries (utils, storage, detection, UI, hiding, observers, events)
+- **DRY Principle**: Reusable utilities and shared constants
+- **SOLID Principles**: Single responsibility per module, easy to extend
+- **Webpack Bundling**: Modules bundled into optimized single file for deployment
 
 ## Libraries & Dependencies
 
@@ -74,11 +77,16 @@ This document outlines the technology stack used in the YouTube Hide Watched Vid
 - None (vanilla JavaScript preferred for performance)
 
 ### Development Dependencies
-- Jest (v29.7.0) - Testing framework
-- jest-environment-jsdom (v29.7.0) - DOM testing environment
-- @testing-library/jest-dom (v6.1.5) - Jest matchers
-- Build tools as listed above
-- Linting and formatting tools
+- **Jest (v29.7.0)**: Testing framework
+- **jest-environment-jsdom (v29.7.0)**: DOM testing environment
+- **@testing-library/jest-dom (v6.1.5)**: Jest matchers
+- **webpack (v5.89.0)**: Module bundler
+- **webpack-cli (v5.1.4)**: Webpack command-line interface
+- **terser-webpack-plugin (v5.3.9)**: Code minification
+- **@babel/core (v7.28.4)**: JavaScript compiler
+- **@babel/preset-env (v7.28.3)**: Smart presets for modern JavaScript
+- **babel-jest (v30.1.2)**: Jest transformer for Babel
+- **fake-indexeddb (v4.0.2)**: IndexedDB mock for testing
 
 ## Browser Support
 
@@ -101,9 +109,16 @@ This document outlines the technology stack used in the YouTube Hide Watched Vid
 
 ### Bundle Size Targets
 - Popup bundle: < 50KB
-- Content script: < 100KB
+- Content script: ~15KB (minified and optimized via webpack)
 - Background script: < 30KB
 - Total extension size: < 500KB
+
+### Build Process
+- Source modules in `content/` directory (ES6 modules)
+- Webpack compiles and bundles to single `content.js`
+- Terser minification for production builds
+- Source maps generated for debugging
+- Build integrated into deployment pipeline
 
 ## Security Measures
 
