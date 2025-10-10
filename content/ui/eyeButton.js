@@ -4,6 +4,8 @@ import { fetchHiddenVideoStates, setHiddenVideoState } from '../storage/messagin
 import { getIndividualMode } from '../storage/settings.js';
 import { extractTitleFromContainer } from '../utils/dom.js';
 import { cachedClosest } from '../utils/domCache.js';
+import { syncIndividualContainerState } from '../hiding/individualHiding.js';
+import { logError } from '../../shared/errorHandler.js';
 
 export function applyStateToEyeButton(button, state) {
   if (!button) return;
@@ -30,10 +32,24 @@ export function createEyeButton(videoContainer, videoId) {
   const cachedRecord = getCachedHiddenVideo(videoId);
   applyStateToEyeButton(button, cachedRecord?.state || 'normal');
   if (!cachedRecord) {
+    // Fetch video state and ensure container is synchronized
+    // This prevents the eye button from showing correct state while container is not hidden/dimmed
     fetchHiddenVideoStates([videoId]).then(() => {
       const refreshed = getCachedHiddenVideo(videoId);
-      applyStateToEyeButton(button, refreshed?.state || 'normal');
-    }).catch(() => {});
+      const state = refreshed?.state || 'normal';
+      applyStateToEyeButton(button, state);
+
+      // Find and update container to sync visual state
+      const container = cachedClosest(button, SELECTOR_STRINGS.VIDEO_CONTAINERS);
+      if (container) {
+        syncIndividualContainerState(container, state);
+      }
+    }).catch((error) => {
+      logError('EyeButton', error, {
+        operation: 'fetchHiddenVideoStates',
+        videoId
+      });
+    });
   }
   button.innerHTML = `
     <svg viewBox="0 0 24 24">

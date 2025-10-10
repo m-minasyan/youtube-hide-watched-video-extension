@@ -1,6 +1,6 @@
 import { CSS_CLASSES, INTERSECTION_OBSERVER_CONFIG } from '../utils/constants.js';
 import { logDebug } from '../utils/logger.js';
-import { getCachedHiddenVideo } from '../storage/cache.js';
+import { getCachedHiddenVideo, hasCachedVideo } from '../storage/cache.js';
 import { fetchHiddenVideoStates } from '../storage/messaging.js';
 import { isIndividualModeEnabled } from '../storage/settings.js';
 import { collectVisibleVideoIds, findVideoContainers, extractVideoIdFromHref } from '../utils/dom.js';
@@ -9,7 +9,13 @@ import { getVisibleVideos, isVideoVisible } from '../utils/visibilityTracker.js'
 let individualHidingIteration = 0;
 let isInitialLoad = true;
 
-function syncIndividualContainerState(container, state) {
+/**
+ * Synchronizes container CSS classes with video state
+ * Exported so eye button creation can sync state immediately after fetch
+ * @param {HTMLElement} container - Video container element
+ * @param {string} state - Video state ('normal', 'dimmed', 'hidden')
+ */
+export function syncIndividualContainerState(container, state) {
   if (!container) return;
   const hasDimmed = container.classList.contains(CSS_CLASSES.INDIVIDUAL_DIMMED);
   const hasHidden = container.classList.contains(CSS_CLASSES.INDIVIDUAL_HIDDEN);
@@ -120,6 +126,12 @@ export async function applyIndividualHiding() {
   }
 
   videoIds.forEach((videoId) => {
+    // Skip if no cached record - eye button will handle initial fetch and sync
+    // This prevents applying stale/incorrect state before cache is populated
+    if (!hasCachedVideo(videoId)) {
+      return;
+    }
+
     const record = getCachedHiddenVideo(videoId);
     const state = record?.state || 'normal';
     const containers = findVideoContainers(videoId);

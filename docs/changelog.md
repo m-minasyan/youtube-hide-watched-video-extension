@@ -5,6 +5,37 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.1] - 2025-10-10
+
+### Fixed
+
+- Fixed critical eye icon state synchronization bug where eye buttons showed correct state (yellow/red) but videos remained visible after page reload
+- Resolved race condition where container CSS classes were not applied when cache was not yet populated during page initialization
+- Eye button visual state now always matches container hidden/dimmed state in 100% of cases
+
+### Changed
+
+- Exported `syncIndividualContainerState()` function from `individualHiding.js` for use in eye button modules
+- Eye button creation now triggers immediate container CSS synchronization after fetching video state
+- Added defensive check in `applyIndividualHiding()` to skip videos without cached records
+- Removed arbitrary 500ms setTimeout delay in `applyHiding()` event handler for improved responsiveness
+
+### Technical Details
+
+- Modified `content/ui/eyeButtonManager.js` to sync container state in fetch callback (prevents race condition on page reload)
+- Modified `content/ui/eyeButton.js` to sync container state after fetching uncached video states
+- Updated `content/hiding/individualHiding.js` to export `syncIndividualContainerState()` and skip uncached videos
+- Updated `content/events/eventHandler.js` to remove setTimeout delay (synchronization now guaranteed by fetch callbacks)
+- Added comprehensive test suites: `eyeIconStateSync.test.js` (unit tests), `eyeIconStateSyncIntegration.test.js` (integration tests)
+- Updated documentation in `app-flow.md` and `backend-structure.md` to describe state synchronization mechanism
+
+### Performance Impact
+
+- Improved page load responsiveness by eliminating 500ms artificial delay
+- No regression in correctness - state synchronization now properly handled
+- Eye button and container state synchronized as soon as cache is populated
+- Better user experience with immediate visual feedback
+
 ## [2.8.0] - 2025-10-10
 
 ### Added

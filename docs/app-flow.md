@@ -34,6 +34,7 @@ This document describes the application flow for the YouTube Hide Watched Video 
 - User can toggle visibility in real-time
 - Hidden videos are tracked and manageable
 - State changes are immediately reflected in the UI
+- **State Synchronization**: Eye button visual state is always synchronized with container CSS classes to prevent visual inconsistencies after page reload
 
 ## Technical Flow
 
@@ -138,7 +139,16 @@ This document describes the application flow for the YouTube Hide Watched Video 
 1. IntersectionObserver setup on page load
 2. All video containers observed for visibility
 3. **Initial Load**: Process ALL videos regardless of visibility to apply hidden states
-4. **Subsequent Updates**: Visibility changes batched and debounced
-5. **Lazy Mode**: Only visible videos fetched and processed after initial load
-6. Individual hiding applied based on visibility (all on initial, visible only after)
-7. New videos processed as they scroll into view
+4. **Eye Button Synchronization**: Eye buttons fetch state and immediately sync container CSS classes to prevent race conditions
+5. **Subsequent Updates**: Visibility changes batched and debounced
+6. **Lazy Mode**: Only visible videos fetched and processed after initial load
+7. Individual hiding applied based on visibility (all on initial, visible only after)
+8. New videos processed as they scroll into view
+
+**State Synchronization Mechanism**:
+- Eye button creation triggers async fetch of video state from background script
+- Fetch callback immediately applies container CSS classes (`syncIndividualContainerState`)
+- This ensures eye button visual state matches container hidden/dimmed state
+- Prevents race condition where `applyIndividualHiding()` runs before cache is populated
+- Defensive check: `applyIndividualHiding()` skips videos without cached records
+- Cache-first approach: Eye buttons use cached state if available, only fetch if missing

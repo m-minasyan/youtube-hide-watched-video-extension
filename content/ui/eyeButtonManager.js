@@ -7,6 +7,8 @@ import { extractTitleFromContainer } from '../utils/dom.js';
 import { handleAriaHiddenConflicts } from './accessibility.js';
 import { createEyeButton } from './eyeButton.js';
 import { cachedDocumentQuery, cachedClosest, cachedQuerySelector } from '../utils/domCache.js';
+import { syncIndividualContainerState } from '../hiding/individualHiding.js';
+import { logError } from '../../shared/errorHandler.js';
 
 async function saveHiddenVideo(videoId, state, title = null) {
   if (!videoId) return null;
@@ -68,8 +70,18 @@ export function addEyeButtons() {
       parentContainer.setAttribute('data-ythwv-video-id', videoId);
     }
 
+    // Fetch video state and synchronize container CSS classes
+    // This prevents a race condition where the eye button shows correct state
+    // but the container is not actually hidden/dimmed after page reload
     fetchHiddenVideoStates([videoId]).then(() => {
       const record = getCachedHiddenVideo(videoId);
+
+      // Apply container state immediately after cache update
+      // This ensures eye button visual state matches container state
+      if (record && parentContainer) {
+        syncIndividualContainerState(parentContainer, record.state);
+      }
+
       if (!record || record.title) return;
 
       const container = cachedClosest(thumbnail, SELECTORS.VIDEO_CONTAINERS.join(', '));
@@ -80,7 +92,12 @@ export function addEyeButtons() {
       if (videoTitle && videoTitle !== 'Toggle video visibility') {
         saveHiddenVideo(videoId, record.state, videoTitle);
       }
-    }).catch(() => {});
+    }).catch((error) => {
+      logError('EyeButtonManager', error, {
+        operation: 'fetchHiddenVideoStates',
+        videoId
+      });
+    });
 
     logDebug('Added eye button to video:', videoId);
   });

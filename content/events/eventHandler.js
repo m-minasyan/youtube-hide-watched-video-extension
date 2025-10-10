@@ -40,10 +40,11 @@ export function applyHiding() {
   logDebug('Applying hiding/dimming');
   updateClassOnWatchedItems();
   updateClassOnShortsItems();
-  setTimeout(() => {
-    addEyeButtons();
-    applyIndividualHiding();
-  }, 500);
+  // Removed setTimeout delay - synchronization now happens in eye button fetch callbacks
+  // This improves responsiveness and prevents race condition where container state
+  // is applied before cache is populated
+  addEyeButtons();
+  applyIndividualHiding();
 }
 
 // Visibility change handler

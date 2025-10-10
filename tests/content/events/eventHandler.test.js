@@ -160,22 +160,14 @@ describe('EventHandler Module', () => {
       expect(updateClassOnShortsItems).toHaveBeenCalled();
     });
 
-    test('should add eye buttons after delay', () => {
+    test('should add eye buttons immediately', () => {
       applyHiding();
-
-      expect(addEyeButtons).not.toHaveBeenCalled();
-
-      jest.advanceTimersByTime(500);
 
       expect(addEyeButtons).toHaveBeenCalled();
     });
 
-    test('should apply individual hiding after delay', () => {
+    test('should apply individual hiding immediately', () => {
       applyHiding();
-
-      expect(applyIndividualHiding).not.toHaveBeenCalled();
-
-      jest.advanceTimersByTime(500);
 
       expect(applyIndividualHiding).toHaveBeenCalled();
     });

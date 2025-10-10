@@ -296,6 +296,25 @@ The individual hiding module implements a two-phase processing strategy to avoid
    - Performance benefits maintained after initial load
    - New videos processed as they scroll into view
 
+**State Synchronization Fix**:
+To prevent race conditions where eye button visual state doesn't match container hidden/dimmed state:
+
+1. **Eye Button Fetch Callback Synchronization**:
+   - Eye button creation triggers async `fetchHiddenVideoStates()` for uncached videos
+   - Fetch callback immediately calls `syncIndividualContainerState()` to apply CSS classes
+   - This ensures container state is synchronized as soon as cache is populated
+   - Prevents visual mismatch on page reload
+
+2. **Defensive Cache Validation**:
+   - `applyIndividualHiding()` now checks `hasCachedVideo()` before processing
+   - Skips videos without cached records to avoid applying incorrect state
+   - Eye button fetch callbacks handle initial state application for uncached videos
+
+3. **Removed setTimeout Delay**:
+   - Eliminated arbitrary 500ms delay in `applyHiding()` event handler
+   - Improves responsiveness without compromising correctness
+   - Synchronization guarantees provided by fetch callbacks
+
 **Performance Impact**:
 - Correct hidden/dimmed state on page reload (no race conditions)
 - 50-70% reduction in DOM queries after initial load
@@ -304,6 +323,7 @@ The individual hiding module implements a two-phase processing strategy to avoid
 - Reduced CPU usage during idle (off-screen videos not processed)
 - Improved scroll performance with batched updates
 - Better battery life on mobile devices
+- Improved responsiveness (removed 500ms artificial delay)
 
 ### Storage Layer
 - IndexedDB-backed hidden video repository exposed through the background service worker
