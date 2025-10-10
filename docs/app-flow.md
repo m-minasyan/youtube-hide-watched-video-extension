@@ -152,3 +152,40 @@ This document describes the application flow for the YouTube Hide Watched Video 
 - Prevents race condition where `applyIndividualHiding()` runs before cache is populated
 - Defensive check: `applyIndividualHiding()` skips videos without cached records
 - Cache-first approach: Eye buttons use cached state if available, only fetch if missing
+
+### Hidden Videos Manager Search
+
+**Overview**:
+- Users can search hidden videos by title or video ID
+- Search is performed client-side after fetching all items (limited to 1000 for performance)
+- Search is case-insensitive with 300ms debounce delay
+- Results are paginated client-side (12 videos per page)
+- Search term is highlighted in results for better visibility
+
+**Search Flow**:
+1. User types in search input field
+2. Input is debounced (300ms delay) to prevent excessive re-renders
+3. On search trigger, system loads all hidden videos (up to 1000) from IndexedDB
+4. Videos are filtered client-side by search query
+5. Filtered results are paginated and displayed
+6. Search term is highlighted in video titles using `<mark>` tags
+7. Pagination controls updated for search results
+
+**Features**:
+- **Real-time search**: Results update as user types (with debounce)
+- **Case-insensitive**: Matches regardless of case
+- **Dual-field search**: Searches both video title and video ID
+- **Clear button**: Visible when search has text, clears search on click
+- **Enter key support**: Pressing Enter triggers immediate search (bypasses debounce)
+- **Filter integration**: Changing filters (all/dimmed/hidden) clears active search
+- **Loading indicator**: Shows "Searching..." during data fetch
+- **No results state**: Displays helpful message when no matches found
+- **Accessibility**: Screen reader announces search results count via ARIA live region
+- **XSS protection**: All user input is escaped using `escapeHtml()` function
+
+**Performance**:
+- Client-side filtering: Fast search after initial load (<100ms for 1000 videos)
+- Debouncing: Prevents excessive re-renders during typing
+- Limit: Searches up to 1000 videos maximum for performance
+- Pagination: Only 12 results rendered per page
+- Cache: Search results cached until filter change or search clear

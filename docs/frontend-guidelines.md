@@ -46,6 +46,18 @@ This document provides guidelines for frontend development of the YouTube Hide W
 - Actions to toggle state, view, or remove videos
 - Consistent theming with popup interface
 
+### Search Components
+- Search input with magnifying glass icon positioned on left
+- Clear button (X) appears on right when text is entered
+- Loading indicator displays during search operations ("Searching..." with spinner)
+- "No results" message with search term highlighted when no matches found
+- Search results show highlighted matching text using `<mark>` element
+- Search term highlighted with accent color background for visibility
+- Accessible with ARIA labels (`aria-label="Search videos by title"`)
+- ARIA live region announces search results count for screen readers
+- Keyboard accessible (Tab navigation, Enter to search immediately)
+- Search input width limited to 500px for optimal UX
+
 ### Options Page
 - Organized settings sections
 - Clear descriptions for each option
