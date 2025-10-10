@@ -5,6 +5,26 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.1] - 2025-10-10
+
+### Changed
+
+- Centralized all constants (storage keys, message types, default settings, CSS classes, selectors) into shared/constants.js module to eliminate duplication across codebase.
+
+### Added
+
+- Shared constants module (/shared/) used across all extension contexts (content scripts, background, popup, hidden-videos).
+- Comprehensive unit tests for shared constants (43 tests covering all constant values and cross-context integration).
+- Documentation for shared constants in /shared/README.md with usage examples and modification guidelines.
+
+### Technical Details
+
+- Removed 138 lines of duplicated constant definitions from background.js, popup.js, hidden-videos.js, and content/utils/constants.js.
+- Content script imports constants via re-export (bundled by webpack), while background/popup/hidden-videos use direct ES6 module imports.
+- All HTML scripts updated to type="module" for ES6 import support.
+- Build process updated to include shared/ directory in distribution packages.
+- Single source of truth for all configuration values reduces maintenance overhead and prevents inconsistencies.
+
 ## [2.6.0] - 2025-10-10
 
 ### Changed

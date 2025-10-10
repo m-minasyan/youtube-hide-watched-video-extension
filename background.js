@@ -1,4 +1,5 @@
 import { initializeHiddenVideosService } from './background/hiddenVideosService.js';
+import { STORAGE_KEYS, DEFAULT_SETTINGS } from './shared/constants.js';
 
 let hiddenVideosInitializationPromise = null;
 
@@ -22,39 +23,6 @@ async function initializeHiddenVideos() {
 export function __getHiddenVideosInitializationPromiseForTests() {
   return hiddenVideosInitializationPromise || Promise.resolve();
 }
-
-const STORAGE_KEYS = {
-  THRESHOLD: 'YTHWV_THRESHOLD',
-  WATCHED_STATE: 'YTHWV_STATE',
-  SHORTS_STATE: 'YTHWV_STATE_SHORTS',
-  INDIVIDUAL_MODE: 'YTHWV_INDIVIDUAL_MODE',
-  INDIVIDUAL_MODE_ENABLED: 'YTHWV_INDIVIDUAL_MODE_ENABLED',
-  THEME: 'YTHWV_THEME'
-};
-
-const DEFAULT_SETTINGS = {
-  threshold: 10,
-  individualMode: 'dimmed',
-  individualModeEnabled: true,
-  theme: 'auto',
-  states: {
-    watched: {
-      misc: 'normal',
-      subscriptions: 'normal',
-      channel: 'normal',
-      watch: 'normal',
-      trending: 'normal',
-      playlist: 'normal'
-    },
-    shorts: {
-      misc: 'normal',
-      subscriptions: 'normal',
-      channel: 'normal',
-      watch: 'normal',
-      trending: 'normal'
-    }
-  }
-};
 async function ensureDefaultSettings(details) {
   if (details.reason !== 'install') return;
   const defaultData = {

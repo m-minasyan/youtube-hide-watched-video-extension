@@ -1,9 +1,6 @@
-document.addEventListener('DOMContentLoaded', async () => {
-  const STORAGE_KEYS = {
-    HIDDEN_VIDEOS: 'YTHWV_HIDDEN_VIDEOS',
-    THEME: 'YTHWV_THEME'
-  };
+import { STORAGE_KEYS, HIDDEN_VIDEO_MESSAGES } from './shared/constants.js';
 
+document.addEventListener('DOMContentLoaded', async () => {
   const themeToggle = document.getElementById('theme-toggle');
   const filterButtons = document.querySelectorAll('.filter-btn');
   const clearAllBtn = document.getElementById('clear-all');
@@ -21,13 +18,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     items: []
   };
   let hiddenVideoStats = { total: 0, dimmed: 0, hidden: 0 };
-
-  const HIDDEN_VIDEO_MESSAGES = {
-    GET_PAGE: 'HIDDEN_VIDEOS_GET_PAGE',
-    GET_STATS: 'HIDDEN_VIDEOS_GET_STATS',
-    SET_STATE: 'HIDDEN_VIDEOS_SET_STATE',
-    CLEAR_ALL: 'HIDDEN_VIDEOS_CLEAR_ALL'
-  };
 
   async function sendHiddenVideosMessage(type, payload = {}) {
     try {

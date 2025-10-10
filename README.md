@@ -240,7 +240,7 @@ The build script bundles all required assets, including the Hidden Videos Manage
 
 ## 📝 Changelog
 
-### Version 2.6.0 (Latest)
+### Version 2.6.0
 
 - Refactored content script into modular ES6 architecture (20+ focused modules)
 - Improved maintainability and testability with clear module boundaries

@@ -58,18 +58,20 @@ This document outlines the technology stack used in the YouTube Hide Watched Vid
 ## Architecture Patterns
 
 ### Design Patterns
-- **ES6 Modules**: Modular code organization with explicit imports/exports
+- **ES6 Modules**: Modular code organization with explicit imports/exports across all contexts
 - **Message Passing**: Component communication between content and background scripts
 - **Observer Pattern**: DOM mutation handling for dynamic content
 - **Singleton**: Storage management and cache handling
 - **Module Pattern**: Clear separation of concerns across modules
+- **Centralized Constants**: Single source of truth for all configuration values
 
 ### Code Organization
 - **Modular Architecture**: Content script split into 20+ focused modules
 - **Separation of Concerns**: Clear module boundaries (utils, storage, detection, UI, hiding, observers, events)
-- **DRY Principle**: Reusable utilities and shared constants
+- **DRY Principle**: Reusable utilities and shared constants (no duplication)
 - **SOLID Principles**: Single responsibility per module, easy to extend
 - **Webpack Bundling**: Modules bundled into optimized single file for deployment
+- **Shared Constants Module**: `/shared/constants.js` used across background, popup, hidden-videos, and content scripts (via re-export)
 
 ## Libraries & Dependencies
 

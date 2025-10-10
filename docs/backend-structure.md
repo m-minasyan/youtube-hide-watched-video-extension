@@ -11,10 +11,13 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 ├── webpack.content.config.js # Webpack configuration for content script
 ├── background.js          # Background script
 ├── content.js            # Content script (bundled output from content/)
+├── shared/              # Shared constants across all contexts
+│   ├── constants.js    # Centralized constants (storage keys, messages, defaults)
+│   └── README.md       # Constants documentation
 ├── content/              # Modular content script source (ES6 modules)
 │   ├── index.js         # Main entry point
 │   ├── utils/           # Utility modules
-│   │   ├── constants.js # Shared constants and selectors
+│   │   ├── constants.js # Re-exports from shared/constants.js
 │   │   ├── logger.js    # Debug logging
 │   │   ├── debounce.js  # Debounce utility
 │   │   └── dom.js       # DOM helper functions
@@ -41,10 +44,10 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 │   └── events/          # Event handling
 │       └── eventHandler.js     # Event coordination and delegation
 ├── popup.html           # Extension popup HTML
-├── popup.js            # Extension popup logic
+├── popup.js            # Extension popup logic (ES6 module)
 ├── popup.css          # Extension popup styles
 ├── hidden-videos.html   # Hidden videos manager page
-├── hidden-videos.js    # Hidden videos manager logic
+├── hidden-videos.js    # Hidden videos manager logic (ES6 module)
 ├── hidden-videos.css  # Hidden videos manager styles
 ├── icons/             # Extension icons
 │   ├── icon.svg      # SVG icon source
@@ -55,6 +58,8 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 ├── tests/            # Unit tests
 │   ├── setup.js     # Jest setup and Chrome API mocks
 │   ├── testUtils.js # Test utilities and helpers
+│   ├── constants.test.js # Shared constants tests
+│   ├── constants-integration.test.js # Constants integration tests
 │   ├── background.test.js # Background script tests
 │   ├── content.test.js    # Content script tests
 │   ├── popup.test.js      # Popup logic tests
@@ -75,6 +80,24 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 ```
 
 ## Core Components
+
+### Shared Constants (`/shared/`)
+Centralized constants that are shared across all extension contexts (content scripts, background, popup, hidden-videos):
+
+**Storage Keys**: All chrome.storage identifiers (THRESHOLD, WATCHED_STATE, SHORTS_STATE, etc.)
+**Message Types**: Background script message types for hidden video operations
+**Default Settings**: Default values for all user settings
+**CSS Classes**: Class names for styling hidden/dimmed videos
+**Selectors**: DOM selectors for YouTube elements
+**Debug Flag**: Global debug mode toggle
+
+**Architecture**:
+- Content scripts import via re-export in `content/utils/constants.js` (bundled by webpack)
+- Background, popup, and hidden-videos import directly via ES6 modules
+- Single source of truth eliminates duplication
+- Changes propagate automatically to all contexts
+
+See `/shared/README.md` for detailed constants documentation.
 
 ### Background Service Worker
 - Manages extension lifecycle

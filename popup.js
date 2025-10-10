@@ -1,3 +1,5 @@
+import { STORAGE_KEYS, DEFAULT_SETTINGS } from './shared/constants.js';
+
 document.addEventListener('DOMContentLoaded', async () => {
   const thresholdSlider = document.getElementById('threshold');
   const thresholdValue = document.getElementById('threshold-value');
@@ -11,40 +13,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const individualModeToggle = document.getElementById('individual-mode-toggle');
   const individualModeOptions = document.getElementById('individual-mode-options');
   const ensurePromise = (value) => (value && typeof value.then === 'function' ? value : Promise.resolve(value));
-
-  const STORAGE_KEYS = {
-    THRESHOLD: 'YTHWV_THRESHOLD',
-    WATCHED_STATE: 'YTHWV_STATE',
-    SHORTS_STATE: 'YTHWV_STATE_SHORTS',
-    THEME: 'YTHWV_THEME',
-    HIDDEN_VIDEOS: 'YTHWV_HIDDEN_VIDEOS',
-    INDIVIDUAL_MODE: 'YTHWV_INDIVIDUAL_MODE',
-    INDIVIDUAL_MODE_ENABLED: 'YTHWV_INDIVIDUAL_MODE_ENABLED'
-  };
-
-  const DEFAULT_SETTINGS = {
-    threshold: 10,
-    theme: 'auto',
-    individualMode: 'dimmed',
-    individualModeEnabled: true,
-    states: {
-      watched: {
-        misc: 'normal',
-        subscriptions: 'normal',
-        channel: 'normal',
-        watch: 'normal',
-        trending: 'normal',
-        playlist: 'normal'
-      },
-      shorts: {
-        misc: 'normal',
-        subscriptions: 'normal',
-        channel: 'normal',
-        watch: 'normal',
-        trending: 'normal'
-      }
-    }
-  };
 
   async function initIndividualMode() {
     const result = await chrome.storage.sync.get([
