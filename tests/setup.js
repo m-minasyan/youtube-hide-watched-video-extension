@@ -8,10 +8,19 @@ global.chrome = {
     onStartup: {
       addListener: jest.fn()
     },
+    onSuspend: {
+      addListener: jest.fn()
+    },
     sendMessage: jest.fn(() => Promise.resolve()),
     onMessage: {
       addListener: jest.fn()
-    }
+    },
+    getPlatformInfo: jest.fn((callback) => {
+      if (typeof callback === 'function') {
+        callback({});
+      }
+      return Promise.resolve({});
+    })
   },
   storage: {
     sync: {
@@ -45,6 +54,13 @@ global.chrome = {
       }),
       remove: jest.fn(() => Promise.resolve()),
       clear: jest.fn(() => Promise.resolve())
+    }
+  },
+  alarms: {
+    create: jest.fn(),
+    clear: jest.fn(),
+    onAlarm: {
+      addListener: jest.fn()
     }
   },
   tabs: {

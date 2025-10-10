@@ -11,6 +11,7 @@ export const STORAGE_KEYS = {
 
 // Hidden Video Message Types
 export const HIDDEN_VIDEO_MESSAGES = {
+  HEALTH_CHECK: 'HIDDEN_VIDEOS_HEALTH_CHECK',
   GET_MANY: 'HIDDEN_VIDEOS_GET_MANY',
   GET_PAGE: 'HIDDEN_VIDEOS_GET_PAGE',
   GET_STATS: 'HIDDEN_VIDEOS_GET_STATS',
@@ -109,6 +110,11 @@ export const ERROR_CONFIG = {
   MAX_RETRY_DELAY: 5000,
   MESSAGE_TIMEOUT: 5000,
   MAX_ERROR_LOG_SIZE: 100
+};
+
+// Background service worker configuration
+export const SERVICE_WORKER_CONFIG = {
+  KEEP_ALIVE_INTERVAL: 20000 // 20 seconds - keeps service worker active during usage
 };
 
 // Pre-computed selector strings for performance

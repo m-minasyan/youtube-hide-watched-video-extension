@@ -44,6 +44,26 @@ describe('Error Handler', () => {
       expect(classifyError(error)).toBe(ErrorType.NETWORK);
     });
 
+    it('should classify "no response" errors as network', () => {
+      const error = new Error('No response from background script');
+      expect(classifyError(error)).toBe(ErrorType.NETWORK);
+    });
+
+    it('should classify timeout errors as network', () => {
+      const error = new Error('Message timeout');
+      expect(classifyError(error)).toBe(ErrorType.NETWORK);
+    });
+
+    it('should classify connection errors as network', () => {
+      const error = new Error('Could not establish connection');
+      expect(classifyError(error)).toBe(ErrorType.NETWORK);
+    });
+
+    it('should classify receiving end errors as network', () => {
+      const error = new Error('Receiving end does not exist');
+      expect(classifyError(error)).toBe(ErrorType.NETWORK);
+    });
+
     it('should classify corruption errors', () => {
       const error = new Error('Data corrupt');
       expect(classifyError(error)).toBe(ErrorType.CORRUPTION);

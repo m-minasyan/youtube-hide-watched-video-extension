@@ -39,8 +39,12 @@ This document describes the application flow for the YouTube Hide Watched Video 
 
 ### Content Script Initialization
 1. Script loads on YouTube pages
-2. Establishes communication with background script
-3. Applies user preferences from storage
+2. **Waits for background script readiness**:
+   - Sends health check messages to verify background initialization
+   - Retries up to 10 times with 500ms delays
+   - Continues with limited functionality if background not ready
+3. Establishes communication with background script
+4. Applies user preferences from storage
 
 ### Event Handling
 1. Page mutation observation
@@ -51,10 +55,18 @@ This document describes the application flow for the YouTube Hide Watched Video 
 6. Asynchronous state persistence in background
 
 ### Background Script Operations
-1. Manages extension state
-2. Handles cross-tab communication
-3. Stores user preferences
-4. Manages extension lifecycle
+1. **Initializes service worker**:
+   - Registers message listeners synchronously
+   - Initializes IndexedDB asynchronously
+   - Runs legacy data migration
+   - Provides health check endpoint
+2. Manages extension state
+3. Handles cross-tab communication
+4. Stores user preferences
+5. Manages extension lifecycle
+6. **Maintains service worker availability**:
+   - Keep-alive ping every 20 seconds during active usage
+   - Cleans up on suspend
 
 ## State Management
 - User preferences stored in browser storage
@@ -63,6 +75,13 @@ This document describes the application flow for the YouTube Hide Watched Video 
 - Synchronization across tabs
 
 ## Error Handling
-- Network failures gracefully handled
+- **Network failures gracefully handled**:
+  - Automatic retry with exponential backoff (5 attempts)
+  - Enhanced error classification (timeout, no response, connection failures)
+  - User notifications for persistent errors
+- **Background script communication**:
+  - Health check system for readiness verification
+  - Initialization wait logic with graceful degradation
+  - Message timeout handling (5 seconds)
 - Invalid DOM structures managed
-- User feedback for errors
+- User feedback for errors via notification system

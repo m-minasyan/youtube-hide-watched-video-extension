@@ -1,8 +1,9 @@
 import { initializeHiddenVideosService } from './background/hiddenVideosService.js';
-import { STORAGE_KEYS, DEFAULT_SETTINGS } from './shared/constants.js';
+import { STORAGE_KEYS, DEFAULT_SETTINGS, SERVICE_WORKER_CONFIG } from './shared/constants.js';
 import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 
 let hiddenVideosInitializationPromise = null;
+const KEEP_ALIVE_ALARM = 'keep-alive';
 
 async function initializeHiddenVideos() {
   if (!hiddenVideosInitializationPromise) {
@@ -13,6 +14,28 @@ async function initializeHiddenVideos() {
   }
   await hiddenVideosInitializationPromise;
 }
+
+// Keep service worker alive during active usage using chrome.alarms API
+// This is more efficient than setInterval for service workers
+function startKeepAlive() {
+  chrome.alarms.create(KEEP_ALIVE_ALARM, {
+    periodInMinutes: SERVICE_WORKER_CONFIG.KEEP_ALIVE_INTERVAL / 60000 // Convert ms to minutes
+  });
+}
+
+function stopKeepAlive() {
+  chrome.alarms.clear(KEEP_ALIVE_ALARM);
+}
+
+// Handle keep-alive alarm
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === KEEP_ALIVE_ALARM) {
+    // Ping to keep worker alive
+    chrome.runtime.getPlatformInfo(() => {
+      // No-op, just keep alive
+    });
+  }
+});
 
 export function __getHiddenVideosInitializationPromiseForTests() {
   return hiddenVideosInitializationPromise || Promise.resolve();
@@ -41,6 +64,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
 });
 
-initializeHiddenVideos().catch((error) => {
-  console.error('Failed to initialize hidden videos service', error);
+// Start keep-alive when extension loads
+initializeHiddenVideos()
+  .then(() => {
+    startKeepAlive();
+  })
+  .catch((error) => {
+    console.error('Failed to initialize hidden videos service', error);
+  });
+
+// Clean up on suspend
+chrome.runtime.onSuspend.addListener(() => {
+  stopKeepAlive();
 });

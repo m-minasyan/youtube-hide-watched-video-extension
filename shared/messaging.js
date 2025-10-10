@@ -18,6 +18,14 @@ function sendMessageWithTimeout(message, timeout = MESSAGE_TIMEOUT) {
 /**
  * Send a message to background script for hidden videos operations
  * Includes automatic retry logic for transient failures
+ *
+ * Retry Configuration:
+ * - maxAttempts: 5 (increased from 3 to handle service worker wake-up delays)
+ * - initialDelay: 300ms (increased from 200ms to give background script more time to initialize)
+ * - maxDelay: 3000ms (caps exponential backoff to prevent excessive waiting)
+ *
+ * These values are tuned for Manifest V3 service workers which may need time
+ * to wake up and complete initialization before handling messages.
  */
 export async function sendHiddenVideosMessage(type, payload = {}) {
   return retryOperation(
@@ -42,8 +50,9 @@ export async function sendHiddenVideosMessage(type, payload = {}) {
       }
     },
     {
-      maxAttempts: 3,
-      initialDelay: 200,
+      maxAttempts: 5,
+      initialDelay: 300,
+      maxDelay: 3000,
       shouldRetry: (error) => {
         const errorType = classifyError(error);
         return errorType === ErrorType.NETWORK || errorType === ErrorType.TRANSIENT;

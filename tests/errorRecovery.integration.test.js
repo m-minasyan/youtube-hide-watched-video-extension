@@ -64,7 +64,7 @@ describe('Error Recovery Integration', () => {
       ).rejects.toThrow();
 
       // Should have attempted retries
-      expect(chrome.runtime.sendMessage).toHaveBeenCalledTimes(3);
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledTimes(5);
 
       delete global.chrome;
     });

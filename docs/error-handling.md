@@ -38,8 +38,11 @@ Errors are automatically classified into categories for appropriate handling:
 - Message passing failures
 - Background script disconnected
 - Communication timeout
+- No response from background script
+- Receiving end does not exist errors
+- Connection establishment failures
 
-**Recovery**: Retry with timeout and exponential backoff
+**Recovery**: Retry with timeout and exponential backoff (5 attempts max, 300ms initial delay)
 
 ### Permission Errors
 - Security errors
@@ -69,16 +72,28 @@ Notifications automatically dismiss after 3 seconds, or you can click the X to d
 
 The extension uses intelligent retry logic:
 
-1. **Initial delay**: 100-200ms depending on operation
+1. **Initial delay**: 100-300ms depending on operation
 2. **Exponential backoff**: Each retry doubles the delay
-3. **Maximum delay**: Capped at 5 seconds to prevent excessive waiting
-4. **Maximum attempts**: 3 attempts before giving up
+3. **Maximum delay**: Capped at 3-5 seconds to prevent excessive waiting
+4. **Maximum attempts**: 3-5 attempts depending on error type
 
-Example retry timeline:
+Example retry timeline for messaging operations:
 - Attempt 1: Immediate
-- Attempt 2: After 200ms
-- Attempt 3: After 400ms
+- Attempt 2: After 300ms
+- Attempt 3: After 600ms
+- Attempt 4: After 1200ms
+- Attempt 5: After 2400ms (capped at 3000ms)
 - Give up if still failing
+
+## Background Script Initialization
+
+The extension includes robust initialization handling:
+
+1. **Immediate Listener Registration**: Message listeners are registered synchronously before any async operations
+2. **Health Check System**: Content scripts can verify background readiness via `HEALTH_CHECK` message
+3. **Initialization Wait Logic**: Content scripts wait for background initialization (up to 5 seconds)
+4. **Graceful Degradation**: Extension continues with limited functionality if background not ready
+5. **Keep-Alive Strategy**: Service worker stays active during usage (20-second ping interval)
 
 ## What to Do If Errors Persist
 
@@ -123,13 +138,16 @@ Features:
 - Connection pooling and error recovery
 
 ### Message Passing Resilience
-Location: `/content/storage/messaging.js`
+Location: `/shared/messaging.js` and `/content/storage/messaging.js`
 
 Features:
 - Timeout handling (5 second default)
-- Automatic retry on network errors
+- Automatic retry on network errors (5 attempts)
+- Health check for background script readiness
+- Background initialization wait logic
 - Optimistic updates with rollback
 - Cache fallback on communication failure
+- User notifications for persistent errors
 
 ## Performance Impact
 

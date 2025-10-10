@@ -22,6 +22,11 @@ const PRUNE_TARGET = 150000;
 
 let migrationPromise = null;
 let initialized = false;
+let initializationComplete = false;
+let initializationError = null;
+let dbInitialized = false;
+let migrationComplete = false;
+let initializationLock = null; // Prevents concurrent initialization calls
 function delay(ms = 0) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -116,6 +121,7 @@ async function migrateLegacyHiddenVideos() {
     }
     await chrome.storage.local.remove(STORAGE_KEYS.HIDDEN_VIDEOS);
     await chrome.storage.sync.remove(STORAGE_KEYS.HIDDEN_VIDEOS);
+    migrationComplete = true;
     return;
   }
   if (progressState.syncIndex < syncEntries.length) {
@@ -139,6 +145,7 @@ async function migrateLegacyHiddenVideos() {
       completedAt: Date.now()
     }
   });
+  migrationComplete = true;
 }
 async function processLegacyBatch(entries, progressKey, timestampSeed, progressState) {
   if (!entries || entries.length === 0) return;
@@ -222,7 +229,21 @@ async function handleClearAll() {
   await broadcastHiddenVideosEvent({ type: 'cleared' });
   return { cleared: true };
 }
+
+async function handleHealthCheck() {
+  return {
+    ready: initializationComplete,
+    error: initializationError ? initializationError.message : null,
+    components: {
+      messageListener: initialized,
+      database: dbInitialized,
+      migration: migrationComplete
+    }
+  };
+}
+
 const MESSAGE_HANDLERS = {
+  HIDDEN_VIDEOS_HEALTH_CHECK: handleHealthCheck,
   HIDDEN_VIDEOS_GET_MANY: handleGetMany,
   HIDDEN_VIDEOS_SET_STATE: handleSetState,
   HIDDEN_VIDEOS_GET_PAGE: handleGetPage,
@@ -235,7 +256,20 @@ function registerMessageListener() {
     if (!message || typeof message.type !== 'string') return;
     const handler = MESSAGE_HANDLERS[message.type];
     if (!handler) return;
-    const promise = Promise.resolve().then(() => handler(message, sender));
+
+    // Wait for initialization before processing (except health check)
+    const promise = message.type === 'HIDDEN_VIDEOS_HEALTH_CHECK'
+      ? Promise.resolve().then(() => handler(message, sender))
+      : ensureMigration()
+          .then(() => handler(message, sender))
+          .catch((initError) => {
+            // If initialization failed, return meaningful error
+            if (initializationError) {
+              throw new Error('Background service initialization failed: ' + initError.message);
+            }
+            throw initError;
+          });
+
     promise.then((result) => {
       sendResponse({ ok: true, result });
     }).catch((error) => {
@@ -246,6 +280,11 @@ function registerMessageListener() {
   });
 }
 async function ensureMigration() {
+  // If initialization failed, throw the error
+  if (initializationError) {
+    throw initializationError;
+  }
+
   if (!migrationPromise) {
     migrationPromise = migrateLegacyHiddenVideos().catch((error) => {
       console.error('Hidden videos migration failed', error);
@@ -256,9 +295,38 @@ async function ensureMigration() {
 }
 
 export async function initializeHiddenVideosService() {
-  if (initialized) return;
-  initialized = true;
-  await initializeDb();
-  await ensureMigration();
-  registerMessageListener();
+  // Register listener FIRST, before any async operations
+  if (!initialized) {
+    registerMessageListener();
+    initialized = true;
+  }
+
+  // Prevent concurrent initialization calls using a lock
+  if (initializationLock) {
+    return initializationLock;
+  }
+
+  if (initializationComplete) {
+    if (initializationError) {
+      throw initializationError;
+    }
+    return;
+  }
+
+  initializationLock = (async () => {
+    try {
+      await initializeDb();
+      dbInitialized = true;
+      await ensureMigration();
+      initializationComplete = true;
+    } catch (error) {
+      initializationError = error;
+      initializationComplete = true; // Mark as complete even on error
+      throw error;
+    } finally {
+      initializationLock = null;
+    }
+  })();
+
+  return initializationLock;
 }

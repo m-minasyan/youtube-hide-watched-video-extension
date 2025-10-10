@@ -5,6 +5,44 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.4] - 2025-10-10
+
+### Fixed
+
+- Fixed "No response from background script" messaging errors through improved initialization handling
+- Enhanced background service worker lifecycle management to prevent premature termination
+- Improved error classification to properly handle timeout and connection failures
+- Added graceful degradation when background script is not ready during content script initialization
+
+### Added
+
+- Health check message type (`HEALTH_CHECK`) for background script readiness verification
+- Content script initialization wait logic (up to 5 seconds with 500ms retry intervals)
+- Service worker keep-alive mechanism (20-second ping interval during active usage)
+- User notifications for persistent errors in content script operations
+- Enhanced network error detection (timeout, no response, connection establishment failures)
+- Background initialization tests covering message listener registration and health checks
+- Content initialization tests for graceful degradation scenarios
+
+### Improved
+
+- Message listeners now register synchronously before async initialization to prevent race conditions
+- Increased retry attempts for messaging operations from 3 to 5
+- Increased initial retry delay from 200ms to 300ms for better tolerance of slow initialization
+- Background script handlers now wait for initialization completion before processing requests
+- Enhanced error messages to indicate initialization failures vs. operational failures
+- Documentation updated to reflect new initialization flow and error handling improvements
+
+### Technical Details
+
+- Modified `background/hiddenVideosService.js` to register listeners before database initialization
+- Added initialization state tracking (`initializationComplete`, `initializationError`)
+- Updated `shared/errorHandler.js` to classify additional network error patterns
+- Enhanced `shared/messaging.js` with increased retry configuration (5 attempts, 300ms initial, 3s max delay)
+- Added `content/index.js` background readiness check with 10 retry attempts
+- Implemented `background.js` keep-alive strategy with cleanup on suspend
+- Added comprehensive tests for initialization flow and health check system
+
 ## [2.6.3] - 2025-10-10
 
 ### Changed

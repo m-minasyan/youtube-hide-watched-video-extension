@@ -28,10 +28,14 @@ export function classifyError(error) {
     return ErrorType.TRANSIENT;
   }
 
-  // Network/messaging errors
+  // Network/messaging errors - ENHANCED
   if (message.includes('message') ||
+      message.includes('no response') ||
+      message.includes('no receiver') ||
       message.includes('disconnected') ||
-      message.includes('no receiver')) {
+      message.includes('timeout') ||
+      message.includes('could not establish connection') ||
+      message.includes('receiving end does not exist')) {
     return ErrorType.NETWORK;
   }
 

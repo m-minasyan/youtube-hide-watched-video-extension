@@ -32,6 +32,7 @@ describe('Shared Constants', () => {
 
   describe('HIDDEN_VIDEO_MESSAGES', () => {
     test('all message types are defined', () => {
+      expect(HIDDEN_VIDEO_MESSAGES.HEALTH_CHECK).toBe('HIDDEN_VIDEOS_HEALTH_CHECK');
       expect(HIDDEN_VIDEO_MESSAGES.GET_MANY).toBe('HIDDEN_VIDEOS_GET_MANY');
       expect(HIDDEN_VIDEO_MESSAGES.GET_PAGE).toBe('HIDDEN_VIDEOS_GET_PAGE');
       expect(HIDDEN_VIDEO_MESSAGES.GET_STATS).toBe('HIDDEN_VIDEOS_GET_STATS');
@@ -46,7 +47,7 @@ describe('Shared Constants', () => {
     });
 
     test('message types object has correct number of types', () => {
-      expect(Object.keys(HIDDEN_VIDEO_MESSAGES).length).toBe(5);
+      expect(Object.keys(HIDDEN_VIDEO_MESSAGES).length).toBe(6);
     });
   });
 

@@ -6,6 +6,7 @@ describe('Message Passing Error Handling Integration', () => {
   let chrome;
 
   beforeEach(() => {
+    jest.resetModules();
     // Mock chrome.runtime API
     chrome = {
       runtime: {
@@ -30,10 +31,11 @@ describe('Message Passing Error Handling Integration', () => {
       const { sendHiddenVideosMessage } = require('../content/storage/messaging.js');
 
       // Should timeout and throw error (MESSAGE_TIMEOUT is 5000ms)
+      // With maxAttempts: 5, this will timeout 5 times before giving up
       await expect(
         sendHiddenVideosMessage('TEST_MESSAGE', { data: 'test' })
       ).rejects.toThrow('Message timeout');
-    }, 20000); // 20 second timeout for test itself to allow retries
+    }, 30000); // 30 second timeout for test itself to allow 5 retries with 5s timeout each
 
     it('should succeed if response comes before timeout', async () => {
       chrome.runtime.sendMessage.mockResolvedValue({
@@ -103,7 +105,7 @@ describe('Message Passing Error Handling Integration', () => {
         sendHiddenVideosMessage('TEST_MESSAGE', {})
       ).rejects.toThrow('No receiver');
 
-      expect(chrome.runtime.sendMessage).toHaveBeenCalledTimes(3); // maxAttempts = 3
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledTimes(5); // maxAttempts = 5
     });
   });
 

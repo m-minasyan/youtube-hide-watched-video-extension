@@ -119,9 +119,16 @@ See `/shared/README.md` for detailed constants documentation.
 
 **Shared Messaging (`/shared/messaging.js`)**:
 - `sendHiddenVideosMessage()`: Unified messaging for hidden video operations
-- Includes automatic retry logic for transient failures
-- Error classification and handling
+- Includes automatic retry logic for transient failures (5 attempts, 300ms initial delay)
+- Error classification and handling (network, transient, permanent)
+- Timeout handling (5 second default)
 - Used by both content scripts and hidden videos manager
+
+**Shared Error Handler (`/shared/errorHandler.js`)**:
+- `classifyError()`: Categorizes errors for appropriate recovery
+- `retryOperation()`: Executes operations with exponential backoff
+- `logError()`: Logs errors with context for debugging
+- Enhanced network error detection (timeout, no response, connection failures)
 
 **CSS Helpers (`/content/utils/cssHelpers.js`)**:
 - `removeClassFromAll()`: Removes a CSS class from all elements
@@ -135,6 +142,11 @@ See `/shared/README.md` for detailed constants documentation.
 - Manages persistent state
 - Sets default theme to 'auto' on installation
 - Normalizes Chrome API calls and statically imports the hidden video module with cached asynchronous initialization so service code stays resilient when APIs return callbacks or delay responses
+- **Initialization Strategy**:
+  - Message listeners registered synchronously before async operations
+  - Health check endpoint (`HEALTH_CHECK`) for readiness verification
+  - Graceful error handling if initialization fails
+  - Keep-alive mechanism to prevent premature service worker termination (20s interval)
 
 ### Content Scripts (Modular Architecture)
 The content script is now built from ES6 modules using webpack, improving maintainability and testability.
