@@ -98,7 +98,15 @@ describe('Messaging Module', () => {
     test('should handle fetch errors gracefully', async () => {
       mockSendMessage.mockRejectedValue(new Error('Network error'));
 
-      await expect(fetchHiddenVideoStates(['vid-1'])).rejects.toThrow('Network error');
+      // fetchHiddenVideoStates uses Promise.allSettled so it doesn't reject
+      // Instead it returns null values for failed fetches
+      const result = await fetchHiddenVideoStates(['vid-1']);
+
+      // Should return null for the failed video
+      expect(result['vid-1']).toBe(null);
+
+      // Verify null was cached for the failed video
+      expect(getCachedHiddenVideo('vid-1')).toBe(null);
     });
   });
 

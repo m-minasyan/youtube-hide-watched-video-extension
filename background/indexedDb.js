@@ -1,3 +1,5 @@
+import { retryOperation, logError, classifyError, ErrorType } from '../shared/errorHandler.js';
+
 const DB_NAME = 'ythwvHiddenVideos';
 const DB_VERSION = 1;
 const STORE_NAME = 'hiddenVideos';
@@ -6,61 +8,141 @@ const STATE_INDEX = 'byState';
 const STATE_UPDATED_AT_INDEX = 'byStateUpdatedAt';
 
 let dbPromise = null;
+let dbResetInProgress = false;
+let dbResetPromise = null;
 
 function openDb() {
   if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      let store;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        store = db.createObjectStore(STORE_NAME, { keyPath: 'videoId' });
-      } else {
-        store = request.transaction.objectStore(STORE_NAME);
-      }
-      if (!store.indexNames.contains(UPDATED_AT_INDEX)) {
-        store.createIndex(UPDATED_AT_INDEX, 'updatedAt');
-      }
-      if (!store.indexNames.contains(STATE_INDEX)) {
-        store.createIndex(STATE_INDEX, 'state');
-      }
-      if (!store.indexNames.contains(STATE_UPDATED_AT_INDEX)) {
-        store.createIndex(STATE_UPDATED_AT_INDEX, ['state', 'updatedAt']);
-      }
-    };
-    request.onsuccess = () => {
-      const db = request.result;
-      db.onversionchange = () => {
-        db.close();
-        dbPromise = null;
+
+  dbPromise = retryOperation(
+    () => new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        let store;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          store = db.createObjectStore(STORE_NAME, { keyPath: 'videoId' });
+        } else {
+          store = request.transaction.objectStore(STORE_NAME);
+        }
+        if (!store.indexNames.contains(UPDATED_AT_INDEX)) {
+          store.createIndex(UPDATED_AT_INDEX, 'updatedAt');
+        }
+        if (!store.indexNames.contains(STATE_INDEX)) {
+          store.createIndex(STATE_INDEX, 'state');
+        }
+        if (!store.indexNames.contains(STATE_UPDATED_AT_INDEX)) {
+          store.createIndex(STATE_UPDATED_AT_INDEX, ['state', 'updatedAt']);
+        }
       };
-      resolve(db);
-    };
-    request.onerror = () => {
-      reject(request.error);
-    };
+
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onversionchange = () => {
+          db.close();
+          dbPromise = null;
+        };
+        db.onerror = (event) => {
+          logError('IndexedDB', event.target.error, { operation: 'db.onerror' });
+        };
+        resolve(db);
+      };
+
+      request.onerror = () => {
+        reject(request.error);
+      };
+
+      request.onblocked = () => {
+        logError('IndexedDB', new Error('Database blocked'), { operation: 'open' });
+        // Continue waiting, don't reject
+      };
+    }),
+    {
+      maxAttempts: 3,
+      initialDelay: 100,
+      onRetry: (attempt, error) => {
+        logError('IndexedDB', error, {
+          operation: 'openDb',
+          attempt,
+          retrying: true
+        });
+      }
+    }
+  ).catch((error) => {
+    logError('IndexedDB', error, { operation: 'openDb', fatal: true });
+    dbPromise = null;
+    throw error;
   });
+
   return dbPromise;
 }
 
 async function withStore(mode, handler) {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, mode);
-    const store = tx.objectStore(STORE_NAME);
-    const handlerPromise = Promise.resolve().then(() => handler(store, tx));
-    tx.oncomplete = async () => {
-      try {
-        const value = await handlerPromise;
-        resolve(value);
-      } catch (error) {
-        reject(error);
+  try {
+    const db = await openDb();
+    return await retryOperation(
+      () => new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, mode);
+        const store = tx.objectStore(STORE_NAME);
+        const handlerPromise = Promise.resolve().then(() => handler(store, tx));
+
+        tx.oncomplete = async () => {
+          try {
+            const value = await handlerPromise;
+            resolve(value);
+          } catch (error) {
+            reject(error);
+          }
+        };
+
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
+      }),
+      {
+        maxAttempts: 3,
+        shouldRetry: (error) => {
+          const errorType = classifyError(error);
+          return errorType === ErrorType.TRANSIENT;
+        },
+        onRetry: (attempt, error) => {
+          logError('IndexedDB', error, {
+            operation: 'withStore',
+            mode,
+            attempt,
+            retrying: true
+          });
+        }
       }
-    };
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
+    );
+  } catch (error) {
+    const errorType = classifyError(error);
+
+    // Handle quota exceeded
+    if (errorType === ErrorType.QUOTA_EXCEEDED) {
+      logError('IndexedDB', error, { operation: 'withStore', quotaExceeded: true });
+
+      // Attempt to free space by deleting oldest records
+      try {
+        await deleteOldestHiddenVideos(1000);
+        // Retry the operation once after cleanup
+        return await withStore(mode, handler);
+      } catch (cleanupError) {
+        logError('IndexedDB', cleanupError, { operation: 'quota_cleanup', fatal: true });
+        throw error;
+      }
+    }
+
+    // Handle corruption
+    if (errorType === ErrorType.CORRUPTION) {
+      logError('IndexedDB', error, { operation: 'withStore', corruption: true });
+      await attemptDatabaseReset();
+      throw error;
+    }
+
+    logError('IndexedDB', error, { operation: 'withStore', mode, fatal: true });
+    throw error;
+  }
 }
 
 export async function initializeDb() {
@@ -246,3 +328,65 @@ export async function clearHiddenVideosStore() {
     store.clear();
   });
 }
+
+// Database reset for corruption recovery
+async function attemptDatabaseReset() {
+  // If reset is already in progress, wait for it to complete
+  if (dbResetInProgress && dbResetPromise) {
+    return dbResetPromise;
+  }
+
+  // Set flag and create promise before any async operations
+  dbResetInProgress = true;
+
+  dbResetPromise = (async () => {
+    try {
+      logError('IndexedDB', new Error('Attempting database reset'), {
+        operation: 'reset',
+        reason: 'corruption'
+      });
+
+      // Close existing connection
+      if (dbPromise) {
+        try {
+          const db = await dbPromise;
+          db.close();
+        } catch (closeError) {
+          logError('IndexedDB', closeError, { operation: 'reset', phase: 'close' });
+        }
+        dbPromise = null;
+      }
+
+      // Delete and recreate database
+      await new Promise((resolve, reject) => {
+        const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
+        deleteRequest.onsuccess = () => resolve();
+        deleteRequest.onerror = () => reject(deleteRequest.error);
+        deleteRequest.onblocked = () => {
+          logError('IndexedDB', new Error('Delete blocked'), { operation: 'reset' });
+          // Continue anyway
+          resolve();
+        };
+      });
+
+      // Reopen database
+      await openDb();
+
+      logError('IndexedDB', new Error('Database reset successful'), {
+        operation: 'reset',
+        success: true
+      });
+    } catch (error) {
+      logError('IndexedDB', error, { operation: 'reset', fatal: true });
+      throw error;
+    } finally {
+      dbResetInProgress = false;
+      dbResetPromise = null;
+    }
+  })();
+
+  return dbResetPromise;
+}
+
+// Export reset function for external use
+export { attemptDatabaseReset };

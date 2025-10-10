@@ -11,8 +11,11 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 ├── webpack.content.config.js # Webpack configuration for content script
 ├── background.js          # Background script
 ├── content.js            # Content script (bundled output from content/)
-├── shared/              # Shared constants across all contexts
+├── shared/              # Shared modules across all contexts
 │   ├── constants.js    # Centralized constants (storage keys, messages, defaults)
+│   ├── errorHandler.js # Error handling and retry logic
+│   ├── notifications.js # User notification system
+│   ├── notifications.css # Notification styles
 │   └── README.md       # Constants documentation
 ├── content/              # Modular content script source (ES6 modules)
 │   ├── index.js         # Main entry point
@@ -195,3 +198,107 @@ Source maps are generated but not included in distribution packages for security
 - **Initialization**: < 100ms on page load
 - **Memory Usage**: < 50MB for typical usage
 - **Debounce Timing**: 250ms for mutations, 100ms for URL/XHR changes
+
+## Error Handling Architecture
+
+The extension implements comprehensive error handling across all components:
+
+### Error Handler Module (`/shared/errorHandler.js`)
+
+Provides centralized error handling utilities:
+
+**Error Classification**:
+- `TRANSIENT`: Temporary errors that should be retried (transactions, busy states)
+- `QUOTA_EXCEEDED`: Storage quota errors requiring cleanup
+- `NETWORK`: Message passing and connectivity errors
+- `CORRUPTION`: Data corruption requiring database reset
+- `PERMISSION`: Security/permission errors needing user action
+- `PERMANENT`: Non-recoverable errors
+
+**Key Functions**:
+- `classifyError(error)`: Automatically categorizes errors
+- `retryOperation(operation, options)`: Executes operations with retry logic
+  - Exponential backoff (100ms → 200ms → 400ms)
+  - Maximum 3 attempts by default
+  - Configurable retry conditions
+- `logError(context, error, metadata)`: Structured error logging
+- `getErrorLog()`: Retrieve error history (max 100 entries)
+
+### IndexedDB Error Recovery (`/background/indexedDb.js`)
+
+Enhanced database operations with automatic recovery:
+
+**Features**:
+- Automatic retry on transient errors (transaction failures)
+- Quota exceeded handling with automatic cleanup
+- Database corruption detection and reset
+- Connection error recovery
+
+**Recovery Strategies**:
+1. **Transient Errors**: Retry with exponential backoff
+2. **Quota Exceeded**: Delete oldest 1000 records, then retry
+3. **Corruption**: Reset database (closes, deletes, recreates)
+4. **Blocked Database**: Wait and retry
+
+### Message Passing Resilience (`/content/storage/messaging.js`)
+
+Robust communication with background script:
+
+**Features**:
+- Timeout handling (5 second default)
+- Automatic retry on network errors
+- Optimistic updates with rollback on failure
+- Cache fallback when background unavailable
+
+**Flow**:
+1. Send message with timeout
+2. On failure, classify error
+3. Retry if network/transient (up to 3 times)
+4. Revert optimistic updates on permanent failure
+
+### Notification System (`/shared/notifications.js`)
+
+User-facing error feedback:
+
+**Notification Types**:
+- ERROR (red): Critical issues requiring attention
+- WARNING (yellow): Potential problems
+- SUCCESS (green): Successful operations
+- INFO (blue): Informational messages
+
+**Features**:
+- Auto-dismiss after 3 seconds (configurable)
+- Manual dismissal via close button
+- Animated appearance/disappearance
+- Theme-aware styling (light/dark mode)
+
+### Error Configuration (`/shared/constants.js`)
+
+Centralized error handling configuration:
+
+```javascript
+export const ERROR_CONFIG = {
+  MAX_RETRY_ATTEMPTS: 3,
+  INITIAL_RETRY_DELAY: 100,
+  MAX_RETRY_DELAY: 5000,
+  MESSAGE_TIMEOUT: 5000,
+  MAX_ERROR_LOG_SIZE: 100
+};
+```
+
+### Best Practices
+
+**For Operations**:
+1. Wrap database operations with `retryOperation()`
+2. Use `withStore()` which includes built-in error handling
+3. Log errors with context using `logError()`
+
+**For User-Facing Code**:
+1. Show notifications for errors requiring user attention
+2. Implement optimistic updates for better UX
+3. Revert UI state on operation failure
+
+**For Testing**:
+1. Test all error paths (transient, permanent, quota, etc.)
+2. Verify retry logic with mock failures
+3. Test error recovery scenarios

@@ -102,5 +102,14 @@ export const SELECTORS = {
   ]
 };
 
+// Error handling configuration
+export const ERROR_CONFIG = {
+  MAX_RETRY_ATTEMPTS: 3,
+  INITIAL_RETRY_DELAY: 100,
+  MAX_RETRY_DELAY: 5000,
+  MESSAGE_TIMEOUT: 5000,
+  MAX_ERROR_LOG_SIZE: 100
+};
+
 // Debug flag
 export const DEBUG = false;

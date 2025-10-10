@@ -3,5 +3,6 @@ export {
   STORAGE_KEYS,
   HIDDEN_VIDEO_MESSAGES,
   CSS_CLASSES,
-  SELECTORS
+  SELECTORS,
+  ERROR_CONFIG
 } from '../../shared/constants.js';

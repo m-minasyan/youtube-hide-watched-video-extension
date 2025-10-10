@@ -5,6 +5,42 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Comprehensive error handling and recovery system with automatic retry logic and exponential backoff
+- Error classification system (transient, quota exceeded, corruption, network, permission, permanent)
+- Retry mechanism with configurable attempts (default 3) and exponential backoff (100ms → 5000ms max)
+- Database corruption detection and automatic reset functionality
+- Storage quota exceeded handling with automatic cleanup of oldest records
+- Message passing timeout handling (5 second default) with automatic retry
+- Optimistic updates with automatic rollback on failure
+- User notification system for error feedback (error, warning, success, info notifications)
+- Error logging with context tracking (max 100 entries)
+- Recovery strategies for IndexedDB operations (quota, corruption, transient errors)
+
+### Changed
+
+- Enhanced IndexedDB operations with automatic retry and recovery mechanisms
+- Improved message passing between content and background scripts with timeout and retry logic
+- Updated all async operations to use error classification and retry strategies
+
+### Documentation
+
+- Added comprehensive error handling documentation (/docs/error-handling.md)
+- Updated backend structure documentation with error handling architecture
+- Updated tech stack documentation with error handling patterns
+- Added user-facing error recovery guide
+
+### Testing
+
+- Added comprehensive error handler unit tests (40+ test cases)
+- Added message passing error handling integration tests
+- Added error recovery integration tests
+- Test coverage for all error classification scenarios
+- Test coverage for retry logic with exponential backoff
+
 ## [2.6.1] - 2025-10-10
 
 ### Changed

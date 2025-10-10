@@ -64,6 +64,10 @@ This document outlines the technology stack used in the YouTube Hide Watched Vid
 - **Singleton**: Storage management and cache handling
 - **Module Pattern**: Clear separation of concerns across modules
 - **Centralized Constants**: Single source of truth for all configuration values
+- **Retry Pattern**: Automatic retry with exponential backoff for transient failures
+- **Optimistic Updates**: Immediate UI feedback with rollback on failure
+- **Error Classification**: Automatic categorization of errors for appropriate handling
+- **Circuit Breaker**: Prevents repeated failures to failing operations (planned)
 
 ### Code Organization
 - **Modular Architecture**: Content script split into 20+ focused modules
