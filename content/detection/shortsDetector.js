@@ -1,5 +1,6 @@
 import { SELECTORS } from '../utils/constants.js';
 import { logDebug } from '../utils/logger.js';
+import { cachedDocumentQuery, cachedClosest, cachedQuerySelector } from '../utils/domCache.js';
 
 export function findShortsContainers() {
   const shortsContainers = [];
@@ -7,14 +8,16 @@ export function findShortsContainers() {
 
   SELECTORS.SHORTS_CONTAINERS.forEach(selector => {
     try {
-      document.querySelectorAll(selector).forEach(element => {
+      // Use cached query
+      cachedDocumentQuery(selector).forEach(element => {
         const key = element.tagName + element.className;
         if (!processedContainers.has(key)) {
           processedContainers.add(key);
 
-          const parentShelf = element.closest('ytd-reel-shelf-renderer') ||
-                             element.closest('ytd-rich-shelf-renderer') ||
-                             element.closest('ytd-rich-section-renderer');
+          // Use cached closest
+          const parentShelf = cachedClosest(element, 'ytd-reel-shelf-renderer') ||
+                             cachedClosest(element, 'ytd-rich-shelf-renderer') ||
+                             cachedClosest(element, 'ytd-rich-section-renderer');
 
           if (parentShelf && !shortsContainers.includes(parentShelf)) {
             shortsContainers.push(parentShelf);
@@ -28,31 +31,33 @@ export function findShortsContainers() {
     }
   });
 
-  const reelItemLinks = document.querySelectorAll('a.reel-item-endpoint, a[href^="/shorts/"]');
+  // Use cached queries for additional detection
+  const reelItemLinks = cachedDocumentQuery('a.reel-item-endpoint, a[href^="/shorts/"]');
   reelItemLinks.forEach(link => {
-    const container = link.closest('ytd-rich-item-renderer') ||
-                     link.closest('ytd-video-renderer') ||
-                     link.closest('ytd-compact-video-renderer') ||
-                     link.closest('ytd-grid-video-renderer');
+    const container = cachedClosest(link, 'ytd-rich-item-renderer') ||
+                     cachedClosest(link, 'ytd-video-renderer') ||
+                     cachedClosest(link, 'ytd-compact-video-renderer') ||
+                     cachedClosest(link, 'ytd-grid-video-renderer');
     if (container && !shortsContainers.includes(container)) {
       shortsContainers.push(container);
     }
   });
 
-  document.querySelectorAll('.ytd-thumbnail-overlay-time-status-renderer[aria-label="Shorts"]').forEach((child) => {
-    const container = child.closest('ytd-video-renderer') ||
-                     child.closest('ytd-compact-video-renderer') ||
-                     child.closest('ytd-grid-video-renderer');
+  const shortsLabels = cachedDocumentQuery('.ytd-thumbnail-overlay-time-status-renderer[aria-label="Shorts"]');
+  shortsLabels.forEach((child) => {
+    const container = cachedClosest(child, 'ytd-video-renderer') ||
+                     cachedClosest(child, 'ytd-compact-video-renderer') ||
+                     cachedClosest(child, 'ytd-grid-video-renderer');
     if (container && !shortsContainers.includes(container)) {
       shortsContainers.push(container);
     }
   });
 
-  const richShelves = document.querySelectorAll('ytd-rich-shelf-renderer');
+  const richShelves = cachedDocumentQuery('ytd-rich-shelf-renderer');
   richShelves.forEach(shelf => {
-    const hasShorts = shelf.querySelector('a[href^="/shorts/"]') ||
-                     shelf.querySelector('.reel-item-endpoint') ||
-                     shelf.querySelector('.shortsLockupViewModelHost');
+    const hasShorts = cachedQuerySelector(shelf, 'a[href^="/shorts/"]') ||
+                     cachedQuerySelector(shelf, '.reel-item-endpoint') ||
+                     cachedQuerySelector(shelf, '.shortsLockupViewModelHost');
     if (hasShorts && !shortsContainers.includes(shelf)) {
       shortsContainers.push(shelf);
     }

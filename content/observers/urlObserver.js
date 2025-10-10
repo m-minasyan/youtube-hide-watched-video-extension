@@ -1,4 +1,6 @@
 import { debounce } from '../utils/debounce.js';
+import { clearAllCaches, logCacheStats } from '../utils/domCache.js';
+import { DEBUG } from '../utils/constants.js';
 
 export function setupUrlObserver(applyHiding) {
   const debouncedApplyHiding = debounce(applyHiding, 100);
@@ -7,6 +9,12 @@ export function setupUrlObserver(applyHiding) {
   const observer = new MutationObserver(() => {
     const url = location.href;
     if (url !== lastUrl) {
+      if (DEBUG) {
+        console.log('[YT-HWV] URL changed, clearing DOM cache');
+        logCacheStats();
+      }
+
+      clearAllCaches();
       lastUrl = url;
       setTimeout(debouncedApplyHiding, 100);
     }

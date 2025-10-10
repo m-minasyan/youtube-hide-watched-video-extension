@@ -1,10 +1,12 @@
-import { SELECTORS } from '../utils/constants.js';
+import { SELECTORS, CACHE_CONFIG } from '../utils/constants.js';
 import { getThreshold } from '../storage/settings.js';
 import { logDebug } from '../utils/logger.js';
 import { extractVideoIdFromHref } from '../utils/dom.js';
+import { cachedDocumentQuery, cachedQuerySelectorAll } from '../utils/domCache.js';
 
 export function getVideoId(element) {
-  const links = element.querySelectorAll('a[href*="/watch?v="], a[href*="/shorts/"]');
+  // Use cached querySelector for links
+  const links = cachedQuerySelectorAll(element, 'a[href*="/watch?v="], a[href*="/shorts/"]');
   for (const link of links) {
     const href = link.getAttribute('href');
     const videoId = extractVideoIdFromHref(href);
@@ -15,9 +17,13 @@ export function getVideoId(element) {
 
 export function findWatchedElements() {
   const watched = [];
+  const seen = new Set();
+
   SELECTORS.PROGRESS_BAR.forEach(selector => {
-    document.querySelectorAll(selector).forEach(el => {
-      if (!watched.includes(el)) {
+    // Use cached query with short TTL for progress bars (they update frequently)
+    cachedDocumentQuery(selector, CACHE_CONFIG.PROGRESS_BAR_TTL).forEach(el => {
+      if (!seen.has(el)) {
+        seen.add(el);
         watched.push(el);
       }
     });

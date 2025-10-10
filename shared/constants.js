@@ -126,3 +126,11 @@ export const SELECTOR_STRINGS = {
 
 // Debug flag
 export const DEBUG = false;
+
+// DOM Cache Configuration
+export const CACHE_CONFIG = {
+  DOCUMENT_QUERY_TTL: 1000,        // 1 second TTL for document queries
+  PROGRESS_BAR_TTL: 500,           // 500ms for progress bars (update frequently)
+  STATS_LOG_INTERVAL: 30000,       // Log stats every 30 seconds in debug mode
+  ENABLE_PERFORMANCE_MONITORING: true
+};

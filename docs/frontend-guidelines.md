@@ -101,6 +101,26 @@ This document provides guidelines for frontend development of the YouTube Hide W
 - Cache DOM references
 - Batch DOM updates
 
+### DOM Query Optimization
+- Always use cached query functions from `domCache.js` for repeated queries
+- Use `cachedClosest()` instead of `element.closest()` in loops
+- Use `cachedQuerySelector()` instead of `element.querySelector()` for element queries
+- Use `cachedQuerySelectorAll()` instead of `element.querySelectorAll()` for collections
+- Use `cachedDocumentQuery()` for document-level queries with appropriate TTL
+- Cache is automatically invalidated on DOM mutations
+- Monitor cache hit rate in debug mode via `getCacheStats()`
+- Never manually cache DOM references when using domCache (WeakMap handles it)
+
+**Example**:
+```javascript
+// Bad - no caching
+const container = button.closest('.video-container');
+
+// Good - uses cached query
+import { cachedClosest } from './utils/domCache.js';
+const container = cachedClosest(button, '.video-container');
+```
+
 ### Event Handling
 - Delegate events where possible
 - Remove listeners when not needed

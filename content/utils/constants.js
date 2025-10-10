@@ -5,5 +5,6 @@ export {
   CSS_CLASSES,
   SELECTORS,
   SELECTOR_STRINGS,
-  ERROR_CONFIG
+  ERROR_CONFIG,
+  CACHE_CONFIG
 } from '../../shared/constants.js';

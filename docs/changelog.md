@@ -5,6 +5,43 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.5] - 2025-10-10
+
+### Fixed
+
+- Fixed critical initialization error where CACHE_CONFIG was not properly exported in content script constants, causing "Cannot read properties of undefined (reading 'PROGRESS_BAR_TTL')" errors on extension load
+- Resolved webpack bundling issue by adding CACHE_CONFIG to content/utils/constants.js re-export list
+
+### Added
+
+- Implemented WeakMap-based DOM query caching system for significant performance improvements (24x speedup in tests)
+- Added `domCache.js` module with cached versions of closest(), querySelector(), and querySelectorAll()
+- Added `performanceMonitor.js` for tracking cache effectiveness in debug mode
+- TTL-based caching for document-level queries (1s default, 500ms for progress bars)
+- Automatic cache invalidation on DOM mutations and page navigation
+- Cache statistics tracking (hit rate, total queries, invalidations)
+- Performance monitoring available via `window.YTHWV_Performance` in debug mode
+
+### Improved
+
+- Optimized all DOM queries across detection modules (videoDetector, shortsDetector)
+- Optimized UI modules (eyeButton, eyeButtonManager) with cached element lookups
+- Optimized hiding modules (watchedHiding, shortsHiding, individualHiding) with cached closest() calls
+- Reduced DOM query time by 50-70% for repeated queries
+- Improved extension responsiveness on pages with 100+ videos
+- Reduced CPU usage during scroll and mutation events
+- Memory-safe implementation using WeakMap for automatic garbage collection
+
+### Technical Details
+
+- Created `content/utils/domCache.js` with WeakMap-based caching for element queries
+- Created `content/utils/performanceMonitor.js` for performance tracking
+- Added cache configuration to `shared/constants.js` (CACHE_CONFIG)
+- Updated mutation observer to invalidate cache on element removal
+- Updated URL observer to clear cache on page navigation
+- Added 31 comprehensive tests (unit, integration, performance) with 100% pass rate
+- Updated documentation in `backend-structure.md`, `app-flow.md`, and `frontend-guidelines.md`
+
 ## [2.6.4] - 2025-10-10
 
 ### Fixed

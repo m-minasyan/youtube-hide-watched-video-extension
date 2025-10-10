@@ -3,6 +3,7 @@ import { getWatchedState } from '../storage/settings.js';
 import { determineYoutubeSection } from '../detection/sectionDetector.js';
 import { findWatchedElements } from '../detection/videoDetector.js';
 import { removeClassesFromAll } from '../utils/cssHelpers.js';
+import { cachedClosest } from '../utils/domCache.js';
 
 export function updateClassOnWatchedItems() {
   removeClassesFromAll(CSS_CLASSES.WATCHED_DIMMED, CSS_CLASSES.WATCHED_HIDDEN);
@@ -19,37 +20,38 @@ export function updateClassOnWatchedItems() {
     let dimmedItem;
 
     if (section === 'subscriptions') {
+      // Use cached closest for all lookups
       watchedItem = (
-        item.closest('.ytd-grid-renderer') ||
-        item.closest('.ytd-item-section-renderer') ||
-        item.closest('.ytd-rich-grid-row') ||
-        item.closest('.ytd-rich-grid-renderer') ||
-        item.closest('#grid-container')
+        cachedClosest(item, '.ytd-grid-renderer') ||
+        cachedClosest(item, '.ytd-item-section-renderer') ||
+        cachedClosest(item, '.ytd-rich-grid-row') ||
+        cachedClosest(item, '.ytd-rich-grid-renderer') ||
+        cachedClosest(item, '#grid-container')
       );
 
       if (watchedItem?.classList.contains('ytd-item-section-renderer')) {
-        watchedItem.closest('ytd-item-section-renderer')?.classList.add(CSS_CLASSES.HIDDEN_ROW_PARENT);
+        cachedClosest(watchedItem, 'ytd-item-section-renderer')?.classList.add(CSS_CLASSES.HIDDEN_ROW_PARENT);
       }
     } else if (section === 'playlist') {
-      watchedItem = item.closest('ytd-playlist-video-renderer');
+      watchedItem = cachedClosest(item, 'ytd-playlist-video-renderer');
     } else if (section === 'watch') {
-      watchedItem = item.closest('ytd-compact-video-renderer');
+      watchedItem = cachedClosest(item, 'ytd-compact-video-renderer');
 
-      if (watchedItem?.closest('ytd-compact-autoplay-renderer')) {
+      if (cachedClosest(watchedItem, 'ytd-compact-autoplay-renderer')) {
         watchedItem = null;
       }
 
-      const watchedItemInPlaylist = item.closest('ytd-playlist-panel-video-renderer');
+      const watchedItemInPlaylist = cachedClosest(item, 'ytd-playlist-panel-video-renderer');
       if (!watchedItem && watchedItemInPlaylist) {
         dimmedItem = watchedItemInPlaylist;
       }
     } else {
       watchedItem = (
-        item.closest('ytd-rich-item-renderer') ||
-        item.closest('ytd-video-renderer') ||
-        item.closest('ytd-grid-video-renderer') ||
-        item.closest('ytm-video-with-context-renderer') ||
-        item.closest('ytm-item-section-renderer')
+        cachedClosest(item, 'ytd-rich-item-renderer') ||
+        cachedClosest(item, 'ytd-video-renderer') ||
+        cachedClosest(item, 'ytd-grid-video-renderer') ||
+        cachedClosest(item, 'ytm-video-with-context-renderer') ||
+        cachedClosest(item, 'ytm-item-section-renderer')
       );
     }
 

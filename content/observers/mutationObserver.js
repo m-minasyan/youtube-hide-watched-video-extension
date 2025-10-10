@@ -1,11 +1,14 @@
 import { debounce } from '../utils/debounce.js';
-import { CSS_CLASSES } from '../utils/constants.js';
+import { CSS_CLASSES, DEBUG, CACHE_CONFIG } from '../utils/constants.js';
+import { invalidateElementCache, invalidateVideoContainerCaches, clearAllCaches, logCacheStats } from '../utils/domCache.js';
 
 export function setupMutationObserver(applyHiding) {
   const debouncedApplyHiding = debounce(applyHiding, 250);
 
   const observer = new MutationObserver((mutations) => {
     let shouldApplyHiding = false;
+    let hasVideoContainerChanges = false;
+    let hasMajorDOMChanges = false;
 
     mutations.forEach(mutation => {
       if (mutation.type === 'attributes' && mutation.attributeName === 'aria-hidden') {
@@ -16,8 +19,63 @@ export function setupMutationObserver(applyHiding) {
         }
       } else if (mutation.type === 'childList') {
         shouldApplyHiding = true;
+
+        // Invalidate cache for removed nodes
+        mutation.removedNodes.forEach(node => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            invalidateElementCache(node);
+
+            // Check if removed node is a video container
+            const isVideoContainer = node.matches && (
+              node.matches('ytd-rich-item-renderer') ||
+              node.matches('ytd-video-renderer') ||
+              node.matches('ytd-grid-video-renderer') ||
+              node.matches('ytd-compact-video-renderer')
+            );
+
+            if (isVideoContainer) {
+              hasVideoContainerChanges = true;
+            }
+          }
+        });
+
+        // Check if added nodes are video containers
+        mutation.addedNodes.forEach(node => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const isVideoContainer = node.matches && (
+              node.matches('ytd-rich-item-renderer') ||
+              node.matches('ytd-video-renderer') ||
+              node.matches('ytd-grid-video-renderer') ||
+              node.matches('ytd-compact-video-renderer')
+            );
+
+            if (isVideoContainer) {
+              hasVideoContainerChanges = true;
+            }
+
+            // Check for major structural changes (page sections)
+            const isMajorStructure = node.matches && (
+              node.matches('ytd-browse') ||
+              node.matches('ytd-watch-flexy') ||
+              node.matches('ytd-search')
+            );
+
+            if (isMajorStructure) {
+              hasMajorDOMChanges = true;
+            }
+          }
+        });
       }
     });
+
+    // Granular cache invalidation based on change type
+    if (hasMajorDOMChanges) {
+      // Major page structure change - clear all caches
+      clearAllCaches();
+    } else if (hasVideoContainerChanges) {
+      // Video container changes - only invalidate video-related caches
+      invalidateVideoContainerCaches();
+    }
 
     if (shouldApplyHiding) {
       if (mutations.length === 1 &&
@@ -37,6 +95,13 @@ export function setupMutationObserver(applyHiding) {
     attributes: true,
     attributeFilter: ['aria-hidden']
   });
+
+  // Log cache stats periodically in debug mode
+  if (DEBUG) {
+    setInterval(() => {
+      logCacheStats();
+    }, CACHE_CONFIG.STATS_LOG_INTERVAL);
+  }
 
   return observer;
 }

@@ -3,6 +3,7 @@ import { getCachedHiddenVideo } from '../storage/cache.js';
 import { fetchHiddenVideoStates, setHiddenVideoState } from '../storage/messaging.js';
 import { getIndividualMode } from '../storage/settings.js';
 import { extractTitleFromContainer } from '../utils/dom.js';
+import { cachedClosest } from '../utils/domCache.js';
 
 export function applyStateToEyeButton(button, state) {
   if (!button) return;
@@ -42,17 +43,23 @@ export function createEyeButton(videoContainer, videoId) {
   button.addEventListener('click', async (e) => {
     e.preventDefault();
     e.stopPropagation();
+
     const cached = getCachedHiddenVideo(videoId);
     const currentState = cached?.state || 'normal';
     const nextState = currentState === 'normal' ? getIndividualMode() : 'normal';
-    const container = button.closest(SELECTOR_STRINGS.VIDEO_CONTAINERS);
+
+    // Use cached closest
+    const container = cachedClosest(button, SELECTOR_STRINGS.VIDEO_CONTAINERS);
     if (container) {
       container.setAttribute('data-ythwv-video-id', videoId);
     }
+
     const title = extractTitleFromContainer(container);
     const record = await saveHiddenVideo(videoId, nextState, title);
     const effectiveState = record ? record.state : 'normal';
+
     applyStateToEyeButton(button, effectiveState);
+
     if (container) {
       container.classList.remove(CSS_CLASSES.INDIVIDUAL_DIMMED, CSS_CLASSES.INDIVIDUAL_HIDDEN);
       if (effectiveState === 'dimmed') {
@@ -61,6 +68,7 @@ export function createEyeButton(videoContainer, videoId) {
         container.classList.add(CSS_CLASSES.INDIVIDUAL_HIDDEN);
       }
     }
+
     // Trigger individual hiding update - will be handled by event handler
     const event = new CustomEvent('yt-hwv-individual-update');
     document.dispatchEvent(event);
