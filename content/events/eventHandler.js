@@ -1,5 +1,5 @@
 import { logDebug } from '../utils/logger.js';
-import { CSS_CLASSES } from '../utils/constants.js';
+import { CSS_CLASSES, INTERSECTION_OBSERVER_CONFIG } from '../utils/constants.js';
 import { applyCacheUpdate, clearCache } from '../storage/cache.js';
 import { loadSettings } from '../storage/settings.js';
 import { updateClassOnWatchedItems } from '../hiding/watchedHiding.js';
@@ -7,6 +7,7 @@ import { updateClassOnShortsItems } from '../hiding/shortsHiding.js';
 import { applyStateToEyeButton } from '../ui/eyeButton.js';
 import { addEyeButtons } from '../ui/eyeButtonManager.js';
 import { applyIndividualHiding } from '../hiding/individualHiding.js';
+import { onVisibilityChange } from '../utils/visibilityTracker.js';
 
 export function handleHiddenVideosEvent(event) {
   if (!event || !event.type) return;
@@ -45,6 +46,9 @@ export function applyHiding() {
   }, 500);
 }
 
+// Visibility change handler
+let visibilityUnsubscribe = null;
+
 export function setupMessageListener() {
   chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
     if (request.action === 'settingsUpdated') {
@@ -62,4 +66,27 @@ export function setupMessageListener() {
   document.addEventListener('yt-hwv-individual-update', () => {
     applyIndividualHiding();
   });
+
+  // Listen to visibility changes if lazy processing is enabled
+  // When ENABLE_LAZY_PROCESSING is false, all videos are processed immediately
+  // without visibility tracking, which is the traditional behavior for smaller pages
+  if (INTERSECTION_OBSERVER_CONFIG.ENABLE_LAZY_PROCESSING) {
+    visibilityUnsubscribe = onVisibilityChange(({ becameVisible, becameHidden }) => {
+      if (becameVisible.length > 0) {
+        logDebug(`Processing ${becameVisible.length} newly visible videos`);
+        // Process videos that just became visible
+        applyIndividualHiding();
+      }
+    });
+  } else {
+    logDebug('Lazy processing disabled - processing all videos immediately on DOM changes');
+  }
+}
+
+// Export cleanup function
+export function cleanupEventHandlers() {
+  if (visibilityUnsubscribe) {
+    visibilityUnsubscribe();
+    visibilityUnsubscribe = null;
+  }
 }

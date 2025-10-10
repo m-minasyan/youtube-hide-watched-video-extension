@@ -6,5 +6,6 @@ export {
   SELECTORS,
   SELECTOR_STRINGS,
   ERROR_CONFIG,
-  CACHE_CONFIG
+  CACHE_CONFIG,
+  INTERSECTION_OBSERVER_CONFIG
 } from '../../shared/constants.js';

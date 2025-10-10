@@ -52,6 +52,7 @@ describe('Error Recovery Integration', () => {
     it('should handle background script unavailability', async () => {
       const chrome = {
         runtime: {
+          id: 'test-extension-id',
           sendMessage: jest.fn().mockRejectedValue(new Error('No receiver'))
         }
       };
@@ -79,6 +80,7 @@ describe('Error Recovery Integration', () => {
     it('should recover from temporary transaction failures', async () => {
       const chrome = {
         runtime: {
+          id: 'test-extension-id',
           sendMessage: jest.fn()
             .mockRejectedValueOnce(new Error('Transaction aborted'))
             .mockResolvedValue({ ok: true, result: { success: true } })
@@ -107,6 +109,7 @@ describe('Error Recovery Integration', () => {
 
       const chrome = {
         runtime: {
+          id: 'test-extension-id',
           sendMessage: jest.fn()
             .mockRejectedValueOnce(new Error('Transaction aborted'))
             .mockRejectedValueOnce(new Error('Transaction aborted'))

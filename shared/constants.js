@@ -134,3 +134,42 @@ export const CACHE_CONFIG = {
   STATS_LOG_INTERVAL: 30000,       // Log stats every 30 seconds in debug mode
   ENABLE_PERFORMANCE_MONITORING: true
 };
+
+// IntersectionObserver Configuration
+// Note: These values are validated to ensure proper observer behavior
+// - ROOT_MARGIN: 100px provides smooth pre-loading before viewport entry
+// - THRESHOLD: Multiple points track granular visibility changes
+// - VISIBILITY_THRESHOLD: 25% visibility balances accuracy with performance
+// - BATCH_DELAY: 100ms reduces callback frequency during rapid scrolling
+export const INTERSECTION_OBSERVER_CONFIG = (function() {
+  const config = {
+    ROOT_MARGIN: '100px',
+    THRESHOLD: [0, 0.25, 0.5],
+    VISIBILITY_THRESHOLD: 0.25,
+    BATCH_DELAY: 100,
+    ENABLE_LAZY_PROCESSING: true
+  };
+
+  // Validate configuration values
+  if (!Array.isArray(config.THRESHOLD) || config.THRESHOLD.length === 0) {
+    console.error('[YT-HWV] Invalid THRESHOLD config, using defaults');
+    config.THRESHOLD = [0, 0.25, 0.5];
+  }
+
+  // Validate threshold values are between 0 and 1
+  config.THRESHOLD = config.THRESHOLD.filter(t => typeof t === 'number' && t >= 0 && t <= 1);
+
+  if (typeof config.VISIBILITY_THRESHOLD !== 'number' ||
+      config.VISIBILITY_THRESHOLD < 0 ||
+      config.VISIBILITY_THRESHOLD > 1) {
+    console.error('[YT-HWV] Invalid VISIBILITY_THRESHOLD config, using default 0.25');
+    config.VISIBILITY_THRESHOLD = 0.25;
+  }
+
+  if (typeof config.BATCH_DELAY !== 'number' || config.BATCH_DELAY < 0) {
+    console.error('[YT-HWV] Invalid BATCH_DELAY config, using default 100ms');
+    config.BATCH_DELAY = 100;
+  }
+
+  return config;
+})();

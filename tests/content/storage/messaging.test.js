@@ -17,6 +17,7 @@ describe('Messaging Module', () => {
     mockSendMessage = jest.fn();
     global.chrome = {
       runtime: {
+        id: 'test-extension-id',
         sendMessage: mockSendMessage
       }
     };

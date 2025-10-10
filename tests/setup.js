@@ -2,6 +2,7 @@ require('fake-indexeddb/auto');
 
 global.chrome = {
   runtime: {
+    id: 'test-extension-id',
     onInstalled: {
       addListener: jest.fn()
     },

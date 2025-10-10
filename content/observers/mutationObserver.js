@@ -1,6 +1,7 @@
 import { debounce } from '../utils/debounce.js';
 import { CSS_CLASSES, DEBUG, CACHE_CONFIG } from '../utils/constants.js';
 import { invalidateElementCache, invalidateVideoContainerCaches, clearAllCaches, logCacheStats } from '../utils/domCache.js';
+import { observeVideoContainers, unobserveVideoContainers } from './intersectionObserver.js';
 
 export function setupMutationObserver(applyHiding) {
   const debouncedApplyHiding = debounce(applyHiding, 250);
@@ -9,6 +10,8 @@ export function setupMutationObserver(applyHiding) {
     let shouldApplyHiding = false;
     let hasVideoContainerChanges = false;
     let hasMajorDOMChanges = false;
+    const addedContainers = [];
+    const removedContainers = [];
 
     mutations.forEach(mutation => {
       if (mutation.type === 'attributes' && mutation.attributeName === 'aria-hidden') {
@@ -20,7 +23,7 @@ export function setupMutationObserver(applyHiding) {
       } else if (mutation.type === 'childList') {
         shouldApplyHiding = true;
 
-        // Invalidate cache for removed nodes
+        // Track removed video containers
         mutation.removedNodes.forEach(node => {
           if (node.nodeType === Node.ELEMENT_NODE) {
             invalidateElementCache(node);
@@ -35,11 +38,12 @@ export function setupMutationObserver(applyHiding) {
 
             if (isVideoContainer) {
               hasVideoContainerChanges = true;
+              removedContainers.push(node);
             }
           }
         });
 
-        // Check if added nodes are video containers
+        // Track added video containers
         mutation.addedNodes.forEach(node => {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const isVideoContainer = node.matches && (
@@ -51,6 +55,7 @@ export function setupMutationObserver(applyHiding) {
 
             if (isVideoContainer) {
               hasVideoContainerChanges = true;
+              addedContainers.push(node);
             }
 
             // Check for major structural changes (page sections)
@@ -67,6 +72,14 @@ export function setupMutationObserver(applyHiding) {
         });
       }
     });
+
+    // Update IntersectionObserver tracking
+    if (addedContainers.length > 0) {
+      observeVideoContainers(addedContainers);
+    }
+    if (removedContainers.length > 0) {
+      unobserveVideoContainers(removedContainers);
+    }
 
     // Granular cache invalidation based on change type
     if (hasMajorDOMChanges) {

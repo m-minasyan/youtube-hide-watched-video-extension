@@ -10,6 +10,7 @@ describe('Message Passing Error Handling Integration', () => {
     // Mock chrome.runtime API
     chrome = {
       runtime: {
+        id: 'test-extension-id',
         sendMessage: jest.fn()
       }
     };

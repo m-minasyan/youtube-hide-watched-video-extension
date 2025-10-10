@@ -1,11 +1,13 @@
-import { CSS_CLASSES } from '../utils/constants.js';
+import { CSS_CLASSES, INTERSECTION_OBSERVER_CONFIG } from '../utils/constants.js';
 import { logDebug } from '../utils/logger.js';
 import { getCachedHiddenVideo } from '../storage/cache.js';
 import { fetchHiddenVideoStates } from '../storage/messaging.js';
 import { isIndividualModeEnabled } from '../storage/settings.js';
-import { collectVisibleVideoIds, findVideoContainers } from '../utils/dom.js';
+import { collectVisibleVideoIds, findVideoContainers, extractVideoIdFromHref } from '../utils/dom.js';
+import { getVisibleVideos, isVideoVisible } from '../utils/visibilityTracker.js';
 
 let individualHidingIteration = 0;
+let isInitialLoad = true;
 
 function syncIndividualContainerState(container, state) {
   if (!container) return;
@@ -37,6 +39,14 @@ function syncIndividualContainerState(container, state) {
   }
 }
 
+/**
+ * Mark the initial load as complete
+ * Exported for testing purposes
+ */
+export function markInitialLoadComplete() {
+  isInitialLoad = false;
+}
+
 export async function applyIndividualHiding() {
   if (!isIndividualModeEnabled()) {
     document.querySelectorAll(`.${CSS_CLASSES.INDIVIDUAL_DIMMED}, .${CSS_CLASSES.INDIVIDUAL_HIDDEN}`).forEach((el) => {
@@ -44,27 +54,92 @@ export async function applyIndividualHiding() {
     });
     return;
   }
+
+  // Enhanced debug logging
+  logDebug('=== applyIndividualHiding called ===');
+  logDebug(`Initial load: ${isInitialLoad}`);
+  logDebug(`Lazy processing enabled: ${INTERSECTION_OBSERVER_CONFIG.ENABLE_LAZY_PROCESSING}`);
+  logDebug(`Visible videos count: ${getVisibleVideos().size}`);
+
   individualHidingIteration += 1;
   const token = individualHidingIteration;
-  const videoIds = collectVisibleVideoIds();
+
+  let videoIds;
+
+  if (INTERSECTION_OBSERVER_CONFIG.ENABLE_LAZY_PROCESSING && !isInitialLoad) {
+    // Lazy processing for subsequent updates (after initial load)
+    const visibleContainers = getVisibleVideos();
+    const visibleIds = new Set();
+
+    visibleContainers.forEach(container => {
+      // Add null check and verify container is still connected to DOM
+      if (!container || !container.isConnected) {
+        return;
+      }
+
+      try {
+        const videoId = container.getAttribute('data-ythwv-video-id');
+        if (videoId) visibleIds.add(videoId);
+
+        // Also check for links within visible containers
+        const links = container.querySelectorAll('a[href*="/watch?v="], a[href*="/shorts/"]');
+        links.forEach(link => {
+          const href = link.getAttribute('href');
+          if (href) {
+            const id = extractVideoIdFromHref(href);
+            if (id) visibleIds.add(id);
+          }
+        });
+      } catch (error) {
+        // Container may have been removed from DOM during iteration
+        logDebug('Error processing container in lazy mode:', error);
+      }
+    });
+
+    videoIds = Array.from(visibleIds);
+    logDebug(`Processing ${videoIds.length} visible videos (lazy mode)`);
+  } else {
+    // Initial load or lazy processing disabled: process ALL videos
+    videoIds = collectVisibleVideoIds();
+    logDebug(`Processing ${videoIds.length} total videos (${isInitialLoad ? 'initial load' : 'full mode'})`);
+  }
+
   if (videoIds.length === 0) {
     return;
   }
+
   try {
     await fetchHiddenVideoStates(videoIds);
   } catch (error) {
     logDebug('Failed to fetch hidden video states', error);
     return;
   }
+
   if (token !== individualHidingIteration) {
     return;
   }
+
   videoIds.forEach((videoId) => {
     const record = getCachedHiddenVideo(videoId);
     const state = record?.state || 'normal';
     const containers = findVideoContainers(videoId);
+
     containers.forEach((container) => {
-      syncIndividualContainerState(container, state);
+      // On initial load, process all containers
+      // After initial load, only process visible containers if lazy processing enabled
+      const shouldProcess = !INTERSECTION_OBSERVER_CONFIG.ENABLE_LAZY_PROCESSING ||
+                            isInitialLoad ||
+                            isVideoVisible(container);
+
+      if (shouldProcess) {
+        syncIndividualContainerState(container, state);
+      }
     });
   });
+
+  // Mark initial load as complete
+  if (isInitialLoad) {
+    isInitialLoad = false;
+    logDebug('Initial load complete, switching to lazy processing mode');
+  }
 }

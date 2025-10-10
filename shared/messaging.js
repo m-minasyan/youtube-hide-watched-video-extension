@@ -3,16 +3,53 @@ import { retryOperation, logError, classifyError, ErrorType } from './errorHandl
 
 const MESSAGE_TIMEOUT = 5000;
 
+// Track if extension context has been invalidated
+let contextInvalidated = false;
+
+/**
+ * Check if the extension context is still valid
+ * @returns {boolean} True if context is valid, false if invalidated
+ */
+function isExtensionContextValid() {
+  if (contextInvalidated) {
+    return false;
+  }
+
+  try {
+    // Accessing chrome.runtime.id will throw if context is invalidated
+    // This is a reliable way to check if the extension is still active
+    const id = chrome.runtime?.id;
+    return !!id;
+  } catch (error) {
+    // Context invalidated - mark it so we don't spam checks
+    contextInvalidated = true;
+    return false;
+  }
+}
+
 /**
  * Send message with timeout
  */
 function sendMessageWithTimeout(message, timeout = MESSAGE_TIMEOUT) {
+  // Check if extension context is still valid before attempting to send
+  if (!isExtensionContextValid()) {
+    return Promise.reject(new Error('Extension context invalidated'));
+  }
+
   return Promise.race([
     chrome.runtime.sendMessage(message),
     new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Message timeout')), timeout)
     )
-  ]);
+  ]).catch(error => {
+    // Check if this is a context invalidation error
+    const errorMsg = error?.message?.toLowerCase() || '';
+    if (errorMsg.includes('extension context invalidated') ||
+        errorMsg.includes('context invalidated')) {
+      contextInvalidated = true;
+    }
+    throw error;
+  });
 }
 
 /**
@@ -26,8 +63,20 @@ function sendMessageWithTimeout(message, timeout = MESSAGE_TIMEOUT) {
  *
  * These values are tuned for Manifest V3 service workers which may need time
  * to wake up and complete initialization before handling messages.
+ *
+ * Context Invalidation:
+ * When the extension is reloaded/updated, the context becomes invalidated.
+ * This is expected behavior and the function will fail gracefully without
+ * logging errors to avoid console spam.
  */
 export async function sendHiddenVideosMessage(type, payload = {}) {
+  // Quick check before attempting message send
+  if (!isExtensionContextValid()) {
+    // Silently fail when context is invalidated - this is expected during extension reload
+    // No need to log errors as this is a normal part of the extension lifecycle
+    return Promise.reject(new Error('Extension context invalidated'));
+  }
+
   return retryOperation(
     async () => {
       try {
@@ -45,7 +94,11 @@ export async function sendHiddenVideosMessage(type, payload = {}) {
 
         return response.result;
       } catch (error) {
-        logError('Messaging', error, { type, payload });
+        // Don't log errors for context invalidation - this is expected behavior
+        const errorType = classifyError(error);
+        if (errorType !== ErrorType.PERMANENT || !error.message?.includes('context invalidated')) {
+          logError('Messaging', error, { type, payload });
+        }
         throw error;
       }
     },
@@ -55,6 +108,7 @@ export async function sendHiddenVideosMessage(type, payload = {}) {
       maxDelay: 3000,
       shouldRetry: (error) => {
         const errorType = classifyError(error);
+        // Don't retry permanent errors (including context invalidation)
         return errorType === ErrorType.NETWORK || errorType === ErrorType.TRANSIENT;
       }
     }

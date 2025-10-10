@@ -1,9 +1,10 @@
 import { injectStyles } from './ui/styles.js';
 import { loadSettings } from './storage/settings.js';
-import { applyHiding, setupMessageListener } from './events/eventHandler.js';
+import { applyHiding, setupMessageListener, cleanupEventHandlers } from './events/eventHandler.js';
 import { setupMutationObserver } from './observers/mutationObserver.js';
 import { setupUrlObserver } from './observers/urlObserver.js';
 import { setupXhrObserver } from './observers/xhrObserver.js';
+import { setupIntersectionObserver, disconnectIntersectionObserver } from './observers/intersectionObserver.js';
 import { logDebug } from './utils/logger.js';
 import { sendHiddenVideosMessage } from '../shared/messaging.js';
 import { HIDDEN_VIDEO_MESSAGES } from '../shared/constants.js';
@@ -70,6 +71,10 @@ async function init() {
     }
 
     await loadSettings();
+
+    // Setup IntersectionObserver before initial processing
+    setupIntersectionObserver();
+
     applyHiding();
 
     setupMutationObserver(applyHiding);
@@ -88,6 +93,38 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {
   init();
+}
+
+// Cleanup on page unload and extension-specific events
+if (typeof window !== 'undefined') {
+  // Standard beforeunload (may not fire reliably in extensions)
+  window.addEventListener('beforeunload', () => {
+    disconnectIntersectionObserver();
+    cleanupEventHandlers();
+  });
+
+  // Page visibility change - cleanup when page becomes hidden
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      // Partial cleanup to free resources when page is hidden
+      disconnectIntersectionObserver();
+    }
+  });
+
+  // Pagehide event - more reliable than beforeunload in modern browsers
+  window.addEventListener('pagehide', () => {
+    disconnectIntersectionObserver();
+    cleanupEventHandlers();
+  });
+}
+
+// Extension-specific cleanup
+if (typeof chrome !== 'undefined' && chrome.runtime) {
+  // Listen for extension being disabled or unloaded
+  chrome.runtime.onSuspend?.addListener(() => {
+    disconnectIntersectionObserver();
+    cleanupEventHandlers();
+  });
 }
 
 logDebug('YouTube Hide Watched Videos extension loaded');

@@ -28,6 +28,12 @@ export function classifyError(error) {
     return ErrorType.TRANSIENT;
   }
 
+  // Extension context invalidated - PERMANENT (extension was reloaded/updated)
+  if (message.includes('extension context invalidated') ||
+      message.includes('context invalidated')) {
+    return ErrorType.PERMANENT;
+  }
+
   // Network/messaging errors - ENHANCED
   if (message.includes('message') ||
       message.includes('no response') ||

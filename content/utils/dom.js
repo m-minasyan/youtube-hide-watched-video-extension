@@ -65,3 +65,28 @@ export function extractTitleFromContainer(container) {
   }
   return '';
 }
+
+/**
+ * Extract video ID from container element
+ * @param {Element} container - Video container element
+ * @returns {string|null} Video ID or null
+ */
+export function extractVideoIdFromContainer(container) {
+  if (!container) return null;
+
+  // Check data attribute first
+  const dataId = container.getAttribute('data-ythwv-video-id');
+  if (dataId) return dataId;
+
+  // Search for video links
+  const link = cachedQuerySelector(
+    container,
+    'a[href*="/watch?v="], a[href*="/shorts/"]'
+  );
+
+  if (link) {
+    return extractVideoIdFromHref(link.getAttribute('href'));
+  }
+
+  return null;
+}

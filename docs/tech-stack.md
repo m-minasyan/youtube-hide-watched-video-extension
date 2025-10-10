@@ -18,6 +18,7 @@ This document outlines the technology stack used in the YouTube Hide Watched Vid
 - **Runtime API**: Background script communication
 - **Tabs API**: Tab management and injection
 - **Scripting API**: Content script injection
+- **IntersectionObserver API**: Viewport visibility tracking for performance optimization
 
 ## Development Tools
 
@@ -109,9 +110,11 @@ This document outlines the technology stack used in the YouTube Hide Watched Vid
 
 ### Optimization Techniques
 - Lazy loading of resources
-- Efficient DOM queries
+- Efficient DOM queries with WeakMap caching
 - Debounced event handlers
 - Minimal permission requests
+- IntersectionObserver for visibility-based processing
+- Batch processing of visibility changes
 
 ### Bundle Size Targets
 - Popup bundle: < 50KB
