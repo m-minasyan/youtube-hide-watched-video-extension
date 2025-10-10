@@ -7,6 +7,10 @@ jest.mock('../background/indexedDb.js', () => ({
   clearHiddenVideosStore: jest.fn().mockResolvedValue(undefined)
 }));
 
+jest.mock('../background/indexedDbCache.js', () => ({
+  getCacheStats: jest.fn().mockReturnValue({ size: 0, ttl: 30000 })
+}));
+
 jest.mock('../shared/utils.js', () => ({
   ensurePromise: jest.fn((promise) => promise),
   queryYoutubeTabs: jest.fn().mockResolvedValue([])
@@ -110,6 +114,10 @@ describe('Background Initialization', () => {
             messageListener: true,
             database: true,
             migration: true
+          },
+          cache: {
+            size: 0,
+            ttl: 30000
           }
         }
       });

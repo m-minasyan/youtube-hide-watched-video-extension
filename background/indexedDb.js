@@ -1,4 +1,6 @@
 import { retryOperation, logError, classifyError, ErrorType } from '../shared/errorHandler.js';
+import { getCachedRecord, setCachedRecord, invalidateCache } from './indexedDbCache.js';
+import { INDEXEDDB_CONFIG } from '../shared/constants.js';
 
 const DB_NAME = 'ythwvHiddenVideos';
 const DB_VERSION = 1;
@@ -153,6 +155,8 @@ export async function upsertHiddenVideos(records) {
   await withStore('readwrite', (store) => {
     records.forEach((record) => {
       store.put(record);
+      // Update background cache
+      setCachedRecord(record.videoId, record);
     });
   });
 }
@@ -167,11 +171,37 @@ export async function deleteHiddenVideo(videoId) {
   await withStore('readwrite', (store) => {
     store.delete(videoId);
   });
+  // Invalidate background cache
+  invalidateCache(videoId);
 }
-export async function getHiddenVideosByIds(ids) {
-  if (!ids || ids.length === 0) return {};
-  const unique = Array.from(new Set(ids.filter(Boolean)));
-  if (unique.length === 0) return {};
+
+/**
+ * Deletes multiple hidden videos in a single transaction
+ * @param {string[]} videoIds - Array of video IDs to delete
+ * @returns {Promise<void>}
+ */
+export async function deleteHiddenVideos(videoIds) {
+  if (!videoIds || videoIds.length === 0) return;
+  const unique = Array.from(new Set(videoIds.filter(Boolean)));
+  if (unique.length === 0) return;
+
+  await withStore('readwrite', (store) => {
+    unique.forEach(videoId => store.delete(videoId));
+  });
+
+  // Invalidate background cache for all deleted videos
+  unique.forEach(videoId => invalidateCache(videoId));
+}
+
+// Use cursor for large batches (configurable threshold)
+const GET_CURSOR_THRESHOLD = INDEXEDDB_CONFIG.GET_CURSOR_THRESHOLD;
+
+/**
+ * Gets hidden videos by IDs using individual get requests (for small batches)
+ * @param {string[]} unique - Array of unique video IDs
+ * @returns {Promise<Object>} - Map of videoId -> record
+ */
+async function getHiddenVideosByIdsIndividual(unique) {
   return withStore('readonly', (store) => {
     const promises = unique.map((videoId) => new Promise((resolve) => {
       const request = store.get(videoId);
@@ -183,15 +213,84 @@ export async function getHiddenVideosByIds(ids) {
       };
     }));
     return Promise.all(promises).then((entries) => {
-      const result = {};
+      const fetched = {};
       entries.forEach(([videoId, value]) => {
+        // Cache the fetched record
+        setCachedRecord(videoId, value);
         if (value) {
-          result[videoId] = value;
+          fetched[videoId] = value;
         }
       });
-      return result;
+      return fetched;
     });
   });
+}
+
+/**
+ * Gets hidden videos by IDs using cursor scan (for large batches)
+ * @param {string[]} ids - Array of video IDs
+ * @returns {Promise<Object>} - Map of videoId -> record
+ */
+async function getHiddenVideosByIdsCursor(ids) {
+  const idSet = new Set(ids);
+  const result = {};
+
+  await withStore('readonly', (store) => new Promise((resolve, reject) => {
+    const request = store.openCursor();
+
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (!cursor) {
+        resolve();
+        return;
+      }
+
+      if (idSet.has(cursor.value.videoId)) {
+        result[cursor.value.videoId] = cursor.value;
+        // Cache the fetched record
+        setCachedRecord(cursor.value.videoId, cursor.value);
+      }
+
+      cursor.continue();
+    };
+
+    request.onerror = () => reject(request.error);
+  }));
+
+  return result;
+}
+export async function getHiddenVideosByIds(ids) {
+  if (!ids || ids.length === 0) return {};
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  if (unique.length === 0) return {};
+
+  // Check background cache first
+  const result = {};
+  const missing = [];
+
+  unique.forEach((videoId) => {
+    const cached = getCachedRecord(videoId);
+    if (cached !== undefined) {
+      // cached can be an object (found) or null (explicitly deleted)
+      if (cached) { // Only add non-null records to result
+        result[videoId] = cached;
+      }
+    } else {
+      // undefined means not in cache - need to fetch from IndexedDB
+      missing.push(videoId);
+    }
+  });
+
+  // Fetch missing records from IndexedDB
+  if (missing.length === 0) return result;
+
+  // For small batches, use individual get requests
+  // For large batches, use cursor scan
+  const fetchedRecords = missing.length < GET_CURSOR_THRESHOLD
+    ? await getHiddenVideosByIdsIndividual(missing)
+    : await getHiddenVideosByIdsCursor(missing);
+
+  return { ...result, ...fetchedRecords };
 }
 export async function getHiddenVideosPage(options = {}) {
   const { state = null, cursor = null, limit = 100 } = options;
@@ -261,7 +360,14 @@ export async function getHiddenVideosPage(options = {}) {
     };
   }));
 }
-export async function getHiddenVideosStats() {
+// Use cursor for stats calculation on large databases (configurable threshold)
+const STATS_CURSOR_THRESHOLD = INDEXEDDB_CONFIG.STATS_CURSOR_THRESHOLD;
+
+/**
+ * Gets stats using separate count operations (faster for small databases)
+ * @returns {Promise<Object>} - Stats object with total, dimmed, hidden counts
+ */
+async function getHiddenVideosStatsCount() {
   return withStore('readonly', (store) => new Promise((resolve, reject) => {
     const counts = { total: 0, dimmed: 0, hidden: 0 };
     let remaining = 3;
@@ -288,9 +394,61 @@ export async function getHiddenVideosStats() {
   }));
 }
 
+/**
+ * Gets stats using single cursor scan (faster for large databases)
+ * @returns {Promise<Object>} - Stats object with total, dimmed, hidden counts
+ */
+async function getHiddenVideosStatsCursor() {
+  return withStore('readonly', (store) => new Promise((resolve, reject) => {
+    const counts = { total: 0, dimmed: 0, hidden: 0 };
+    const request = store.openCursor();
+
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (!cursor) {
+        resolve(counts);
+        return;
+      }
+
+      counts.total++;
+      if (cursor.value.state === 'dimmed') counts.dimmed++;
+      if (cursor.value.state === 'hidden') counts.hidden++;
+
+      cursor.continue();
+    };
+
+    request.onerror = () => reject(request.error);
+  }));
+}
+
+/**
+ * Gets hidden videos statistics
+ * Uses cursor scan for large databases (100+ records) for better performance
+ * Uses separate count operations for small databases
+ * @returns {Promise<Object>} - Stats object with total, dimmed, hidden counts
+ */
+export async function getHiddenVideosStats() {
+  // First, get a quick count to decide which method to use
+  const total = await withStore('readonly', (store) => new Promise((resolve, reject) => {
+    const request = store.count();
+    request.onsuccess = () => resolve(request.result || 0);
+    request.onerror = () => reject(request.error);
+  }));
+
+  // For small databases, use separate count operations (faster)
+  // For large databases, use cursor scan (single pass)
+  if (total < STATS_CURSOR_THRESHOLD) {
+    return getHiddenVideosStatsCount();
+  } else {
+    return getHiddenVideosStatsCursor();
+  }
+}
+
 export async function deleteOldestHiddenVideos(count) {
   if (!Number.isFinite(count) || count <= 0) return;
   const target = Math.min(Math.floor(count), 1000000);
+  const deletedIds = [];
+
   await withStore('readwrite', (store) => new Promise((resolve, reject) => {
     const index = store.index(UPDATED_AT_INDEX);
     let removed = 0;
@@ -307,7 +465,9 @@ export async function deleteOldestHiddenVideos(count) {
         finish();
         return;
       }
+      const videoId = cursor.value.videoId;
       cursor.delete();
+      deletedIds.push(videoId);
       removed += 1;
       if (removed >= target) {
         finish();
@@ -321,12 +481,18 @@ export async function deleteOldestHiddenVideos(count) {
       reject(request.error);
     };
   }));
+
+  // Invalidate cache for all deleted videos
+  deletedIds.forEach(videoId => invalidateCache(videoId));
 }
 
 export async function clearHiddenVideosStore() {
   await withStore('readwrite', (store) => {
     store.clear();
   });
+  // Clear the entire background cache since all records are deleted
+  const { clearBackgroundCache } = await import('./indexedDbCache.js');
+  clearBackgroundCache();
 }
 
 // Database reset for corruption recovery

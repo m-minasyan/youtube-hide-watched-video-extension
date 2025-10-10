@@ -173,3 +173,36 @@ export const INTERSECTION_OBSERVER_CONFIG = (function() {
 
   return config;
 })();
+
+// IndexedDB Optimization Configuration
+export const INDEXEDDB_CONFIG = {
+  // Cache settings
+  CONTENT_CACHE_MAX_SIZE: 1000,
+  BACKGROUND_CACHE_TTL: 30000, // 30 seconds
+
+  // Write batching
+  WRITE_BATCH_DELAY: 100, // milliseconds
+  WRITE_BATCH_MAX_SIZE: 50,
+
+  // Query optimization
+  GET_CURSOR_THRESHOLD: 50, // Use cursor for 50+ IDs
+  STATS_CURSOR_THRESHOLD: 100, // Use cursor for 100+ records
+
+  // Pagination
+  ENABLE_PREFETCH: false, // Disabled by default (Phase 6)
+  PREFETCH_DELAY: 100,
+
+  // Broadcast
+  BROADCAST_DEBOUNCE: 100
+};
+
+// Feature flags for IndexedDB optimizations
+export const FEATURE_FLAGS = {
+  ENABLE_WRITE_BATCHING: false, // Disabled by default - needs testing
+  ENABLE_BACKGROUND_CACHE: true,
+  ENABLE_LRU_EVICTION: true,
+  ENABLE_CURSOR_OPTIMIZATION: true,
+  ENABLE_STATS_OPTIMIZATION: true,
+  ENABLE_PAGINATION_PREFETCH: false, // Phase 6
+  ENABLE_BROADCAST_BATCHING: false // Phase 6
+};

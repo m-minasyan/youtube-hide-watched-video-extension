@@ -33,10 +33,12 @@ describe('Message Passing Error Handling Integration', () => {
 
       // Should timeout and throw error (MESSAGE_TIMEOUT is 5000ms)
       // With maxAttempts: 5, this will timeout 5 times before giving up
+      // Each attempt: 5000ms timeout + exponential backoff (300, 600, 1200, 2400ms)
+      // Total worst case: ~31s
       await expect(
         sendHiddenVideosMessage('TEST_MESSAGE', { data: 'test' })
       ).rejects.toThrow('Message timeout');
-    }, 30000); // 30 second timeout for test itself to allow 5 retries with 5s timeout each
+    }, 35000); // 35 second timeout for test itself to allow 5 retries with 5s timeout each + backoff delays
 
     it('should succeed if response comes before timeout', async () => {
       chrome.runtime.sendMessage.mockResolvedValue({

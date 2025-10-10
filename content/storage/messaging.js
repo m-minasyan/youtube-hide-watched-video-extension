@@ -7,7 +7,8 @@ import {
   hasPendingRequest,
   getPendingRequest,
   setPendingRequest,
-  deletePendingRequest
+  deletePendingRequest,
+  clearPendingRequests as clearPendingRequestsCache
 } from './cache.js';
 import { sendHiddenVideosMessage } from '../../shared/messaging.js';
 import { logError, classifyError, ErrorType } from '../../shared/errorHandler.js';
@@ -15,6 +16,13 @@ import { showNotification } from '../../shared/notifications.js';
 
 // Re-export sendHiddenVideosMessage for backward compatibility
 export { sendHiddenVideosMessage };
+
+/**
+ * Clears all pending requests (useful for navigation events)
+ */
+export function clearPendingRequests() {
+  clearPendingRequestsCache();
+}
 
 export async function fetchHiddenVideoStates(videoIds) {
   const ids = Array.isArray(videoIds) ? videoIds.filter(Boolean) : [];
@@ -43,6 +51,9 @@ export async function fetchHiddenVideoStates(videoIds) {
   });
 
   if (missing.length > 0) {
+    // Note: We don't set a timeout to delete pending requests because that could
+    // cause race conditions if the fetch takes longer than the timeout.
+    // The finally block will clean up pending requests when the fetch completes.
     const fetchPromise = sendHiddenVideosMessage(
       HIDDEN_VIDEO_MESSAGES.GET_MANY,
       { ids: missing }
@@ -67,6 +78,7 @@ export async function fetchHiddenVideoStates(videoIds) {
 
       throw error;
     }).finally(() => {
+      // Clean up pending requests after fetch completes (success or failure)
       missing.forEach((videoId) => deletePendingRequest(videoId));
     });
 

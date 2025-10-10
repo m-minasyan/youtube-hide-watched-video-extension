@@ -9,6 +9,7 @@ import {
   clearHiddenVideosStore,
   deleteOldestHiddenVideos
 } from './indexedDb.js';
+import { getCacheStats } from './indexedDbCache.js';
 import { ensurePromise, queryYoutubeTabs } from '../shared/utils.js';
 
 const STORAGE_KEYS = {
@@ -231,6 +232,14 @@ async function handleClearAll() {
 }
 
 async function handleHealthCheck() {
+  let cacheStats;
+  try {
+    cacheStats = getCacheStats();
+  } catch (error) {
+    console.error('Failed to get cache stats', error);
+    cacheStats = { error: 'Failed to retrieve cache stats' };
+  }
+
   return {
     ready: initializationComplete,
     error: initializationError ? initializationError.message : null,
@@ -238,7 +247,8 @@ async function handleHealthCheck() {
       messageListener: initialized,
       database: dbInitialized,
       migration: migrationComplete
-    }
+    },
+    cache: cacheStats
   };
 }
 
