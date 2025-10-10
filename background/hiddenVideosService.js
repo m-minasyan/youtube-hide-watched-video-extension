@@ -9,13 +9,7 @@ import {
   clearHiddenVideosStore,
   deleteOldestHiddenVideos
 } from './indexedDb.js';
-
-function ensurePromise(value) {
-  if (value && typeof value.then === 'function') {
-    return value;
-  }
-  return Promise.resolve(value);
-}
+import { ensurePromise, queryYoutubeTabs } from '../shared/utils.js';
 
 const STORAGE_KEYS = {
   HIDDEN_VIDEOS: 'YTHWV_HIDDEN_VIDEOS',
@@ -52,17 +46,6 @@ function buildRecord(videoId, state, title, updatedAt) {
     title: sanitizeTitle(title),
     updatedAt
   };
-}
-function queryYoutubeTabs() {
-  return new Promise((resolve) => {
-    chrome.tabs.query({ url: '*://*.youtube.com/*' }, (tabs) => {
-      if (chrome.runtime.lastError) {
-        resolve([]);
-        return;
-      }
-      resolve(tabs || []);
-    });
-  });
 }
 
 async function broadcastHiddenVideosEvent(event) {

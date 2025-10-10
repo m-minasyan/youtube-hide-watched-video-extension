@@ -2,10 +2,10 @@ import { CSS_CLASSES } from '../utils/constants.js';
 import { getShortsState } from '../storage/settings.js';
 import { determineYoutubeSection } from '../detection/sectionDetector.js';
 import { findShortsContainers } from '../detection/shortsDetector.js';
+import { removeClassesFromAll } from '../utils/cssHelpers.js';
 
 export function updateClassOnShortsItems() {
-  document.querySelectorAll(`.${CSS_CLASSES.SHORTS_DIMMED}`).forEach((el) => el.classList.remove(CSS_CLASSES.SHORTS_DIMMED));
-  document.querySelectorAll(`.${CSS_CLASSES.SHORTS_HIDDEN}`).forEach((el) => el.classList.remove(CSS_CLASSES.SHORTS_HIDDEN));
+  removeClassesFromAll(CSS_CLASSES.SHORTS_DIMMED, CSS_CLASSES.SHORTS_HIDDEN);
 
   const section = determineYoutubeSection();
   const state = getShortsState(section) || 'normal';

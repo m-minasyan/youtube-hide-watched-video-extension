@@ -1,4 +1,4 @@
-import { SELECTORS, CSS_CLASSES } from './constants.js';
+import { SELECTORS, CSS_CLASSES, SELECTOR_STRINGS } from './constants.js';
 
 export function extractVideoIdFromHref(href) {
   if (!href) return null;
@@ -25,11 +25,11 @@ export function collectVisibleVideoIds() {
 export function findVideoContainers(videoId) {
   const containers = new Set();
   document.querySelectorAll(`.${CSS_CLASSES.EYE_BUTTON}[data-video-id="${videoId}"]`).forEach((button) => {
-    const container = button.closest(SELECTORS.VIDEO_CONTAINERS.join(', '));
+    const container = button.closest(SELECTOR_STRINGS.VIDEO_CONTAINERS);
     if (container) containers.add(container);
   });
   document.querySelectorAll(`a[href*="/watch?v=${videoId}"], a[href*="/shorts/${videoId}"]`).forEach((link) => {
-    const container = link.closest(SELECTORS.VIDEO_CONTAINERS.join(', '));
+    const container = link.closest(SELECTOR_STRINGS.VIDEO_CONTAINERS);
     if (container) containers.add(container);
   });
   return Array.from(containers);

@@ -1,34 +1,4 @@
-const STORAGE_KEYS = {
-  THRESHOLD: 'YTHWV_THRESHOLD',
-  WATCHED_STATE: 'YTHWV_STATE',
-  SHORTS_STATE: 'YTHWV_STATE_SHORTS',
-  HIDDEN_VIDEOS: 'YTHWV_HIDDEN_VIDEOS',
-  INDIVIDUAL_MODE: 'YTHWV_INDIVIDUAL_MODE',
-  THEME: 'YTHWV_THEME'
-};
-
-const DEFAULT_SETTINGS = {
-  threshold: 10,
-  individualMode: 'dimmed',
-  theme: 'auto',
-  states: {
-    watched: {
-      misc: 'normal',
-      subscriptions: 'normal',
-      channel: 'normal',
-      watch: 'normal',
-      trending: 'normal',
-      playlist: 'normal'
-    },
-    shorts: {
-      misc: 'normal',
-      subscriptions: 'normal',
-      channel: 'normal',
-      watch: 'normal',
-      trending: 'normal'
-    }
-  }
-};
+const { STORAGE_KEYS, DEFAULT_SETTINGS } = require('../shared/constants.js');
 
 function createMockVideoElement(options = {}) {
   const {

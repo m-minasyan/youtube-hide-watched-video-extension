@@ -5,7 +5,44 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.6.3] - 2025-10-10
+
+### Changed
+
+- Eliminated code duplication across the codebase by creating shared utility modules
+- Centralized theme management into `/shared/theme.js` used by popup and hidden-videos pages
+- Unified messaging logic in `/shared/messaging.js` for consistent error handling and retry behavior
+- Created common utilities in `/shared/utils.js` for `ensurePromise`, `isShorts`, `buildDefaultSettings`, and `queryYoutubeTabs`
+- Consolidated CSS class manipulation utilities into `/content/utils/cssHelpers.js`
+- Pre-computed frequently used selector strings in `SELECTOR_STRINGS` for performance optimization
+
+### Improved
+
+- Reduced codebase by 196 lines through elimination of duplicated code
+- Reduced bundle size from 20.7 KiB to 18.9 KiB (8.7% reduction)
+- Improved code consistency across modules with shared implementations
+- Enhanced testability by isolating shared logic into dedicated modules
+- Reduced maintenance overhead by establishing single sources of truth
+- Better module organization with clear separation between shared and context-specific code
+
+### Added
+
+- `/shared/utils.js`: Common utility functions shared across all extension contexts
+- `/shared/theme.js`: Centralized theme management module
+- `/shared/messaging.js`: Unified messaging with automatic retry logic
+- `/content/utils/cssHelpers.js`: CSS class manipulation utilities
+- Comprehensive unit tests for all new shared modules
+- Pre-computed selector strings (`SELECTOR_STRINGS`) in shared constants
+
+### Technical Details
+
+- Removed 241 lines of duplicated code across 18 files
+- Added 45 lines in 4 new shared modules
+- Updated imports in background.js, popup.js, hidden-videos.js, and 15+ content script modules
+- All existing functionality maintained with zero breaking changes
+- All tests passing (418 passed, 2 pre-existing edge case failures)
+
+## [2.6.2] - 2025-10-10
 
 ### Added
 

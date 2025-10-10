@@ -4,5 +4,6 @@ export {
   HIDDEN_VIDEO_MESSAGES,
   CSS_CLASSES,
   SELECTORS,
+  SELECTOR_STRINGS,
   ERROR_CONFIG
 } from '../../shared/constants.js';

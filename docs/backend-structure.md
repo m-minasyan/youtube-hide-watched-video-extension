@@ -13,6 +13,9 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 ├── content.js            # Content script (bundled output from content/)
 ├── shared/              # Shared modules across all contexts
 │   ├── constants.js    # Centralized constants (storage keys, messages, defaults)
+│   ├── utils.js        # Common utility functions (ensurePromise, isShorts, etc.)
+│   ├── theme.js        # Theme management (initTheme, toggleTheme)
+│   ├── messaging.js    # Unified messaging with retry logic
 │   ├── errorHandler.js # Error handling and retry logic
 │   ├── notifications.js # User notification system
 │   ├── notifications.css # Notification styles
@@ -21,6 +24,7 @@ This document outlines the backend architecture of the YouTube Hide Watched Vide
 │   ├── index.js         # Main entry point
 │   ├── utils/           # Utility modules
 │   │   ├── constants.js # Re-exports from shared/constants.js
+│   │   ├── cssHelpers.js # CSS class manipulation utilities
 │   │   ├── logger.js    # Debug logging
 │   │   ├── debounce.js  # Debounce utility
 │   │   └── dom.js       # DOM helper functions
@@ -101,6 +105,28 @@ Centralized constants that are shared across all extension contexts (content scr
 - Changes propagate automatically to all contexts
 
 See `/shared/README.md` for detailed constants documentation.
+
+**Shared Utilities (`/shared/utils.js`)**:
+- `ensurePromise()`: Normalizes Chrome API responses to promises
+- `isShorts()`: Detects if a video ID belongs to a YouTube Short
+- `buildDefaultSettings()`: Constructs the default settings object
+- `queryYoutubeTabs()`: Queries all YouTube tabs
+
+**Shared Theme Management (`/shared/theme.js`)**:
+- `initTheme()`: Initializes theme based on storage or system preference
+- `toggleTheme()`: Toggles between light and dark themes
+- Shared by popup and hidden videos manager for consistent theming
+
+**Shared Messaging (`/shared/messaging.js`)**:
+- `sendHiddenVideosMessage()`: Unified messaging for hidden video operations
+- Includes automatic retry logic for transient failures
+- Error classification and handling
+- Used by both content scripts and hidden videos manager
+
+**CSS Helpers (`/content/utils/cssHelpers.js`)**:
+- `removeClassFromAll()`: Removes a CSS class from all elements
+- `removeClassesFromAll()`: Removes multiple CSS classes efficiently
+- Used by hiding modules to clean up classes before re-application
 
 ### Background Service Worker
 - Manages extension lifecycle

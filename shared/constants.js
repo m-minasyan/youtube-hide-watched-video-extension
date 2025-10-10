@@ -111,5 +111,12 @@ export const ERROR_CONFIG = {
   MAX_ERROR_LOG_SIZE: 100
 };
 
+// Pre-computed selector strings for performance
+export const SELECTOR_STRINGS = {
+  VIDEO_CONTAINERS: SELECTORS.VIDEO_CONTAINERS.join(', '),
+  THUMBNAILS: SELECTORS.THUMBNAILS.join(', '),
+  SHORTS_CONTAINERS: SELECTORS.SHORTS_CONTAINERS.join(', ')
+};
+
 // Debug flag
 export const DEBUG = false;

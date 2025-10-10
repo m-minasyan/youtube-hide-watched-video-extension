@@ -1,14 +1,8 @@
 import { initializeHiddenVideosService } from './background/hiddenVideosService.js';
 import { STORAGE_KEYS, DEFAULT_SETTINGS } from './shared/constants.js';
+import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 
 let hiddenVideosInitializationPromise = null;
-
-function ensurePromise(value) {
-  if (value && typeof value.then === 'function') {
-    return value;
-  }
-  return Promise.resolve(value);
-}
 
 async function initializeHiddenVideos() {
   if (!hiddenVideosInitializationPromise) {
@@ -25,18 +19,7 @@ export function __getHiddenVideosInitializationPromiseForTests() {
 }
 async function ensureDefaultSettings(details) {
   if (details.reason !== 'install') return;
-  const defaultData = {
-    [STORAGE_KEYS.THRESHOLD]: DEFAULT_SETTINGS.threshold,
-    [STORAGE_KEYS.INDIVIDUAL_MODE]: DEFAULT_SETTINGS.individualMode,
-    [STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED]: DEFAULT_SETTINGS.individualModeEnabled,
-    [STORAGE_KEYS.THEME]: DEFAULT_SETTINGS.theme
-  };
-  Object.keys(DEFAULT_SETTINGS.states.watched).forEach((section) => {
-    defaultData[`${STORAGE_KEYS.WATCHED_STATE}_${section}`] = DEFAULT_SETTINGS.states.watched[section];
-  });
-  Object.keys(DEFAULT_SETTINGS.states.shorts).forEach((section) => {
-    defaultData[`${STORAGE_KEYS.SHORTS_STATE}_${section}`] = DEFAULT_SETTINGS.states.shorts[section];
-  });
+  const defaultData = buildDefaultSettings(STORAGE_KEYS, DEFAULT_SETTINGS);
   await chrome.storage.sync.set(defaultData);
 }
 

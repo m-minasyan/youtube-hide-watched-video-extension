@@ -1,4 +1,7 @@
 import { STORAGE_KEYS, HIDDEN_VIDEO_MESSAGES } from './shared/constants.js';
+import { isShorts } from './shared/utils.js';
+import { initTheme, toggleTheme } from './shared/theme.js';
+import { sendHiddenVideosMessage } from './shared/messaging.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const themeToggle = document.getElementById('theme-toggle');
@@ -18,52 +21,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     items: []
   };
   let hiddenVideoStats = { total: 0, dimmed: 0, hidden: 0 };
-
-  async function sendHiddenVideosMessage(type, payload = {}) {
-    try {
-      const response = await chrome.runtime.sendMessage({ type, ...payload });
-      if (!response || !response.ok) {
-        throw new Error(response?.error || 'hidden videos request failed');
-      }
-      return response.result;
-    } catch (error) {
-      console.error('Hidden videos manager message failed', error);
-      throw error;
-    }
-  }
-
-  async function initTheme() {
-    const result = await chrome.storage.sync.get(STORAGE_KEYS.THEME);
-    let theme = result[STORAGE_KEYS.THEME];
-    
-    if (!theme || theme === 'auto') {
-      const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      theme = isDarkMode ? 'dark' : 'light';
-      
-      if (!result[STORAGE_KEYS.THEME]) {
-        await chrome.storage.sync.set({ [STORAGE_KEYS.THEME]: theme });
-      }
-    }
-    
-    if (theme === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    } else {
-      document.documentElement.removeAttribute('data-theme');
-    }
-  }
-
-  async function toggleTheme() {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    
-    if (newTheme === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    } else {
-      document.documentElement.removeAttribute('data-theme');
-    }
-    
-    await chrome.storage.sync.set({ [STORAGE_KEYS.THEME]: newTheme });
-  }
 
   async function loadHiddenVideos() {
     const cursorIndex = hiddenVideosState.currentPage - 1;
@@ -149,12 +106,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       const videoId = record.videoId;
       const state = record.state;
       const title = record.title || '';
-      const isShorts = videoId.length < 15;
-      const videoUrl = isShorts
+      const isShortsVideo = isShorts(videoId);
+      const videoUrl = isShortsVideo
         ? `https://www.youtube.com/shorts/${videoId}`
         : `https://www.youtube.com/watch?v=${videoId}`;
       const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
-      const displayTitle = title || (isShorts ? 'YouTube Shorts' : 'YouTube Video');
+      const displayTitle = title || (isShortsVideo ? 'YouTube Shorts' : 'YouTube Video');
       return `
         <div class="video-card ${state}" data-video-id="${videoId}">
           <div class="video-info">
@@ -189,8 +146,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const videoId = e.target.dataset.videoId;
     if (!videoId) return;
     if (action === 'view') {
-      const isShorts = videoId.length < 15;
-      const videoUrl = isShorts
+      const isShortsVideo = isShorts(videoId);
+      const videoUrl = isShortsVideo
         ? `https://www.youtube.com/shorts/${videoId}`
         : `https://www.youtube.com/watch?v=${videoId}`;
       window.open(videoUrl, '_blank');

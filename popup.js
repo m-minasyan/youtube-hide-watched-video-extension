@@ -1,4 +1,6 @@
 import { STORAGE_KEYS, DEFAULT_SETTINGS } from './shared/constants.js';
+import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
+import { initTheme, toggleTheme } from './shared/theme.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const thresholdSlider = document.getElementById('threshold');
@@ -12,7 +14,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const quickToggleButtons = document.querySelectorAll('.quick-btn-small');
   const individualModeToggle = document.getElementById('individual-mode-toggle');
   const individualModeOptions = document.getElementById('individual-mode-options');
-  const ensurePromise = (value) => (value && typeof value.then === 'function' ? value : Promise.resolve(value));
 
   async function initIndividualMode() {
     const result = await chrome.storage.sync.get([
@@ -56,39 +57,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         await saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE, 'dimmed');
       }
     }
-  }
-
-  async function initTheme() {
-    const result = await chrome.storage.sync.get(STORAGE_KEYS.THEME);
-    let theme = result[STORAGE_KEYS.THEME];
-    
-    if (!theme || theme === 'auto') {
-      const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      theme = isDarkMode ? 'dark' : 'light';
-      
-      if (!result[STORAGE_KEYS.THEME]) {
-        await saveSettings(STORAGE_KEYS.THEME, theme);
-      }
-    }
-    
-    if (theme === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    } else {
-      document.documentElement.removeAttribute('data-theme');
-    }
-  }
-
-  async function toggleTheme() {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    
-    if (newTheme === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    } else {
-      document.documentElement.removeAttribute('data-theme');
-    }
-    
-    await saveSettings(STORAGE_KEYS.THEME, newTheme);
   }
 
   async function loadSettings() {
@@ -343,22 +311,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (error) {
         console.error('Failed to clear hidden videos data', error);
       }
-      
-      const defaultData = {
-        [STORAGE_KEYS.THRESHOLD]: DEFAULT_SETTINGS.threshold,
-        [STORAGE_KEYS.THEME]: DEFAULT_SETTINGS.theme,
-        [STORAGE_KEYS.INDIVIDUAL_MODE]: DEFAULT_SETTINGS.individualMode,
-        [STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED]: DEFAULT_SETTINGS.individualModeEnabled
-      };
-      
-      Object.keys(DEFAULT_SETTINGS.states.watched).forEach(section => {
-        defaultData[`${STORAGE_KEYS.WATCHED_STATE}_${section}`] = DEFAULT_SETTINGS.states.watched[section];
-      });
-      
-      Object.keys(DEFAULT_SETTINGS.states.shorts).forEach(section => {
-        defaultData[`${STORAGE_KEYS.SHORTS_STATE}_${section}`] = DEFAULT_SETTINGS.states.shorts[section];
-      });
-      
+
+      const defaultData = buildDefaultSettings(STORAGE_KEYS, DEFAULT_SETTINGS);
       await chrome.storage.sync.set(defaultData);
       
       await initTheme();

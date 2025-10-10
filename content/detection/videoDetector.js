@@ -1,18 +1,14 @@
 import { SELECTORS } from '../utils/constants.js';
 import { getThreshold } from '../storage/settings.js';
 import { logDebug } from '../utils/logger.js';
+import { extractVideoIdFromHref } from '../utils/dom.js';
 
 export function getVideoId(element) {
   const links = element.querySelectorAll('a[href*="/watch?v="], a[href*="/shorts/"]');
   for (const link of links) {
     const href = link.getAttribute('href');
-    if (href) {
-      const match = href.match(/\/watch\?v=([^&]+)/);
-      if (match) return match[1];
-
-      const shortsMatch = href.match(/\/shorts\/([^?]+)/);
-      if (shortsMatch) return shortsMatch[1];
-    }
+    const videoId = extractVideoIdFromHref(href);
+    if (videoId) return videoId;
   }
   return null;
 }

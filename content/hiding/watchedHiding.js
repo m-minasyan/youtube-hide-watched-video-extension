@@ -2,10 +2,10 @@ import { CSS_CLASSES } from '../utils/constants.js';
 import { getWatchedState } from '../storage/settings.js';
 import { determineYoutubeSection } from '../detection/sectionDetector.js';
 import { findWatchedElements } from '../detection/videoDetector.js';
+import { removeClassesFromAll } from '../utils/cssHelpers.js';
 
 export function updateClassOnWatchedItems() {
-  document.querySelectorAll(`.${CSS_CLASSES.WATCHED_DIMMED}`).forEach((el) => el.classList.remove(CSS_CLASSES.WATCHED_DIMMED));
-  document.querySelectorAll(`.${CSS_CLASSES.WATCHED_HIDDEN}`).forEach((el) => el.classList.remove(CSS_CLASSES.WATCHED_HIDDEN));
+  removeClassesFromAll(CSS_CLASSES.WATCHED_DIMMED, CSS_CLASSES.WATCHED_HIDDEN);
 
   if (window.location.href.indexOf('/feed/history') >= 0) return;
 

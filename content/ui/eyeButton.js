@@ -1,4 +1,4 @@
-import { CSS_CLASSES, SELECTORS } from '../utils/constants.js';
+import { CSS_CLASSES, SELECTOR_STRINGS } from '../utils/constants.js';
 import { getCachedHiddenVideo } from '../storage/cache.js';
 import { fetchHiddenVideoStates, setHiddenVideoState } from '../storage/messaging.js';
 import { getIndividualMode } from '../storage/settings.js';
@@ -45,7 +45,7 @@ export function createEyeButton(videoContainer, videoId) {
     const cached = getCachedHiddenVideo(videoId);
     const currentState = cached?.state || 'normal';
     const nextState = currentState === 'normal' ? getIndividualMode() : 'normal';
-    const container = button.closest(SELECTORS.VIDEO_CONTAINERS.join(', '));
+    const container = button.closest(SELECTOR_STRINGS.VIDEO_CONTAINERS);
     if (container) {
       container.setAttribute('data-ythwv-video-id', videoId);
     }
