@@ -1,7 +1,8 @@
-import { STORAGE_KEYS, HIDDEN_VIDEO_MESSAGES } from './shared/constants.js';
+import { STORAGE_KEYS, HIDDEN_VIDEO_MESSAGES, IMPORT_EXPORT_CONFIG } from './shared/constants.js';
 import { isShorts } from './shared/utils.js';
 import { initTheme, toggleTheme } from './shared/theme.js';
 import { sendHiddenVideosMessage } from './shared/messaging.js';
+import { showNotification, NotificationType } from './shared/notifications.js';
 
 /**
  * Debounce function to limit the rate of function calls
@@ -35,9 +36,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     hasMore: false,
     items: [],
     searchQuery: '',
-    allItems: []
+    allItems: [] // Cleared when search is cancelled, filter changed, or on error to prevent memory leaks
   };
   let hiddenVideoStats = { total: 0, dimmed: 0, hidden: 0 };
+
+  /**
+   * Clears search memory to prevent memory leaks
+   * Should be called when:
+   * - Search is cleared/cancelled
+   * - Filter is changed (switches to server-side pagination)
+   * - Component encounters an error
+   */
+  function clearSearchMemory() {
+    hiddenVideosState.allItems = [];
+    hiddenVideosState.searchQuery = '';
+  }
 
   /**
    * Normalizes a string for case-insensitive search
@@ -107,9 +120,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function loadAllItemsForSearch() {
-    // Clear allItems array to prevent memory leak on repeated searches
-    hiddenVideosState.allItems = [];
-
     const loadingIndicator = document.getElementById('search-loading');
     if (loadingIndicator) {
       loadingIndicator.style.display = 'flex';
@@ -122,7 +132,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       let cursor = null;
       let hasMore = true;
 
-      // Fetch all items (limit to 1000 for performance)
+      // Fetch all items with 1000-item limit for client-side search performance
+      // Rationale: Loading more than 1000 items would cause significant memory usage
+      // and UI lag during search filtering. Users with larger datasets should use
+      // pagination or filter by state (dimmed/hidden) to narrow results.
       const maxItems = 1000;
       while (hasMore && allItems.length < maxItems) {
         const result = await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.GET_PAGE, {
@@ -168,8 +181,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           <p>Unable to load search results. Please try again.</p>
         </div>
       `;
-      // Reset state
+      // Reset state and clear memory on error
       hiddenVideosState.items = [];
+      clearSearchMemory();
       hiddenVideosState.hasMore = false;
     } finally {
       if (loadingIndicator) {
@@ -356,10 +370,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       const state = record.state;
       const title = record.title || '';
       const isShortsVideo = isShorts(videoId);
+      // Properly encode videoId for URLs to prevent injection
+      const encodedVideoId = encodeURIComponent(videoId);
       const videoUrl = isShortsVideo
-        ? `https://www.youtube.com/shorts/${videoId}`
-        : `https://www.youtube.com/watch?v=${videoId}`;
-      const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+        ? `https://www.youtube.com/shorts/${encodedVideoId}`
+        : `https://www.youtube.com/watch?v=${encodedVideoId}`;
+      const thumbnailUrl = `https://img.youtube.com/vi/${encodedVideoId}/mqdefault.jpg`;
       const displayTitle = title || (isShortsVideo ? 'YouTube Shorts' : 'YouTube Video');
 
       // Highlight search term in title if searching
@@ -466,10 +482,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   clearSearchBtn.addEventListener('click', () => {
     searchInput.value = '';
     clearSearchBtn.style.display = 'none';
-    hiddenVideosState.searchQuery = '';
+    clearSearchMemory(); // Clear search memory to prevent memory leaks
     hiddenVideosState.currentPage = 1;
     hiddenVideosState.pageCursors = [null];
-    hiddenVideosState.allItems = [];
     loadHiddenVideos();
   });
 
@@ -493,10 +508,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       hiddenVideosState.currentPage = 1;
       hiddenVideosState.pageCursors = [null];
 
-      // Clear search when changing filter
+      // Clear search when changing filter (switches to server-side pagination)
       if (hiddenVideosState.searchQuery) {
-        hiddenVideosState.searchQuery = '';
-        hiddenVideosState.allItems = [];
+        clearSearchMemory(); // Clear search memory to prevent memory leaks
         searchInput.value = '';
         clearSearchBtn.style.display = 'none';
       }
@@ -543,10 +557,377 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // Export/Import functionality
+  const exportBtn = document.getElementById('export-btn');
+  const importBtn = document.getElementById('import-btn');
+  const fileInput = document.getElementById('import-file-input');
+  const importModal = document.getElementById('import-modal');
+  const closeImportModalBtn = document.getElementById('close-import-modal');
+  const cancelImportBtn = document.getElementById('cancel-import-btn');
+  const confirmImportBtn = document.getElementById('confirm-import-btn');
+
+  const importState = {
+    file: null,
+    data: null,
+    validationResult: null,
+    selectedStrategy: 'skip',
+    isImporting: false
+  };
+
+  // File reader helper
+  function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
+  }
+
+  // Export button handler
+  exportBtn.addEventListener('click', async () => {
+    try {
+      // Show loading state
+      exportBtn.disabled = true;
+      exportBtn.textContent = 'Exporting...';
+
+      // Fetch all data from background
+      const exportData = await sendHiddenVideosMessage(
+        HIDDEN_VIDEO_MESSAGES.EXPORT_ALL
+      );
+
+      // Create JSON blob
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      link.download = `youtube-hidden-videos-${timestamp}.json`;
+
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // Cleanup
+      URL.revokeObjectURL(url);
+
+      // Show success notification
+      showNotification(`Successfully exported ${exportData.count} videos`, NotificationType.SUCCESS);
+
+    } catch (error) {
+      console.error('Export failed:', error);
+      showNotification(`Export failed: ${error.message}`, NotificationType.ERROR);
+    } finally {
+      // Restore button state
+      exportBtn.disabled = false;
+      exportBtn.textContent = 'Export List';
+    }
+  });
+
+  // Import button handler
+  importBtn.addEventListener('click', () => {
+    fileInput.click();
+  });
+
+  // File input change handler
+  fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      // Validate file type
+      const validTypes = ['application/json', 'text/json'];
+      const fileExtension = file.name.split('.').pop().toLowerCase();
+
+      if (!validTypes.includes(file.type) && fileExtension !== 'json') {
+        throw new Error('Invalid file type. Please select a JSON file.');
+      }
+
+      // Check file size (50MB max)
+      const maxSize = IMPORT_EXPORT_CONFIG.MAX_IMPORT_SIZE_MB * 1024 * 1024;
+      if (file.size > maxSize) {
+        throw new Error(`File is too large. Maximum size: ${IMPORT_EXPORT_CONFIG.MAX_IMPORT_SIZE_MB}MB`);
+      }
+
+      // Read file content
+      const content = await readFileAsText(file);
+
+      // Parse JSON
+      let data;
+      try {
+        data = JSON.parse(content);
+      } catch (parseError) {
+        throw new Error('Invalid JSON format. Please ensure the file is a valid export.');
+      }
+
+      // Store file and data
+      importState.file = file;
+      importState.data = data;
+
+      // Validate import data with backend
+      const validationResult = await sendHiddenVideosMessage(
+        HIDDEN_VIDEO_MESSAGES.VALIDATE_IMPORT,
+        { data }
+      );
+
+      importState.validationResult = validationResult;
+
+      if (!validationResult.valid) {
+        showImportErrorModal(validationResult.errors);
+      } else {
+        showImportConfirmationModal(validationResult);
+      }
+
+    } catch (error) {
+      console.error('Import preparation failed:', error);
+      showNotification(`Import failed: ${error.message}`, NotificationType.ERROR);
+    } finally {
+      // Reset file input
+      fileInput.value = '';
+    }
+  });
+
+  // Focus trap helper for modal accessibility
+  function trapFocus(modal) {
+    const focusableElements = modal.querySelectorAll(
+      'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+
+    const handleTabKey = (e) => {
+      if (e.key !== 'Tab') return;
+
+      if (e.shiftKey) {
+        // Shift + Tab
+        if (document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement.focus();
+        }
+      } else {
+        // Tab
+        if (document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement.focus();
+        }
+      }
+    };
+
+    const handleEscapeKey = (e) => {
+      if (e.key === 'Escape') {
+        closeImportModal();
+      }
+    };
+
+    modal.addEventListener('keydown', handleTabKey);
+    modal.addEventListener('keydown', handleEscapeKey);
+
+    // Store cleanup function
+    modal._cleanupFocusTrap = () => {
+      modal.removeEventListener('keydown', handleTabKey);
+      modal.removeEventListener('keydown', handleEscapeKey);
+    };
+
+    // Focus first element
+    if (firstElement) {
+      setTimeout(() => firstElement.focus(), 100);
+    }
+  }
+
+  function showImportErrorModal(errors) {
+    const validationInfo = document.getElementById('import-validation-info');
+    const confirmBtn = document.getElementById('confirm-import-btn');
+
+    // Show error message
+    validationInfo.innerHTML = `
+      <div class="validation-error">
+        <h3>Import Validation Failed</h3>
+        <ul>
+          ${errors.map(err => `<li>${escapeHtml(err)}</li>`).join('')}
+        </ul>
+        <p>Please check your file and try again.</p>
+      </div>
+    `;
+
+    // Hide options and disable import
+    document.querySelector('.import-options').style.display = 'none';
+    confirmBtn.disabled = true;
+
+    importModal.style.display = 'flex';
+    trapFocus(importModal);
+  }
+
+  function showImportConfirmationModal(validation) {
+    const validationInfo = document.getElementById('import-validation-info');
+    const confirmBtn = document.getElementById('confirm-import-btn');
+
+    // Show validation info
+    validationInfo.innerHTML = `
+      <div class="validation-success">
+        <h3>Import Preview</h3>
+        <div class="stats-preview">
+          <div class="stat-item">
+            <span class="stat-label">Valid Records:</span>
+            <span class="stat-value">${validation.validRecordCount}</span>
+          </div>
+          ${validation.invalidRecordCount > 0 ? `
+          <div class="stat-item warning">
+            <span class="stat-label">Invalid Records (will be skipped):</span>
+            <span class="stat-value">${validation.invalidRecordCount}</span>
+          </div>
+          ` : ''}
+          <div class="stat-item">
+            <span class="stat-label">Current Total:</span>
+            <span class="stat-value">${validation.currentTotal}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">After Import (max):</span>
+            <span class="stat-value">${validation.projectedTotal}</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Show options and enable import
+    document.querySelector('.import-options').style.display = 'block';
+    confirmBtn.disabled = false;
+
+    importModal.style.display = 'flex';
+    trapFocus(importModal);
+  }
+
+  // Conflict strategy selection
+  const strategyButtons = document.querySelectorAll('.conflict-strategy-btn');
+  strategyButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      strategyButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      importState.selectedStrategy = btn.dataset.strategy;
+    });
+  });
+
+  // Confirm import button
+  confirmImportBtn.addEventListener('click', async () => {
+    const progressDiv = document.getElementById('import-progress');
+    const progressText = document.getElementById('import-progress-text');
+
+    try {
+      // Disable buttons and prevent modal close during import
+      confirmImportBtn.disabled = true;
+      cancelImportBtn.disabled = true;
+      closeImportModalBtn.disabled = true;
+      importState.isImporting = true;
+
+      // Show loading state (no fake progress bar)
+      progressDiv.style.display = 'block';
+      progressText.textContent = 'Importing records...';
+
+      // Execute import
+      const result = await sendHiddenVideosMessage(
+        HIDDEN_VIDEO_MESSAGES.IMPORT_RECORDS,
+        {
+          data: importState.data,
+          conflictStrategy: importState.selectedStrategy
+        }
+      );
+
+      // Update completion message
+      progressText.textContent = 'Import complete!';
+
+      // Show results after brief delay
+      setTimeout(() => {
+        closeImportModal();
+
+        // Show success notification with summary
+        const summary = [
+          `Import complete!`,
+          `Added: ${result.added}`,
+          `Updated: ${result.updated}`,
+          `Skipped: ${result.skipped}`
+        ].join(' | ');
+
+        if (result.errors && result.errors.length > 0) {
+          // Show warning if there were errors
+          showNotification(summary + ` | Errors: ${result.errors.length}`, NotificationType.WARNING, 6000);
+        } else {
+          showNotification(summary, NotificationType.SUCCESS, 5000);
+        }
+
+        // Refresh the list
+        refreshStats().then(() => loadHiddenVideos());
+      }, 500);
+
+    } catch (error) {
+      console.error('Import execution failed:', error);
+
+      progressDiv.style.display = 'none';
+      showNotification(`Import failed: ${error.message}`, NotificationType.ERROR);
+    } finally {
+      // Re-enable buttons
+      importState.isImporting = false;
+      confirmImportBtn.disabled = false;
+      cancelImportBtn.disabled = false;
+      closeImportModalBtn.disabled = false;
+    }
+  });
+
+  // Modal close handlers
+  function closeImportModal() {
+    // Prevent closing during active import
+    if (importState.isImporting) {
+      return;
+    }
+
+    importModal.style.display = 'none';
+
+    // Clean up focus trap
+    if (importModal._cleanupFocusTrap) {
+      importModal._cleanupFocusTrap();
+      delete importModal._cleanupFocusTrap;
+    }
+
+    // Reset state
+    importState.file = null;
+    importState.data = null;
+    importState.validationResult = null;
+    importState.selectedStrategy = 'skip';
+    importState.isImporting = false;
+
+    // Reset modal UI
+    document.getElementById('import-progress').style.display = 'none';
+
+    // Reset strategy buttons
+    document.querySelectorAll('.conflict-strategy-btn').forEach((btn, index) => {
+      btn.classList.toggle('active', index === 0);
+    });
+  }
+
+  closeImportModalBtn.addEventListener('click', closeImportModal);
+  cancelImportBtn.addEventListener('click', closeImportModal);
+
+  // Close modal on backdrop click
+  importModal.addEventListener('click', (e) => {
+    if (e.target.id === 'import-modal') {
+      closeImportModal();
+    }
+  });
+
+  // Cleanup memory on page unload to prevent memory leaks
+  window.addEventListener('beforeunload', () => {
+    clearSearchMemory();
+    hiddenVideosState.items = [];
+  });
+
   await initTheme();
   await refreshStats();
   await loadHiddenVideos();
-  
+
   chrome.runtime.onMessage.addListener((message) => {
     if (message && message.type === 'HIDDEN_VIDEOS_EVENT') {
       refreshStats().then(async () => {

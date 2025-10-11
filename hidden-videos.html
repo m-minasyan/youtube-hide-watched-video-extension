@@ -71,6 +71,8 @@
         </div>
       </div>
       <div class="action-section">
+        <button id="export-btn" class="action-btn primary">Export List</button>
+        <button id="import-btn" class="action-btn primary">Import List</button>
         <button id="clear-all" class="action-btn danger">Clear All</button>
       </div>
     </div>
@@ -122,6 +124,44 @@
           <polyline points="9 18 15 12 9 6"></polyline>
         </svg>
       </button>
+    </div>
+  </div>
+
+  <!-- Hidden file input for import -->
+  <input type="file" id="import-file-input" accept=".json,application/json" style="display: none;">
+
+  <!-- Import confirmation modal -->
+  <div id="import-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="import-modal-title" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="import-modal-title">Import Hidden Videos</h2>
+        <button id="close-import-modal" class="modal-close" aria-label="Close import dialog">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="import-validation-info" class="import-info" role="status" aria-live="polite"></div>
+
+        <div class="import-options">
+          <label id="conflict-resolution-label">Conflict Resolution:</label>
+          <div class="button-group" role="group" aria-labelledby="conflict-resolution-label">
+            <button class="conflict-strategy-btn active" data-strategy="skip" aria-label="Skip existing records and only add new videos">Skip Existing</button>
+            <button class="conflict-strategy-btn" data-strategy="merge" aria-label="Compare timestamps and keep the more recent version">Keep Newer</button>
+            <button class="conflict-strategy-btn" data-strategy="overwrite" aria-label="Replace all existing records with imported data">Overwrite All</button>
+          </div>
+          <p class="help-text" id="conflict-resolution-help">
+            <strong>Skip Existing:</strong> Keep your current data, only add new videos<br>
+            <strong>Keep Newer:</strong> Compare timestamps and keep the more recent version<br>
+            <strong>Overwrite All:</strong> Replace all existing records with imported data
+          </p>
+        </div>
+
+        <div id="import-progress" class="import-progress" role="status" aria-live="polite" style="display: none;">
+          <p id="import-progress-text">Importing...</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="cancel-import-btn" class="btn-secondary">Cancel</button>
+        <button id="confirm-import-btn" class="btn-primary" disabled>Import</button>
+      </div>
     </div>
   </div>
 

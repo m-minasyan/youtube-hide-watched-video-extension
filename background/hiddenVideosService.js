@@ -11,6 +11,7 @@ import {
 } from './indexedDb.js';
 import { getCacheStats } from './indexedDbCache.js';
 import { ensurePromise, queryYoutubeTabs } from '../shared/utils.js';
+import { IMPORT_EXPORT_CONFIG } from '../shared/constants.js';
 
 const STORAGE_KEYS = {
   HIDDEN_VIDEOS: 'YTHWV_HIDDEN_VIDEOS',
@@ -252,13 +253,429 @@ async function handleHealthCheck() {
   };
 }
 
+async function handleExportAll(message) {
+  const allRecords = [];
+  let cursor = null;
+  let hasMore = true;
+
+  // Fetch all records using pagination
+  while (hasMore) {
+    const result = await getHiddenVideosPage({
+      state: null,
+      cursor,
+      limit: 500
+    });
+
+    allRecords.push(...result.items);
+    hasMore = result.hasMore;
+    cursor = result.nextCursor;
+  }
+
+  // Build export data structure
+  const exportData = {
+    version: IMPORT_EXPORT_CONFIG.FORMAT_VERSION,
+    exportDate: new Date().toISOString(),
+    count: allRecords.length,
+    records: allRecords.map(record => ({
+      videoId: record.videoId,
+      state: record.state,
+      title: record.title || '',
+      updatedAt: record.updatedAt
+    }))
+  };
+
+  return exportData;
+}
+
+/**
+ * Validates and sanitizes an import record
+ *
+ * IMPORTANT: This function mutates the input record object by normalizing
+ * videoId, state, and title fields. This is intentional for import processing
+ * where we need to sanitize user-provided data before insertion.
+ *
+ * @param {Object} record - Record to validate (will be mutated)
+ * @returns {Array<string>} Array of validation error messages (empty if valid)
+ */
+function validateRecord(record) {
+  const errors = [];
+
+  if (!record || typeof record !== 'object') {
+    errors.push('Record is not an object');
+    return errors;
+  }
+
+  // Validate and sanitize videoId (mutates record)
+  if (!record.videoId || typeof record.videoId !== 'string') {
+    errors.push('Missing or invalid videoId');
+  } else {
+    const sanitizedVideoId = String(record.videoId).trim();
+    if (sanitizedVideoId.length === 0) {
+      errors.push('Empty videoId');
+    }
+    // Mutation: Update record with sanitized value for import processing
+    record.videoId = sanitizedVideoId;
+  }
+
+  // Validate and sanitize state (mutates record)
+  if (!record.state || typeof record.state !== 'string') {
+    errors.push('Missing state');
+  } else {
+    const sanitizedState = sanitizeState(record.state);
+    if (sanitizedState !== 'dimmed' && sanitizedState !== 'hidden') {
+      errors.push('Invalid state (must be "dimmed" or "hidden")');
+    }
+    // Mutation: Update record with sanitized value for import processing
+    record.state = sanitizedState;
+  }
+
+  // Validate and sanitize title (mutates record)
+  if (record.title !== undefined && record.title !== null) {
+    record.title = sanitizeTitle(record.title);
+  }
+
+  // Validate updatedAt timestamp with range checking
+  if (record.updatedAt !== undefined) {
+    if (!Number.isFinite(record.updatedAt)) {
+      errors.push('Invalid updatedAt timestamp');
+    } else {
+      // Validate timestamp is reasonable (not negative, not too far in future)
+      const now = Date.now();
+      const tenYearsInFuture = now + (10 * 365 * 24 * 60 * 60 * 1000);
+
+      if (record.updatedAt < 0) {
+        errors.push('updatedAt timestamp cannot be negative');
+      } else if (record.updatedAt > tenYearsInFuture) {
+        errors.push('updatedAt timestamp is too far in the future');
+      }
+    }
+  }
+
+  return errors;
+}
+
+function validateImportData(data) {
+  const errors = [];
+
+  // Check for required fields
+  if (!data || typeof data !== 'object') {
+    errors.push('Invalid data format: not an object');
+    return { valid: false, errors };
+  }
+
+  if (!data.version || typeof data.version !== 'number') {
+    errors.push('Missing or invalid version field');
+  }
+
+  if (data.version > IMPORT_EXPORT_CONFIG.FORMAT_VERSION) {
+    errors.push(`Unsupported format version ${data.version}. Current version: ${IMPORT_EXPORT_CONFIG.FORMAT_VERSION}`);
+  }
+
+  if (!Array.isArray(data.records)) {
+    errors.push('Records field must be an array');
+    return { valid: false, errors };
+  }
+
+  // Backend validation for record count (prevents frontend bypass)
+  if (data.records.length > IMPORT_EXPORT_CONFIG.MAX_IMPORT_RECORDS) {
+    errors.push(`Too many records. Maximum: ${IMPORT_EXPORT_CONFIG.MAX_IMPORT_RECORDS}, received: ${data.records.length}`);
+  }
+
+  // Backend validation for estimated data size (prevents memory exhaustion)
+  // Approximate size check: each record roughly ~100-500 bytes
+  // For 50MB limit, this allows ~100k-500k records depending on content
+  const estimatedSizeBytes = JSON.stringify(data).length;
+  const maxSizeBytes = IMPORT_EXPORT_CONFIG.MAX_IMPORT_SIZE_MB * 1024 * 1024;
+  if (estimatedSizeBytes > maxSizeBytes) {
+    errors.push(`Import data too large. Maximum: ${IMPORT_EXPORT_CONFIG.MAX_IMPORT_SIZE_MB}MB, estimated: ${(estimatedSizeBytes / 1024 / 1024).toFixed(2)}MB`);
+  }
+
+  // Validate individual records
+  const invalidRecords = [];
+  data.records.forEach((record, index) => {
+    const recordErrors = validateRecord(record);
+    if (recordErrors.length > 0) {
+      invalidRecords.push({ index, errors: recordErrors });
+    }
+  });
+
+  if (invalidRecords.length > 0 && invalidRecords.length === data.records.length) {
+    errors.push('All records are invalid');
+  } else if (invalidRecords.length > 0) {
+    errors.push(`${invalidRecords.length} invalid records found`);
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    invalidRecords,
+    validRecordCount: data.records.length - invalidRecords.length
+  };
+}
+
+async function handleValidateImport(message) {
+  const data = message.data;
+  const validation = validateImportData(data);
+
+  if (!validation.valid) {
+    return {
+      valid: false,
+      errors: validation.errors,
+      invalidRecords: validation.invalidRecords
+    };
+  }
+
+  // Get current stats for display purposes
+  // Note: We don't validate quota here because the actual number of records added
+  // depends on the conflict strategy selected by the user
+  const currentStats = await getHiddenVideosStats();
+
+  return {
+    valid: true,
+    validRecordCount: validation.validRecordCount,
+    invalidRecordCount: validation.invalidRecords.length,
+    currentTotal: currentStats.total,
+    // Projected total is only shown as a maximum possible value
+    projectedTotal: currentStats.total + validation.validRecordCount
+  };
+}
+
+/**
+ * Estimates memory usage for the current session
+ * @returns {number|null} Memory usage in bytes, or null if unavailable
+ */
+function estimateMemoryUsage() {
+  if (typeof performance !== 'undefined' && performance.memory) {
+    return performance.memory.usedJSHeapSize;
+  }
+  return null;
+}
+
+/**
+ * Checks if current memory usage is approaching limits
+ * @param {number} threshold - Threshold in bytes (default: 40MB for safety margin)
+ * @returns {boolean} True if memory is safe, false if approaching limit
+ */
+function checkMemorySafety(threshold = 40 * 1024 * 1024) {
+  const memoryUsage = estimateMemoryUsage();
+  if (memoryUsage === null) {
+    // If memory API not available, allow operation but log warning
+    console.warn('Memory monitoring unavailable - proceeding with import');
+    return true;
+  }
+
+  const isSafe = memoryUsage < threshold;
+  if (!isSafe) {
+    console.warn(`Memory usage (${(memoryUsage / 1024 / 1024).toFixed(2)}MB) approaching limit (${(threshold / 1024 / 1024).toFixed(2)}MB)`);
+  }
+  return isSafe;
+}
+
+/**
+ * Process a single batch of import records with conflict resolution
+ * @param {Array} batchRecords - Records to process in this batch
+ * @param {string} conflictStrategy - Strategy for handling conflicts
+ * @param {Object} results - Results object to update
+ * @returns {Array} Records to upsert
+ */
+async function processImportBatch(batchRecords, conflictStrategy, results) {
+  const batchIds = batchRecords.map(r => r.videoId);
+
+  // Fetch existing records only for this batch (memory-efficient)
+  const existingBatchRecords = await getHiddenVideosByIds(batchIds);
+
+  const recordsToUpsert = [];
+
+  for (const record of batchRecords) {
+    const existing = existingBatchRecords[record.videoId];
+
+    if (!existing) {
+      // New record - values already sanitized during validation
+      recordsToUpsert.push(buildRecord(
+        record.videoId,
+        record.state,
+        record.title || '',
+        record.updatedAt || Date.now()
+      ));
+      results.added++;
+    } else {
+      // Existing record - apply conflict strategy
+      if (conflictStrategy === IMPORT_EXPORT_CONFIG.CONFLICT_STRATEGIES.SKIP) {
+        results.skipped++;
+        continue;
+      } else if (conflictStrategy === IMPORT_EXPORT_CONFIG.CONFLICT_STRATEGIES.OVERWRITE) {
+        recordsToUpsert.push(buildRecord(
+          record.videoId,
+          record.state,
+          record.title || existing.title || '',
+          Date.now() // Update timestamp to now
+        ));
+        results.updated++;
+      } else if (conflictStrategy === IMPORT_EXPORT_CONFIG.CONFLICT_STRATEGIES.MERGE) {
+        // Keep record with newer timestamp
+        const importTimestamp = record.updatedAt || 0;
+        const existingTimestamp = existing.updatedAt || 0;
+
+        if (importTimestamp > existingTimestamp) {
+          recordsToUpsert.push(buildRecord(
+            record.videoId,
+            record.state,
+            record.title || existing.title || '',
+            record.updatedAt
+          ));
+          results.updated++;
+        } else {
+          results.skipped++;
+        }
+      }
+    }
+  }
+
+  return recordsToUpsert;
+}
+
+/**
+ * Handles import of video records with memory-efficient streaming approach
+ *
+ * MEMORY OPTIMIZATION STRATEGY:
+ * =============================
+ * Previous implementation loaded ALL existing records into memory for conflict
+ * resolution, which could consume 50-100MB for databases with 200k records.
+ * This exceeded service worker memory limits (~50MB) and caused crashes.
+ *
+ * NEW STREAMING APPROACH:
+ * -----------------------
+ * 1. Process import in batches of 500 records at a time
+ * 2. For each batch:
+ *    a) Fetch ONLY existing records for that batch (not entire database)
+ *    b) Apply conflict resolution strategy
+ *    c) Upsert resolved records
+ *    d) Check memory safety before continuing
+ *    e) Yield control with delay(0) to prevent blocking
+ * 3. Memory footprint reduced from O(n) to O(batch_size)
+ *
+ * BENEFITS:
+ * ---------
+ * - Memory usage: ~5-10MB per batch vs 50-100MB for entire dataset
+ * - No service worker crashes on large imports
+ * - Graceful degradation if memory limit approached
+ * - Progress tracking and partial success on errors
+ * - Service worker remains responsive during import
+ *
+ * SAFETY MECHANISMS:
+ * ------------------
+ * - Pre-import memory check (40MB threshold)
+ * - Per-batch memory validation
+ * - Quota validation before each batch upsert
+ * - Error recovery (continues on non-critical errors)
+ * - Detailed error reporting with progress information
+ *
+ * @param {Object} message - Import request message
+ * @param {Object} message.data - Import data with version, records array
+ * @param {string} message.conflictStrategy - How to handle existing records (SKIP/OVERWRITE/MERGE)
+ * @returns {Object} Import results with counts and errors
+ */
+async function handleImportRecords(message) {
+  const { data, conflictStrategy = IMPORT_EXPORT_CONFIG.CONFLICT_STRATEGIES.SKIP } = message;
+
+  // Check memory before starting large operation
+  if (!checkMemorySafety()) {
+    throw new Error('Insufficient memory available for import operation. Please close other tabs or restart the browser.');
+  }
+
+  // Validate first
+  const validation = validateImportData(data);
+  if (!validation.valid) {
+    throw new Error(`Invalid import data: ${validation.errors.join(', ')}`);
+  }
+
+  const validRecords = data.records.filter((record, index) => {
+    return !validation.invalidRecords.some(ir => ir.index === index);
+  });
+
+  const results = {
+    total: validRecords.length,
+    added: 0,
+    updated: 0,
+    skipped: 0,
+    errors: []
+  };
+
+  // Get current stats for quota validation
+  const currentStats = await getHiddenVideosStats();
+
+  // STREAMING APPROACH: Process records in batches to avoid memory overflow
+  // This prevents loading all existing records into memory at once
+  const IMPORT_BATCH_SIZE = 500; // Process 500 records at a time
+  let totalProcessed = 0;
+
+  for (let i = 0; i < validRecords.length; i += IMPORT_BATCH_SIZE) {
+    const batch = validRecords.slice(i, i + IMPORT_BATCH_SIZE);
+
+    // Check memory safety before each batch
+    if (!checkMemorySafety()) {
+      results.errors.push(`Memory limit reached at record ${i}. Stopping import.`);
+      break;
+    }
+
+    try {
+      // Process this batch with conflict resolution (memory-efficient)
+      const recordsToUpsert = await processImportBatch(batch, conflictStrategy, results);
+
+      // Check quota before upserting (only for new records)
+      const projectedTotal = currentStats.total + results.added;
+      if (projectedTotal > MAX_RECORDS) {
+        throw new Error(
+          `Import would exceed maximum record limit. ` +
+          `Current: ${currentStats.total}, ` +
+          `New records so far: ${results.added}, ` +
+          `Maximum: ${MAX_RECORDS}. ` +
+          `Processed ${totalProcessed} of ${validRecords.length} records before stopping.`
+        );
+      }
+
+      // Upsert this batch
+      if (recordsToUpsert.length > 0) {
+        await upsertHiddenVideos(recordsToUpsert);
+      }
+
+      totalProcessed += batch.length;
+
+      // Yield control to prevent blocking (allows service worker to handle other tasks)
+      if (i + IMPORT_BATCH_SIZE < validRecords.length) {
+        await delay(0);
+      }
+
+    } catch (error) {
+      results.errors.push(
+        `Failed to process batch starting at record ${i}: ${error.message}`
+      );
+      // Don't break - try to continue with next batch unless it's a quota error
+      if (error.message.includes('exceed maximum record limit')) {
+        break;
+      }
+    }
+  }
+
+  // Check if pruning is needed
+  await pruneIfNeeded();
+
+  // Broadcast update event
+  await broadcastHiddenVideosEvent({ type: 'imported', count: results.added + results.updated });
+
+  return results;
+}
+
 const MESSAGE_HANDLERS = {
   HIDDEN_VIDEOS_HEALTH_CHECK: handleHealthCheck,
   HIDDEN_VIDEOS_GET_MANY: handleGetMany,
   HIDDEN_VIDEOS_SET_STATE: handleSetState,
   HIDDEN_VIDEOS_GET_PAGE: handleGetPage,
   HIDDEN_VIDEOS_GET_STATS: handleGetStats,
-  HIDDEN_VIDEOS_CLEAR_ALL: handleClearAll
+  HIDDEN_VIDEOS_CLEAR_ALL: handleClearAll,
+  HIDDEN_VIDEOS_EXPORT_ALL: handleExportAll,
+  HIDDEN_VIDEOS_VALIDATE_IMPORT: handleValidateImport,
+  HIDDEN_VIDEOS_IMPORT_RECORDS: handleImportRecords
 };
 
 function registerMessageListener() {

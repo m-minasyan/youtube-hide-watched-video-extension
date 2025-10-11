@@ -1,5 +1,5 @@
 import { retryOperation, logError, classifyError, ErrorType } from '../shared/errorHandler.js';
-import { getCachedRecord, setCachedRecord, invalidateCache } from './indexedDbCache.js';
+import { getCachedRecord, setCachedRecord, invalidateCache, clearBackgroundCache } from './indexedDbCache.js';
 import { INDEXEDDB_CONFIG } from '../shared/constants.js';
 
 const DB_NAME = 'ythwvHiddenVideos';
@@ -491,7 +491,6 @@ export async function clearHiddenVideosStore() {
     store.clear();
   });
   // Clear the entire background cache since all records are deleted
-  const { clearBackgroundCache } = await import('./indexedDbCache.js');
   clearBackgroundCache();
 }
 
@@ -537,6 +536,9 @@ async function attemptDatabaseReset() {
 
       // Reopen database
       await openDb();
+
+      // Clear the entire background cache since database was reset
+      clearBackgroundCache();
 
       logError('IndexedDB', new Error('Database reset successful'), {
         operation: 'reset',
