@@ -1,40 +1,53 @@
-import { SELECTORS, CACHE_CONFIG } from '../utils/constants.js';
+import { SELECTOR_CHAINS, CACHE_CONFIG } from '../../shared/constants.js';
 import { getThreshold } from '../storage/settings.js';
 import { logDebug } from '../utils/logger.js';
 import { extractVideoIdFromHref } from '../utils/dom.js';
-import { cachedDocumentQuery, cachedQuerySelectorAll } from '../utils/domCache.js';
+import { cachedDocumentQueryWithFallback, cachedQuerySelectorWithFallback } from '../utils/domCache.js';
 
 export function getVideoId(element) {
-  // Use cached querySelector for links
-  const links = cachedQuerySelectorAll(element, 'a[href*="/watch?v="], a[href*="/shorts/"]');
-  for (const link of links) {
-    const href = link.getAttribute('href');
+  // Use fallback chain for video links
+  const videoLink = cachedQuerySelectorWithFallback(
+    element,
+    'VIDEO_LINK',
+    SELECTOR_CHAINS.VIDEO_LINK
+  );
+
+  if (videoLink) {
+    const href = videoLink.getAttribute('href');
     const videoId = extractVideoIdFromHref(href);
     if (videoId) return videoId;
   }
+
+  // Try shorts link as fallback
+  const shortsLink = cachedQuerySelectorWithFallback(
+    element,
+    'SHORTS_LINK',
+    SELECTOR_CHAINS.SHORTS_LINK
+  );
+
+  if (shortsLink) {
+    const href = shortsLink.getAttribute('href');
+    const videoId = extractVideoIdFromHref(href);
+    if (videoId) return videoId;
+  }
+
   return null;
 }
 
 export function findWatchedElements() {
-  const watched = [];
-  const seen = new Set();
-
-  SELECTORS.PROGRESS_BAR.forEach(selector => {
-    // Use cached query with short TTL for progress bars (they update frequently)
-    cachedDocumentQuery(selector, CACHE_CONFIG.PROGRESS_BAR_TTL).forEach(el => {
-      if (!seen.has(el)) {
-        seen.add(el);
-        watched.push(el);
-      }
-    });
-  });
+  // Use fallback chain for progress bars
+  const progressBars = cachedDocumentQueryWithFallback(
+    'PROGRESS_BAR',
+    SELECTOR_CHAINS.PROGRESS_BAR,
+    CACHE_CONFIG.PROGRESS_BAR_TTL
+  );
 
   const threshold = getThreshold();
-  const withThreshold = watched.filter((bar) => {
+  const withThreshold = progressBars.filter((bar) => {
     return bar.style.width && parseInt(bar.style.width, 10) >= threshold;
   });
 
-  logDebug(`Found ${watched.length} watched elements (${withThreshold.length} within threshold)`);
+  logDebug(`Found ${progressBars.length} watched elements (${withThreshold.length} within threshold)`);
 
   return withThreshold;
 }

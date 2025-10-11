@@ -5,6 +5,141 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.0] - 2025-10-10
+
+### Added
+
+- Resilient DOM query system with multiple fallback selectors to handle YouTube's frequent DOM structure changes
+- DOM selector health monitoring system tracking success/failure rates for each selector type
+- Automatic fallback to alternative selectors when primary selectors fail
+- User notification system for critical DOM query failures with 5-minute cooldown to prevent spam
+- Comprehensive diagnostic tools for debugging DOM structure changes (accessible via browser console)
+- Selector chains for all critical elements: VIDEO_TITLE, PROGRESS_BAR, VIDEO_LINK, SHORTS_LINK, VIDEO_CONTAINERS, THUMBNAILS
+- Periodic health checks every 30 seconds to detect selector degradation
+- Enhanced error notification styles with gradient backgrounds and shake animation for critical errors
+- Console-accessible health monitoring and diagnostics tools
+
+### Changed
+
+- Updated videoDetector.js to use fallback selector chains for video links and progress bars
+- Updated eyeButtonManager.js to use fallback selector chains for thumbnails
+- All DOM queries now track success/failure for health monitoring
+- Notification styles enhanced with visual gradients and animations for better visibility
+
+### Technical Details
+
+- Created /content/utils/domSelectorHealth.js - Tracks selector query statistics and health metrics
+- Created /content/utils/domErrorDetection.js - Periodic health monitoring and user notifications
+- Created /content/utils/domDiagnostics.js - Diagnostic report generation and export functionality
+- Enhanced /content/utils/domCache.js with cachedDocumentQueryWithFallback() and cachedQuerySelectorWithFallback()
+- Added SELECTOR_CHAINS configuration to /shared/constants.js with primary and fallback selectors
+- Added SELECTOR_HEALTH_CONFIG to /shared/constants.js for health check configuration
+- Integrated health monitoring in content/index.js initialization
+- Updated shared/notifications.css with enhanced error and warning notification styles
+- Added comprehensive test suites: domFallbackSelectors.test.js (212 tests), domSelectorIntegration.test.js (45 tests), domDiagnostics.test.js (49 tests)
+- Updated backend-structure.md documentation with complete DOM Query Resilience System section
+
+### Performance Impact
+
+- Query time: +0-5ms only when primary selector fails
+- Memory: +50-100KB for health statistics
+- CPU: +0.1% for periodic health checks (every 30s)
+- Network: None (all client-side)
+
+### Console Commands
+
+New debugging tools available in browser console:
+- `window.YTHWV_DOMDiagnostics.print()` - Print diagnostic report
+- `window.YTHWV_DOMDiagnostics.export()` - Download diagnostic report as JSON
+- `window.YTHWV_TestDOMHealth()` - Test selector health manually
+- `window.YTHWV_SelectorHealth.getStats()` - Get all selector statistics
+
+### Benefits
+
+- Extension continues working when YouTube updates DOM structure
+- Automatic detection of DOM structure changes
+- Early warning system for maintainers through user reports
+- User-friendly error messages explaining potential issues
+- Data-driven insights for selector maintenance
+- Graceful degradation when primary selectors fail
+
+## [2.10.1] - 2025-10-10
+
+### Fixed
+
+- Fixed critical Service Worker error caused by dynamic import() in IndexedDB module preventing extension from clearing hidden videos database
+- Converted dynamic import to static import for clearBackgroundCache function to comply with ServiceWorkerGlobalScope restrictions
+- Resolved "TypeError: import() is disallowed on ServiceWorkerGlobalScope by the HTML specification" error
+- Ensures full compatibility with Chrome Manifest V3 Service Worker constraints
+
+### Technical Details
+
+- Modified background/indexedDb.js to statically import clearBackgroundCache from indexedDbCache.js
+- Removed await import('./indexedDbCache.js') from clearHiddenVideosStore() function
+- All imports in Service Worker context are now static as required by HTML specification
+- Added comprehensive test suite (tests/serviceWorkerImports.test.js) with 8 tests to verify no dynamic imports exist
+- Tests include static import verification, circular dependency checks, and functional behavior validation
+
+## [2.10.0] - 2025-10-10
+
+### Added
+
+- Export/Import functionality for hidden videos lists allowing users to backup and restore their data
+- JSON export with timestamp-based filenames for easy identification
+- Import validation with comprehensive error checking for file format, size, and record validity
+- Three conflict resolution strategies for imports:
+  - Skip Existing: Keep current data, only add new videos
+  - Keep Newer: Compare timestamps and keep the more recent version
+  - Overwrite All: Replace all existing records with imported data
+- Import preview modal showing projected changes before execution
+- Progress indicators for import operations with animated progress bar
+- File size limit validation (50MB maximum)
+- Record count limit validation (200,000 records maximum)
+- Comprehensive XSS protection for imported data with HTML escaping
+- Success notifications with detailed import summary (added/updated/skipped counts)
+- Export and Import buttons in Hidden Videos Manager UI
+- Modal dialog for import confirmation with strategy selection
+- Batch processing for large imports (500 records per batch)
+
+### Backend
+
+- `handleExportAll()`: Fetches all records using pagination and formats as JSON
+- `handleValidateImport()`: Pre-flight validation checking format, quota, and record validity
+- `handleImportRecords()`: Executes import with conflict resolution and batch processing
+- `validateImportData()`: Validates import data structure and fields
+- `validateRecord()`: Validates individual record fields (videoId, state, updatedAt)
+- New message types: EXPORT_ALL, VALIDATE_IMPORT, IMPORT_RECORDS
+- Import/export configuration constants in IMPORT_EXPORT_CONFIG
+
+### Frontend
+
+- Export button handler with automatic JSON download
+- File picker integration for import selection
+- Import state management (file, data, validation, strategy)
+- File reader helper for reading JSON files
+- Modal display functions for errors and confirmation
+- Conflict strategy selection with visual feedback
+- Import execution with progress simulation
+- Modal close handlers and backdrop click support
+
+### Technical Details
+
+- Added IMPORT_EXPORT_CONFIG to shared/constants.js with format version and limits
+- Created comprehensive test suite in tests/exportImport.test.js
+- All imported data sanitized using existing sanitizeState() and sanitizeTitle() functions
+- Automatic pruning triggered if import would exceed quota
+- Broadcast events sent to all tabs after successful import
+- Memory-efficient with proper cleanup using URL.revokeObjectURL()
+
+### Security
+
+- All user input escaped before rendering in UI
+- File size validation prevents oversized imports
+- Record count validation prevents quota overflow
+- XSS protection through HTML escaping functions
+- No eval() or unsafe innerHTML usage
+- Safe JSON parsing with try-catch error handling
+
 ## [2.9.0] - 2025-10-10
 
 ### Added

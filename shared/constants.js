@@ -16,7 +16,10 @@ export const HIDDEN_VIDEO_MESSAGES = {
   GET_PAGE: 'HIDDEN_VIDEOS_GET_PAGE',
   GET_STATS: 'HIDDEN_VIDEOS_GET_STATS',
   SET_STATE: 'HIDDEN_VIDEOS_SET_STATE',
-  CLEAR_ALL: 'HIDDEN_VIDEOS_CLEAR_ALL'
+  CLEAR_ALL: 'HIDDEN_VIDEOS_CLEAR_ALL',
+  EXPORT_ALL: 'HIDDEN_VIDEOS_EXPORT_ALL',
+  IMPORT_RECORDS: 'HIDDEN_VIDEOS_IMPORT_RECORDS',
+  VALIDATE_IMPORT: 'HIDDEN_VIDEOS_VALIDATE_IMPORT'
 };
 
 // Default Settings
@@ -205,4 +208,112 @@ export const FEATURE_FLAGS = {
   ENABLE_STATS_OPTIMIZATION: true,
   ENABLE_PAGINATION_PREFETCH: false, // Phase 6
   ENABLE_BROADCAST_BATCHING: false // Phase 6
+};
+
+// Import/Export Configuration
+export const IMPORT_EXPORT_CONFIG = {
+  FORMAT_VERSION: 1,
+  MAX_IMPORT_SIZE_MB: 50,
+  MAX_IMPORT_RECORDS: 200000,
+  IMPORT_BATCH_SIZE: 500,
+  CONFLICT_STRATEGIES: {
+    SKIP: 'skip',           // Skip existing records
+    OVERWRITE: 'overwrite', // Overwrite with imported data
+    MERGE: 'merge'          // Keep newer timestamp
+  }
+};
+
+// Selector Fallback Chains
+// Primary selectors listed first, fallbacks in order of preference
+export const SELECTOR_CHAINS = {
+  VIDEO_TITLE: [
+    '#video-title',
+    '#video-title-link',
+    'a#video-title',
+    'h3.title a',
+    'h3 a',
+    'h4 a',
+    '.title-and-badge a',
+    'yt-formatted-string#video-title',
+    'span#video-title',
+    // Fallback to any link in container
+    'a[href*="/watch?v="]',
+    'a[href*="/shorts/"]'
+  ],
+
+  PROGRESS_BAR: [
+    // Modern selectors
+    '.ytd-thumbnail-overlay-resume-playback-renderer',
+    '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
+    '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
+    // Legacy selectors
+    '.ytp-progress-bar-played',
+    'yt-thumbnail-overlay-resume-playback-renderer',
+    '.ytm-thumbnail-overlay-resume-playback-renderer',
+    // Generic fallbacks
+    '[class*="progress"][class*="bar"]',
+    '[class*="watched"]'
+  ],
+
+  VIDEO_THUMBNAIL: [
+    'yt-thumbnail-view-model',
+    'ytd-thumbnail',
+    '.ytThumbnailViewModelImage',
+    'img.yt-core-image',
+    // Generic fallbacks
+    '[class*="thumbnail"]'
+  ],
+
+  VIDEO_LINK: [
+    'a[href*="/watch?v="]',
+    'a[href^="/watch?"]',
+    'a[href*="&v="]',
+    'a.ytd-thumbnail',
+    'a.yt-simple-endpoint'
+  ],
+
+  SHORTS_LINK: [
+    'a[href*="/shorts/"]',
+    'a[href^="/shorts/"]',
+    'a.reel-item-endpoint',
+    '.shortsLockupViewModelHost a'
+  ],
+
+  VIDEO_CONTAINERS: [
+    'ytd-rich-item-renderer',
+    'ytd-video-renderer',
+    'ytd-grid-video-renderer',
+    'ytd-compact-video-renderer',
+    'yt-lockup-view-model',
+    'ytm-shorts-lockup-view-model'
+  ],
+
+  THUMBNAILS: [
+    'yt-thumbnail-view-model:not(.yt-hwv-has-eye-button)',
+    'ytd-thumbnail:not(.yt-hwv-has-eye-button)'
+  ]
+};
+
+// Critical selector health thresholds
+// These values define when the extension detects that YouTube's DOM structure has changed
+export const SELECTOR_HEALTH_CONFIG = {
+  // 70% success rate minimum - Below this, selectors are considered unhealthy
+  // This threshold allows for transient failures while catching structural changes
+  CRITICAL_SUCCESS_RATE: 0.7,
+
+  // Minimum 10 queries before health assessment - Prevents false positives during initial load
+  // Statistical significance requires multiple samples before making health determinations
+  MIN_QUERIES_FOR_HEALTH: 10,
+
+  // Check selector health every 30 seconds (30000ms)
+  // Balances responsiveness to DOM changes with performance overhead
+  HEALTH_CHECK_INTERVAL: 30000,
+
+  // 5 minute cooldown between notifications (300000ms)
+  // Prevents notification spam while keeping users informed of persistent issues
+  NOTIFICATION_COOLDOWN: 300000,
+
+  // Show notification after 5 consecutive failures (currently unused - reserved for future use)
+  // Would trigger alerts only after sustained failure pattern is established
+  FAILURE_NOTIFICATION_THRESHOLD: 5
 };
