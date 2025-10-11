@@ -52,7 +52,7 @@ A powerful Chrome extension that automatically hides, dims, or manages watched v
 
 ### Method 1: From Chrome Web Store
 
-(Coming soon - currently in review)
+[Chrome Web Store](https://chromewebstore.google.com/detail/youtube-hide-watched-vide/apijflcddkipimiehadinhecdinnjgpn)
 
 ### Method 2: From Source (Developer Mode)
 
