@@ -10,7 +10,7 @@ let contextInvalidated = false;
  * Check if the extension context is still valid
  * @returns {boolean} True if context is valid, false if invalidated
  */
-function isExtensionContextValid() {
+export function isExtensionContextValid() {
   if (contextInvalidated) {
     return false;
   }
@@ -68,8 +68,14 @@ function sendMessageWithTimeout(message, timeout = MESSAGE_TIMEOUT) {
  * When the extension is reloaded/updated, the context becomes invalidated.
  * This is expected behavior and the function will fail gracefully without
  * logging errors to avoid console spam.
+ *
+ * @param {string} type - Message type
+ * @param {Object} payload - Message payload
+ * @param {number} [timeout] - Custom timeout in milliseconds (default: 5000ms)
+ *                             Use longer timeouts for operations that scan large databases
+ *                             (e.g., import with "Keep Newer" strategy)
  */
-export async function sendHiddenVideosMessage(type, payload = {}) {
+export async function sendHiddenVideosMessage(type, payload = {}, timeout = MESSAGE_TIMEOUT) {
   // Quick check before attempting message send
   if (!isExtensionContextValid()) {
     // Silently fail when context is invalidated - this is expected during extension reload
@@ -80,7 +86,7 @@ export async function sendHiddenVideosMessage(type, payload = {}) {
   return retryOperation(
     async () => {
       try {
-        const response = await sendMessageWithTimeout({ type, ...payload });
+        const response = await sendMessageWithTimeout({ type, ...payload }, timeout);
 
         if (!response) {
           throw new Error('No response from background script');

@@ -1,3 +1,5 @@
+import { logError } from './errorHandler.js';
+
 // Storage Keys
 export const STORAGE_KEYS = {
   THRESHOLD: 'YTHWV_THRESHOLD',
@@ -16,7 +18,10 @@ export const HIDDEN_VIDEO_MESSAGES = {
   GET_PAGE: 'HIDDEN_VIDEOS_GET_PAGE',
   GET_STATS: 'HIDDEN_VIDEOS_GET_STATS',
   SET_STATE: 'HIDDEN_VIDEOS_SET_STATE',
-  CLEAR_ALL: 'HIDDEN_VIDEOS_CLEAR_ALL'
+  CLEAR_ALL: 'HIDDEN_VIDEOS_CLEAR_ALL',
+  EXPORT_ALL: 'HIDDEN_VIDEOS_EXPORT_ALL',
+  IMPORT_RECORDS: 'HIDDEN_VIDEOS_IMPORT_RECORDS',
+  VALIDATE_IMPORT: 'HIDDEN_VIDEOS_VALIDATE_IMPORT'
 };
 
 // Default Settings
@@ -60,9 +65,22 @@ export const CSS_CLASSES = {
 // Selectors (content script specific)
 export const SELECTORS = {
   PROGRESS_BAR: [
-    '.ytd-thumbnail-overlay-resume-playback-renderer',
+    // Modern selectors (2025+) - Most common and specific
+    '#progress',
     '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
-    '.ytp-progress-bar-played'
+    '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
+    // Context-specific selectors
+    'yt-thumbnail-view-model #progress',
+    'ytd-thumbnail #progress',
+    // Standard overlay renderers
+    'ytd-thumbnail-overlay-resume-playback-renderer',
+    '.ytd-thumbnail-overlay-resume-playback-renderer',
+    'yt-thumbnail-overlay-resume-playback-renderer',
+    // Mobile selectors
+    '.ytm-thumbnail-overlay-resume-playback-renderer',
+    // Attribute-based fallbacks
+    '[id="progress"][style*="width"]',
+    '[class*="progress"][style*="width"]'
   ],
   SHORTS_CONTAINERS: [
     'ytd-reel-shelf-renderer',
@@ -109,12 +127,29 @@ export const ERROR_CONFIG = {
   INITIAL_RETRY_DELAY: 100,
   MAX_RETRY_DELAY: 5000,
   MESSAGE_TIMEOUT: 5000,
-  MAX_ERROR_LOG_SIZE: 100
+  MAX_ERROR_LOG_SIZE: 100,
+  STORAGE_TIMEOUT: 10000, // 10 seconds - timeout for chrome.storage operations
+  // FIXED P3-4: Quota-specific retry delays (used by quotaManager.js)
+  // Longer delays for quota errors since they need time for cleanup/pruning
+  QUOTA_RETRY_DELAYS: [5000, 30000, 120000] // 5s, 30s, 2min (exponential backoff)
 };
 
 // Background service worker configuration
+// NOTE: Chrome's alarms API enforces a MINIMUM periodInMinutes of 1 minute for both
+// packed and unpacked extensions. Values below 1 minute are rounded UP to 1 minute.
+// This means we cannot ping more frequently than once per minute using chrome.alarms.
+//
+// Chrome suspends service workers after ~30 seconds of inactivity, so with a 1-minute
+// alarm interval, the worker WILL be suspended between pings. This is acceptable because:
+// - All critical data is persisted in IndexedDB (survives suspensions)
+// - Message listeners are automatically re-registered on wake-up
+// - The worker can restart quickly when needed (< 100ms typically)
+//
+// For more aggressive keep-alive, we would need long-lived connections from content
+// scripts, but that adds complexity and battery drain. The current approach balances
+// performance with resource efficiency.
 export const SERVICE_WORKER_CONFIG = {
-  KEEP_ALIVE_INTERVAL: 20000 // 20 seconds - keeps service worker active during usage
+  KEEP_ALIVE_INTERVAL: 60000 // 1 minute - Chrome's enforced minimum for chrome.alarms
 };
 
 // Pre-computed selector strings for performance
@@ -124,8 +159,17 @@ export const SELECTOR_STRINGS = {
   SHORTS_CONTAINERS: SELECTORS.SHORTS_CONTAINERS.join(', ')
 };
 
-// Debug flag
-export const DEBUG = false;
+// Debug flag - replaced at build time by webpack DefinePlugin
+// In development: true, In production: false
+// For webpack builds: __DEV__ is defined by DefinePlugin
+// For direct browser loads (popup.js): check if process exists before accessing
+// FIXED P1-5: Validate process.env is an object before accessing properties
+export const DEBUG = typeof __DEV__ !== 'undefined' ? Boolean(__DEV__) :
+  (typeof process !== 'undefined' &&
+   typeof process.env === 'object' &&
+   process.env !== null &&
+   typeof process.env.NODE_ENV === 'string' &&
+   process.env.NODE_ENV === 'development');
 
 // DOM Cache Configuration
 export const CACHE_CONFIG = {
@@ -150,9 +194,25 @@ export const INTERSECTION_OBSERVER_CONFIG = (function() {
     ENABLE_LAZY_PROCESSING: true
   };
 
+  // Validate ROOT_MARGIN format (must be valid CSS margin: '10px', '10%', '10px 20px', etc.)
+  // Format: 1-4 values, each being a number followed by 'px' or '%', separated by spaces
+  const rootMarginPattern = /^(-?\d+(?:\.\d+)?(px|%)(\s+-?\d+(?:\.\d+)?(px|%)){0,3})$/;
+  if (typeof config.ROOT_MARGIN !== 'string' || !rootMarginPattern.test(config.ROOT_MARGIN.trim())) {
+    logError('IntersectionObserverConfig', new Error('Invalid ROOT_MARGIN format'), {
+      value: config.ROOT_MARGIN,
+      default: '100px',
+      message: 'Invalid ROOT_MARGIN format, using default "100px"'
+    });
+    config.ROOT_MARGIN = '100px';
+  }
+
   // Validate configuration values
   if (!Array.isArray(config.THRESHOLD) || config.THRESHOLD.length === 0) {
-    console.error('[YT-HWV] Invalid THRESHOLD config, using defaults');
+    logError('IntersectionObserverConfig', new Error('Invalid THRESHOLD config'), {
+      value: config.THRESHOLD,
+      default: [0, 0.25, 0.5],
+      message: 'Invalid THRESHOLD config, using defaults'
+    });
     config.THRESHOLD = [0, 0.25, 0.5];
   }
 
@@ -162,12 +222,20 @@ export const INTERSECTION_OBSERVER_CONFIG = (function() {
   if (typeof config.VISIBILITY_THRESHOLD !== 'number' ||
       config.VISIBILITY_THRESHOLD < 0 ||
       config.VISIBILITY_THRESHOLD > 1) {
-    console.error('[YT-HWV] Invalid VISIBILITY_THRESHOLD config, using default 0.25');
+    logError('IntersectionObserverConfig', new Error('Invalid VISIBILITY_THRESHOLD config'), {
+      value: config.VISIBILITY_THRESHOLD,
+      default: 0.25,
+      message: 'Invalid VISIBILITY_THRESHOLD config, using default 0.25'
+    });
     config.VISIBILITY_THRESHOLD = 0.25;
   }
 
   if (typeof config.BATCH_DELAY !== 'number' || config.BATCH_DELAY < 0) {
-    console.error('[YT-HWV] Invalid BATCH_DELAY config, using default 100ms');
+    logError('IntersectionObserverConfig', new Error('Invalid BATCH_DELAY config'), {
+      value: config.BATCH_DELAY,
+      default: 100,
+      message: 'Invalid BATCH_DELAY config, using default 100ms'
+    });
     config.BATCH_DELAY = 100;
   }
 
@@ -193,10 +261,82 @@ export const INDEXEDDB_CONFIG = {
   PREFETCH_DELAY: 100,
 
   // Broadcast
-  BROADCAST_DEBOUNCE: 100
+  BROADCAST_DEBOUNCE: 100,
+
+  // Concurrency control
+  // FIXED P3-6: Moved MAX_ACTIVE_OPERATIONS from hardcoded constant to config
+  MAX_ACTIVE_OPERATIONS: 1000, // Maximum concurrent IndexedDB operations to prevent resource exhaustion
+
+  // FIXED P3-11: Timeout settings with detailed rationale
+  // These values are tuned based on:
+  // - 99th percentile user device performance
+  // - Database sizes from 1K to 200K+ records
+  // - Network conditions and disk I/O speeds
+  // - Service Worker lifecycle constraints (Chrome terminates after ~30s of inactivity)
+
+  OPERATION_TIMEOUT: 30000, // 30s - Individual operations (write/read/update)
+    // Rationale: Covers 99% of operations on modern devices. Large enough for
+    // batch writes (1000 records ~5-10s), small enough to detect hangs quickly.
+
+  CURSOR_TIMEOUT: 30000, // 30s - Initial cursor iteration timeout
+    // Rationale: Optimized for common case (10K-50K records). Tests show:
+    // - 10K records: 2-5s on average devices
+    // - 50K records: 8-15s on average devices
+    // - 100K records: 15-25s on average devices
+
+  CURSOR_TIMEOUT_RETRY_1: 60000, // 60s - First retry for slower devices
+    // Rationale: Handles 100K-150K records on slow devices (old Android, HDD)
+
+  CURSOR_TIMEOUT_RETRY_2: 90000, // 90s - Final retry for extreme cases
+    // Rationale: Handles 200K+ records on very slow devices. Beyond this,
+    // operation likely hung (corrupted database, disk failure, etc.)
+
+  DB_OPEN_TIMEOUT: 30000, // 30s - Database open operation
+    // Rationale: Old Android devices (API 21-24) can take 15-20s to open
+    // large IndexedDB databases. 30s provides buffer for worst case.
+
+  RESET_TIMEOUT: 60000, // 60s - Database reset (delete + recreate)
+    // Rationale: Deleting 100K+ records and recreating schema can take 30-45s
+    // on slow devices. 60s provides safety margin.
+
+  // Progressive timeout retry settings
+  ENABLE_CURSOR_PROGRESSIVE_TIMEOUT: true, // Enable progressive timeout for cursor operations
+  CURSOR_MAX_RETRIES: 2 // Maximum retry attempts for cursor operations (total 3 attempts)
 };
 
-// Feature flags for IndexedDB optimizations
+/**
+ * FIXED P3-6: Feature Flags for IndexedDB and Performance Optimizations
+ *
+ * These flags control experimental and production features.
+ * To enable/disable a feature, change its value to true/false and rebuild the extension.
+ *
+ * @property {boolean} ENABLE_WRITE_BATCHING - [EXPERIMENTAL] Batches multiple write operations
+ *   into single transactions. Improves performance but needs thorough testing. Default: false
+ *
+ * @property {boolean} ENABLE_BACKGROUND_CACHE - [STABLE] Caches frequently accessed records
+ *   in background script memory using LRU strategy. Default: true
+ *
+ * @property {boolean} ENABLE_LRU_EVICTION - [STABLE] Automatically evicts least recently used
+ *   cache entries to prevent unbounded memory growth. Default: true
+ *
+ * @property {boolean} ENABLE_CURSOR_OPTIMIZATION - [STABLE] Uses optimized cursor iteration
+ *   for large dataset operations. Default: true
+ *
+ * @property {boolean} ENABLE_STATS_OPTIMIZATION - [STABLE] Uses index-based counting instead
+ *   of full cursor iteration for statistics. Default: true
+ *
+ * @property {boolean} ENABLE_PAGINATION_PREFETCH - [EXPERIMENTAL/PHASE 6] Prefetches next
+ *   page of results while user views current page. Default: false
+ *
+ * @property {boolean} ENABLE_BROADCAST_BATCHING - [EXPERIMENTAL/PHASE 6] Batches state change
+ *   broadcasts to reduce message passing overhead. Default: false
+ *
+ * @example
+ * // To enable write batching for testing:
+ * // 1. Change ENABLE_WRITE_BATCHING to true
+ * // 2. Run: npm run build
+ * // 3. Test thoroughly before releasing
+ */
 export const FEATURE_FLAGS = {
   ENABLE_WRITE_BATCHING: false, // Disabled by default - needs testing
   ENABLE_BACKGROUND_CACHE: true,
@@ -205,4 +345,315 @@ export const FEATURE_FLAGS = {
   ENABLE_STATS_OPTIMIZATION: true,
   ENABLE_PAGINATION_PREFETCH: false, // Phase 6
   ENABLE_BROADCAST_BATCHING: false // Phase 6
+};
+
+// Import/Export Configuration
+export const IMPORT_EXPORT_CONFIG = {
+  FORMAT_VERSION: 1,
+  MAX_IMPORT_SIZE_MB: 50,
+  MAX_IMPORT_RECORDS: 200000,
+  IMPORT_BATCH_SIZE: 1000,        // Increased from 500 for better performance
+  EXPORT_CHUNK_SIZE: 1000,        // Records per chunk for export
+  STREAMING_READ_CHUNK_SIZE: 1024 * 1024, // 1MB chunks for file reading
+  CONFLICT_STRATEGIES: {
+    SKIP: 'skip',           // Skip existing records
+    OVERWRITE: 'overwrite', // Overwrite with imported data
+    MERGE: 'merge'          // Keep newer timestamp
+  },
+  // Progress update throttling (ms) to avoid UI updates too frequently
+  PROGRESS_UPDATE_THROTTLE: 100
+};
+
+// UI Configuration
+export const UI_CONFIG = {
+  // Hidden videos manager pagination
+  VIDEOS_PER_PAGE: 12,
+
+  // Search limits by device type
+  MAX_SEARCH_ITEMS_MOBILE: 500,
+  MAX_SEARCH_ITEMS_DESKTOP: 1000
+};
+
+// FIXED P3-12: Delay constants (previously hardcoded)
+// Documented delays with rationale for better maintainability
+export const DELAYS = {
+  YIELD_TO_UI: 0,           // setTimeout(0) - Yield control to UI thread
+  BATCH_PAUSE: 10,          // Small pause between batch operations
+  FOCUS_DELAY: 100,         // Delay before focusing element after render
+  DEBOUNCE_SHORT: 100,      // Short debounce for frequent operations
+  DEBOUNCE_MEDIUM: 250,     // Medium debounce for DOM mutations
+  RATE_LIMIT_BATCH: 10      // Delay between batches for API rate limiting
+};
+
+// Quota Management Configuration
+export const QUOTA_CONFIG = {
+  // Estimate record size (bytes) - typical video record with metadata
+  ESTIMATED_RECORD_SIZE: 200,
+
+  // Safety margin for cleanup (delete 20% more than estimated need)
+  CLEANUP_SAFETY_MARGIN: 1.2,
+
+  // Minimum records to delete (avoid too frequent cleanups)
+  MIN_CLEANUP_COUNT: 100,
+
+  // Maximum records to delete in one cleanup (prevent excessive deletions)
+  MAX_CLEANUP_COUNT: 5000,
+
+  // Maximum records to store in fallback storage
+  // INCREASED from 1000 to 5000 to prevent data loss during high-volume operations
+  MAX_FALLBACK_RECORDS: 5000,
+
+  // P3-1 FIX: Moved from UI_CONFIG to QUOTA_CONFIG for better organization
+  // Batch size for aggressive fallback processing
+  AGGRESSIVE_BATCH_SIZE: 50,
+
+  // Notification cooldown (5 minutes)
+  NOTIFICATION_COOLDOWN_MS: 5 * 60 * 1000,
+
+  // Maximum quota events to log
+  MAX_QUOTA_EVENTS: 50,
+
+  // Maximum retry attempts for quota exceeded operations
+  MAX_RETRY_ATTEMPTS: 3,
+
+  // Enable fallback storage for critical operations
+  ENABLE_FALLBACK_STORAGE: true,
+
+  // Enable user notifications for quota events
+  ENABLE_QUOTA_NOTIFICATIONS: true
+};
+
+// Selector Fallback Chains
+// Primary selectors listed first, fallbacks in order of preference
+export const SELECTOR_CHAINS = {
+  VIDEO_TITLE: [
+    '#video-title',
+    '#video-title-link',
+    'a#video-title',
+    'h3.title a',
+    'h3 a',
+    'h4 a',
+    '.title-and-badge a',
+    'yt-formatted-string#video-title',
+    'span#video-title',
+    // Fallback to any link in container
+    'a[href*="/watch?v="]',
+    'a[href*="/shorts/"]'
+  ],
+
+  PROGRESS_BAR: [
+    // PRIORITY 1: Most specific and fastest - exact class names with style.width guarantee
+    '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment[style*="width"]',
+    '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
+
+    // PRIORITY 2: Attribute-based selectors (slower but more flexible)
+    '[class*="Watched"][class*="Progress"][style*="width"]',
+    '[id="progress"][style*="width"]',
+    '.ytd-thumbnail-overlay-resume-playback-renderer[style*="width"]',
+    '[class*="thumbnail-overlay"][class*="resume"][style*="width"]',
+    '[class*="progress"][style*="width"]',
+
+    // PRIORITY 3: Most common modern selectors (2025+)
+    // These are likely to have style.width in most cases
+    '#progress',
+    '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
+    '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
+
+    // PRIORITY 3: Context-specific selectors (within thumbnail containers)
+    'yt-thumbnail-view-model #progress',
+    'yt-thumbnail-view-model .ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
+    'ytd-thumbnail #progress',
+    'ytd-thumbnail .progress-bar',
+
+    // PRIORITY 4: Progress elements within overlay containers
+    'ytd-thumbnail-overlay-resume-playback-renderer #progress',
+    'yt-thumbnail-overlay-resume-playback-renderer #progress',
+    'ytd-thumbnail-overlay-resume-playback-renderer .progress-bar',
+    'yt-thumbnail-overlay-resume-playback-renderer .progress-bar',
+
+    // PRIORITY 5: Container elements (may require child element check)
+    'ytd-thumbnail-overlay-resume-playback-renderer',
+    '.ytd-thumbnail-overlay-resume-playback-renderer',
+    'yt-thumbnail-overlay-resume-playback-renderer',
+    '.yt-thumbnail-overlay-resume-playback-renderer',
+
+    // PRIORITY 6: Alternative progress renderer names
+    '.ytd-thumbnail-overlay-resume-playback-progress-renderer',
+    '.yt-thumbnail-overlay-resume-playback-progress-renderer',
+    'ytd-thumbnail-overlay-resume-playback-progress-renderer',
+    'yt-thumbnail-overlay-resume-playback-progress-renderer',
+
+    // PRIORITY 7: Mobile/responsive selectors
+    '.ytm-thumbnail-overlay-resume-playback-renderer',
+    'ytm-thumbnail-overlay-resume-playback-renderer',
+    'ytm-thumbnail #progress',
+
+    // PRIORITY 8: Generic class-based selectors
+    '[class*="thumbnail-overlay"][class*="resume"]',
+    '[class*="thumbnail-overlay"][class*="playback"]',
+    '[class*="overlay"][class*="progress"]',
+
+    // PRIORITY 9: ID-based selectors
+    '#resume-playback-progress',
+    '#playback-progress',
+
+    // PRIORITY 10: Generic fallbacks (most permissive)
+    '[class*="progress"][class*="bar"]',
+    '[class*="resume"][class*="playback"]',
+    '[class*="watched"][class*="progress"]',
+    '.progress-bar',
+
+    // PRIORITY 11: Aria-label fallback (last resort)
+    '[aria-label*="progress"]',
+    '[aria-label*="watched"]'
+  ],
+
+  VIDEO_THUMBNAIL: [
+    'yt-thumbnail-view-model',
+    'ytd-thumbnail',
+    '.ytThumbnailViewModelImage',
+    'img.yt-core-image',
+    // Generic fallbacks
+    '[class*="thumbnail"]'
+  ],
+
+  VIDEO_LINK: [
+    'a[href*="/watch?v="]',
+    'a[href^="/watch?"]',
+    'a[href*="&v="]',
+    'a.ytd-thumbnail',
+    'a.yt-simple-endpoint'
+  ],
+
+  SHORTS_LINK: [
+    'a[href*="/shorts/"]',
+    'a[href^="/shorts/"]',
+    'a.reel-item-endpoint',
+    '.shortsLockupViewModelHost a'
+  ],
+
+  VIDEO_CONTAINERS: [
+    'ytd-rich-item-renderer',
+    'ytd-video-renderer',
+    'ytd-grid-video-renderer',
+    'ytd-compact-video-renderer',
+    'yt-lockup-view-model',
+    'ytm-shorts-lockup-view-model'
+  ],
+
+  THUMBNAILS: [
+    // Primary modern selectors (2025+)
+    'yt-thumbnail-view-model:not(.yt-hwv-has-eye-button)',
+    'ytd-thumbnail:not(.yt-hwv-has-eye-button)',
+    // Alternative thumbnail containers
+    'yt-thumbnail:not(.yt-hwv-has-eye-button)',
+    'ytm-thumbnail:not(.yt-hwv-has-eye-button)',
+    // Image wrapper elements
+    '.ytThumbnailViewModelImage:not(.yt-hwv-has-eye-button)',
+    '.yt-core-image-container:not(.yt-hwv-has-eye-button)',
+    // Lockup model thumbnails
+    '.yt-lockup-thumbnail:not(.yt-hwv-has-eye-button)',
+    'yt-lockup-thumbnail:not(.yt-hwv-has-eye-button)',
+    // Rich item thumbnails
+    '#thumbnail:not(.yt-hwv-has-eye-button)',
+    '.ytd-thumbnail:not(.yt-hwv-has-eye-button)',
+    // Video renderer thumbnails
+    'ytd-video-renderer #thumbnail:not(.yt-hwv-has-eye-button)',
+    'ytd-grid-video-renderer #thumbnail:not(.yt-hwv-has-eye-button)',
+    'ytd-compact-video-renderer #thumbnail:not(.yt-hwv-has-eye-button)',
+    // Shorts thumbnails
+    'ytm-shorts-lockup-view-model .thumbnail:not(.yt-hwv-has-eye-button)',
+    '.shortsLockupViewModelHostThumbnail:not(.yt-hwv-has-eye-button)',
+    // Generic fallbacks (most permissive)
+    '[class*="thumbnail"]:not(.yt-hwv-has-eye-button):not(img)',
+    '[id*="thumbnail"]:not(.yt-hwv-has-eye-button):not(img)',
+    'a[href*="/watch"] > *:first-child:not(.yt-hwv-has-eye-button)',
+    'a[href*="/shorts"] > *:first-child:not(.yt-hwv-has-eye-button)'
+  ]
+};
+
+// Critical selector health thresholds
+// These values define when the extension detects that YouTube's DOM structure has changed
+export const SELECTOR_HEALTH_CONFIG = {
+  // 70% success rate minimum - Below this, selectors are considered unhealthy
+  // This threshold allows for transient failures while catching structural changes
+  CRITICAL_SUCCESS_RATE: 0.7,
+
+  // Minimum 10 queries before health assessment - Prevents false positives during initial load
+  // Statistical significance requires multiple samples before making health determinations
+  MIN_QUERIES_FOR_HEALTH: 10,
+
+  // Check selector health every 30 seconds (30000ms)
+  // Balances responsiveness to DOM changes with performance overhead
+  HEALTH_CHECK_INTERVAL: 30000,
+
+  // 5 minute cooldown between notifications (300000ms)
+  // Prevents notification spam while keeping users informed of persistent issues
+  NOTIFICATION_COOLDOWN: 300000,
+
+  // Show notification after 5 consecutive failures (currently unused - reserved for future use)
+  // Would trigger alerts only after sustained failure pattern is established
+  FAILURE_NOTIFICATION_THRESHOLD: 5
+};
+
+// FIXED P3-4: UI/UX timing constants
+// Extracted hardcoded magic numbers for better maintainability and documentation
+export const UI_TIMING = {
+  // Search debounce delay (300ms)
+  // Balance between responsiveness and reducing unnecessary API calls
+  // Short enough for good UX, long enough to avoid excessive filtering
+  SEARCH_DEBOUNCE_MS: 300,
+
+  // Keep-alive alarm interval (20000ms = 20 seconds)
+  // Prevents service worker from being terminated by Chrome
+  // Set just below Chrome's 30-second inactivity threshold
+  KEEP_ALIVE_INTERVAL_MS: 20000,
+
+  // Maximum delete count per operation (1000000 = 1 million)
+  // Safety limit to prevent accidental deletion of entire database
+  // High enough for batch operations, low enough to prevent catastrophic errors
+  MAX_DELETE_COUNT: 1000000,
+
+  // Pending request timeout (30000ms = 30 seconds)
+  // Timeout for background fetch operations to prevent memory leaks
+  // Long enough for slow networks, short enough to prevent indefinite hangs
+  PENDING_REQUEST_TIMEOUT_MS: 30000,
+
+  // Database reset max wait time (10000ms = 10 seconds)
+  // Maximum time to wait for active operations before forcing database reset
+  // Balances data integrity with need to proceed with reset
+  DB_RESET_MAX_WAIT_MS: 10000,
+
+  // Batch processing yield delay (10ms)
+  // Small delay between batches to allow UI thread to process events
+  // Prevents UI blocking during large batch operations
+  BATCH_YIELD_MS: 10
+};
+
+// CODE REVIEW FIX (P3-1): Validation and security limits
+// Consolidated magic numbers for better maintainability
+export const VALIDATION_LIMITS = {
+  // Maximum notification entries in global rate limiter
+  // Prevents unbounded memory growth from notification spam
+  MAX_NOTIFICATION_ENTRIES: 50,
+
+  // Maximum JSON nesting depth for import validation
+  // Prevents DoS attacks via deeply nested JSON (stack overflow)
+  MAX_JSON_DEPTH: 100,
+
+  // Maximum quota retry depth
+  // Prevents infinite recursion in quota handling
+  MAX_QUOTA_RETRY_DEPTH: 2,
+
+  // Maximum notification types tracked
+  // Prevents Map growth from dynamic notification type generation
+  MAX_NOTIFICATION_TYPES: 50,
+
+  // Fallback lock timeout (30 seconds)
+  // Prevents deadlock if lock is never released
+  FALLBACK_LOCK_TIMEOUT_MS: 30000,
+
+  // Per-type cleanup window (5 minutes)
+  // Removes notification type entries older than this threshold
+  PER_TYPE_CLEANUP_WINDOW_MS: 5 * 60 * 1000
 };

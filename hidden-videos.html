@@ -47,14 +47,16 @@
           placeholder="Search videos by title..."
           aria-label="Search videos by title"
         />
-        <button id="clear-search" class="clear-search-btn" style="display: none;" aria-label="Clear search">
+        <!-- FIXED P1-2: Replace inline style with CSS class for CSP compatibility -->
+        <button id="clear-search" class="clear-search-btn display-none" aria-label="Clear search">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
         </button>
       </div>
-      <div id="search-loading" class="search-loading" style="display: none;">
+      <!-- FIXED P1-2: Replace inline style with CSS class for CSP compatibility -->
+      <div id="search-loading" class="search-loading display-none">
         <div class="loading-spinner"></div>
         <span>Searching...</span>
       </div>
@@ -63,15 +65,17 @@
 
     <div class="controls">
       <div class="filter-section">
-        <label>Filter:</label>
-        <div class="button-group">
-          <button class="filter-btn active" data-filter="all">All</button>
-          <button class="filter-btn" data-filter="dimmed">Dimmed</button>
-          <button class="filter-btn" data-filter="hidden">Hidden</button>
+        <label id="filter-label">Filter:</label>
+        <div class="button-group" role="group" aria-labelledby="filter-label">
+          <button class="filter-btn active" data-filter="all" aria-pressed="true" aria-label="Show all videos">All</button>
+          <button class="filter-btn" data-filter="dimmed" aria-pressed="false" aria-label="Show only dimmed videos">Dimmed</button>
+          <button class="filter-btn" data-filter="hidden" aria-pressed="false" aria-label="Show only hidden videos">Hidden</button>
         </div>
       </div>
       <div class="action-section">
-        <button id="clear-all" class="action-btn danger">Clear All</button>
+        <button id="export-btn" class="action-btn primary" aria-label="Export all hidden videos to JSON file">Export List</button>
+        <button id="import-btn" class="action-btn primary" aria-label="Import hidden videos from JSON file">Import List</button>
+        <button id="clear-all" class="action-btn danger" aria-label="Clear all hidden videos (cannot be undone)">Clear All</button>
       </div>
     </div>
 
@@ -103,25 +107,74 @@
       </div>
     </div>
 
-    <div id="pagination-controls" class="pagination">
-      <button id="prev-page" class="page-btn" disabled>
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <nav id="pagination-controls" class="pagination" role="navigation" aria-label="Videos pagination">
+      <button id="prev-page" class="page-btn" disabled aria-label="Go to previous page">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polyline points="15 18 9 12 15 6"></polyline>
         </svg>
         Previous
       </button>
-      <div class="page-info">
+      <div class="page-info" role="status" aria-live="polite" aria-atomic="true">
         <span>Page</span>
         <span id="current-page">1</span>
         <span>of</span>
         <span id="total-pages">1</span>
       </div>
-      <button id="next-page" class="page-btn" disabled>
+      <button id="next-page" class="page-btn" disabled aria-label="Go to next page">
         Next
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polyline points="9 18 15 12 9 6"></polyline>
         </svg>
       </button>
+    </nav>
+  </div>
+
+  <!-- FIXED P1-2: Hidden file input for import (replace inline style with CSS class) -->
+  <input type="file" id="import-file-input" accept=".json,application/json" class="display-none">
+
+  <!-- FIXED P1-2: Import confirmation modal (replace inline style with CSS class) -->
+  <div id="import-modal" class="modal display-none" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="import-modal-title">Import Hidden Videos</h2>
+        <button id="close-import-modal" class="modal-close" aria-label="Close import dialog">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="import-validation-info" class="import-info" role="status" aria-live="polite"></div>
+
+        <div class="import-options">
+          <label id="conflict-resolution-label">Conflict Resolution:</label>
+          <div class="button-group" role="group" aria-labelledby="conflict-resolution-label">
+            <button class="conflict-strategy-btn active" data-strategy="skip" aria-label="Skip existing records and only add new videos">Skip Existing</button>
+            <button class="conflict-strategy-btn" data-strategy="merge" aria-label="Compare timestamps and keep the more recent version">Keep Newer</button>
+            <button class="conflict-strategy-btn" data-strategy="overwrite" aria-label="Replace all existing records with imported data">Overwrite All</button>
+          </div>
+          <p class="help-text" id="conflict-resolution-help">
+            <strong>Skip Existing:</strong> Keep your current data, only add new videos<br>
+            <strong>Keep Newer:</strong> Compare timestamps and keep the more recent version<br>
+            <strong>Overwrite All:</strong> Replace all existing records with imported data
+          </p>
+        </div>
+
+        <!-- FIXED P1-2: Replace inline style with CSS class for CSP compatibility -->
+        <div id="import-progress" class="import-progress display-none" role="status" aria-live="polite">
+          <div class="progress-header">
+            <p id="import-progress-text">Importing...</p>
+            <span id="import-progress-percentage" class="progress-percentage">0%</span>
+          </div>
+          <div class="progress-bar-container">
+            <div id="import-progress-bar" class="progress-bar-fill"></div>
+          </div>
+          <div class="progress-stats">
+            <span id="import-progress-stats" class="progress-stats-text"></span>
+            <span id="import-progress-eta" class="progress-eta-text"></span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="cancel-import-btn" class="btn-secondary">Cancel</button>
+        <button id="confirm-import-btn" class="btn-primary" disabled>Import</button>
+      </div>
     </div>
   </div>
 

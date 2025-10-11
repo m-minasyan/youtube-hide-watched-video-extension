@@ -1,12 +1,12 @@
-import { CSS_CLASSES, SELECTORS } from '../utils/constants.js';
-import { logDebug } from '../utils/logger.js';
+import { CSS_CLASSES, SELECTOR_CHAINS } from '../../shared/constants.js';
+import { logDebug } from '../../shared/logger.js';
 import { getCachedHiddenVideo } from '../storage/cache.js';
 import { fetchHiddenVideoStates, setHiddenVideoState } from '../storage/messaging.js';
 import { isIndividualModeEnabled } from '../storage/settings.js';
 import { extractTitleFromContainer } from '../utils/dom.js';
 import { handleAriaHiddenConflicts } from './accessibility.js';
 import { createEyeButton } from './eyeButton.js';
-import { cachedDocumentQuery, cachedClosest, cachedQuerySelector } from '../utils/domCache.js';
+import { cachedDocumentQueryWithFallback, cachedClosest, cachedQuerySelector, invalidateDocumentQuery } from '../utils/domCache.js';
 import { syncIndividualContainerState } from '../hiding/individualHiding.js';
 import { logError } from '../../shared/errorHandler.js';
 
@@ -19,17 +19,26 @@ export function addEyeButtons() {
   // Check if Individual Mode is enabled
   if (!isIndividualModeEnabled()) {
     // Remove existing eye buttons if Individual Mode is disabled
-    const existingButtons = cachedDocumentQuery(`.${CSS_CLASSES.EYE_BUTTON}`);
+    const existingButtons = cachedDocumentQueryWithFallback(
+      'EYE_BUTTON',
+      [`.${CSS_CLASSES.EYE_BUTTON}`]
+    );
     existingButtons.forEach(button => button.remove());
 
-    const thumbnails = cachedDocumentQuery(`.${CSS_CLASSES.HAS_EYE_BUTTON}`);
+    const thumbnails = cachedDocumentQueryWithFallback(
+      'HAS_EYE_BUTTON',
+      [`.${CSS_CLASSES.HAS_EYE_BUTTON}`]
+    );
     thumbnails.forEach(thumbnail => thumbnail.classList.remove(CSS_CLASSES.HAS_EYE_BUTTON));
 
     return;
   }
 
-  // Use cached query for thumbnails
-  const thumbnails = cachedDocumentQuery(SELECTORS.THUMBNAILS.join(', '));
+  // Use fallback chain for thumbnails
+  const thumbnails = cachedDocumentQueryWithFallback(
+    'THUMBNAILS',
+    SELECTOR_CHAINS.THUMBNAILS
+  );
 
   logDebug('Found thumbnails:', thumbnails.length);
 
@@ -65,7 +74,11 @@ export function addEyeButtons() {
     thumbnail.classList.add(CSS_CLASSES.HAS_EYE_BUTTON);
     thumbnail.setAttribute('data-ythwv-video-id', videoId);
 
-    const parentContainer = cachedClosest(thumbnail, SELECTORS.VIDEO_CONTAINERS.join(', '));
+    // Invalidate THUMBNAILS cache since we modified the DOM
+    // This ensures subsequent calls don't get stale cached results
+    invalidateDocumentQuery(/yt-thumbnail.*not.*yt-hwv-has-eye-button/i);
+
+    const parentContainer = cachedClosest(thumbnail, SELECTOR_CHAINS.VIDEO_CONTAINERS.join(', '));
     if (parentContainer) {
       parentContainer.setAttribute('data-ythwv-video-id', videoId);
     }
@@ -84,7 +97,7 @@ export function addEyeButtons() {
 
       if (!record || record.title) return;
 
-      const container = cachedClosest(thumbnail, SELECTORS.VIDEO_CONTAINERS.join(', '));
+      const container = cachedClosest(thumbnail, SELECTOR_CHAINS.VIDEO_CONTAINERS.join(', '));
       if (container) {
         container.setAttribute('data-ythwv-video-id', videoId);
       }

@@ -1,66 +1,46 @@
+/**
+ * Content script cache layer
+ * Provides timestamp-based caching with LRU eviction and pending request tracking
+ *
+ * REFACTORED: Now uses simplified UnifiedCacheManager with 3-Map architecture
+ */
+
+import { UnifiedCacheManager } from '../../shared/cache/UnifiedCacheManager.js';
+
 const MAX_CACHE_SIZE = 1000;
 
-const hiddenVideoCache = new Map();
-const hiddenVideoTimestamps = new Map();
-const cacheAccessOrder = new Map(); // videoId -> lastAccessTime
-const pendingHiddenVideoRequests = new Map();
+// Initialize unified cache manager (3-Map architecture with pending request tracking)
+const cacheManager = new UnifiedCacheManager({
+  maxSize: MAX_CACHE_SIZE,
+  trackPendingRequests: true // Track pending requests to prevent duplicates
+});
 
+/**
+ * Extracts timestamp from a record
+ * @param {Object|null} record - Record to extract timestamp from
+ * @returns {number} - Timestamp or -1 if not available
+ */
 export function getRecordTimestamp(record) {
   return record && Number.isFinite(record.updatedAt) ? record.updatedAt : -1;
 }
 
 /**
- * Evicts least recently used entries when cache exceeds MAX_CACHE_SIZE
+ * Applies a cache update unconditionally (for local modifications)
+ * @param {string} videoId - Video identifier
+ * @param {Object|null} record - Record to cache
  */
-function evictLRUEntries() {
-  if (hiddenVideoCache.size <= MAX_CACHE_SIZE) return;
-
-  const entries = Array.from(cacheAccessOrder.entries())
-    .sort((a, b) => a[1] - b[1]); // Sort by access time (oldest first)
-
-  const toEvict = entries.slice(0, hiddenVideoCache.size - MAX_CACHE_SIZE);
-  toEvict.forEach(([videoId]) => {
-    hiddenVideoCache.delete(videoId);
-    hiddenVideoTimestamps.delete(videoId);
-    cacheAccessOrder.delete(videoId);
-  });
-}
-
 export function applyCacheUpdate(videoId, record) {
-  if (!videoId) return;
-  if (record) {
-    const timestamp = getRecordTimestamp(record);
-    hiddenVideoCache.set(videoId, record);
-    hiddenVideoTimestamps.set(videoId, timestamp === -1 ? Date.now() : timestamp);
-    cacheAccessOrder.set(videoId, Date.now());
-    evictLRUEntries();
-    return;
-  }
-  hiddenVideoCache.delete(videoId);
-  hiddenVideoTimestamps.set(videoId, Date.now());
-  cacheAccessOrder.delete(videoId);
+  cacheManager.applyUpdate(videoId, record);
 }
 
+/**
+ * Merges a fetched record with existing cache (for remote fetches)
+ * Only updates if incoming record is newer than cached record
+ * @param {string} videoId - Video identifier
+ * @param {Object|null} record - Fetched record
+ */
 export function mergeFetchedRecord(videoId, record) {
-  if (!videoId) return;
-  const incomingTimestamp = getRecordTimestamp(record);
-  if (hiddenVideoTimestamps.has(videoId)) {
-    const currentTimestamp = hiddenVideoTimestamps.get(videoId);
-    if (incomingTimestamp <= currentTimestamp) {
-      // Update access time even if not updating record
-      cacheAccessOrder.set(videoId, Date.now());
-      return;
-    }
-  }
-  if (record) {
-    hiddenVideoCache.set(videoId, record);
-    hiddenVideoTimestamps.set(videoId, incomingTimestamp === -1 ? Date.now() : incomingTimestamp);
-    cacheAccessOrder.set(videoId, Date.now());
-    evictLRUEntries();
-    return;
-  }
-  hiddenVideoCache.delete(videoId);
-  cacheAccessOrder.delete(videoId);
+  cacheManager.mergeFetchedRecord(videoId, record);
 }
 
 /**
@@ -69,45 +49,66 @@ export function mergeFetchedRecord(videoId, record) {
  * @returns {Object|null} - Cached record or null
  */
 export function getCachedHiddenVideo(videoId) {
-  if (!videoId) return null;
-  const record = hiddenVideoCache.get(videoId);
-  // Always update access time, even for cache misses
-  // This ensures LRU tracking works correctly for all queries
-  cacheAccessOrder.set(videoId, Date.now());
+  const record = cacheManager.get(videoId);
   return record || null;
 }
 
+/**
+ * Clears all cache entries
+ */
 export function clearCache() {
-  hiddenVideoCache.clear();
-  hiddenVideoTimestamps.clear();
-  cacheAccessOrder.clear();
+  cacheManager.clear();
 }
 
+/**
+ * Checks if there is a pending request for a video
+ * @param {string} videoId - Video identifier
+ * @returns {boolean}
+ */
 export function hasPendingRequest(videoId) {
-  return pendingHiddenVideoRequests.has(videoId);
+  return cacheManager.hasPendingRequest(videoId);
 }
 
+/**
+ * Gets a pending request for a video
+ * @param {string} videoId - Video identifier
+ * @returns {Promise|undefined}
+ */
 export function getPendingRequest(videoId) {
-  return pendingHiddenVideoRequests.get(videoId);
+  return cacheManager.getPendingRequest(videoId);
 }
 
+/**
+ * Sets a pending request for a video
+ * @param {string} videoId - Video identifier
+ * @param {Promise} promise - Pending promise
+ */
 export function setPendingRequest(videoId, promise) {
-  pendingHiddenVideoRequests.set(videoId, promise);
+  cacheManager.setPendingRequest(videoId, promise);
 }
 
+/**
+ * Deletes a pending request for a video
+ * @param {string} videoId - Video identifier
+ */
 export function deletePendingRequest(videoId) {
-  pendingHiddenVideoRequests.delete(videoId);
+  cacheManager.deletePendingRequest(videoId);
 }
 
 /**
  * Clears all pending requests (useful for navigation events)
  */
 export function clearPendingRequests() {
-  pendingHiddenVideoRequests.clear();
+  cacheManager.clearPendingRequests();
 }
 
+/**
+ * Checks if a video is cached
+ * @param {string} videoId - Video identifier
+ * @returns {boolean}
+ */
 export function hasCachedVideo(videoId) {
-  return hiddenVideoCache.has(videoId);
+  return cacheManager.has(videoId);
 }
 
 /**
@@ -115,7 +116,7 @@ export function hasCachedVideo(videoId) {
  * @returns {number} - Number of entries in cache
  */
 export function getCacheSize() {
-  return hiddenVideoCache.size;
+  return cacheManager.getStats().size;
 }
 
 /**
@@ -123,14 +124,21 @@ export function getCacheSize() {
  * @returns {number} - Estimated memory usage
  */
 export function getCacheMemoryUsage() {
-  let estimatedSize = 0;
-  hiddenVideoCache.forEach((record, videoId) => {
-    // Estimate: videoId (11 chars * 2 bytes) + record (state, title, updatedAt)
-    estimatedSize += videoId.length * 2;
-    if (record) {
-      estimatedSize += (record.title?.length || 0) * 2;
-      estimatedSize += 32; // Approximate overhead for state + updatedAt + object structure
-    }
-  });
-  return estimatedSize;
+  return cacheManager.getMemoryUsage();
+}
+
+/**
+ * Validates cache consistency between all Map structures
+ * @returns {Object} - Validation result with status and details
+ */
+export function validateCacheConsistency() {
+  return cacheManager.validateConsistency();
+}
+
+/**
+ * Repairs cache inconsistencies by synchronizing all Map structures
+ * @returns {Object} - Repair result with actions taken
+ */
+export function repairCacheConsistency() {
+  return cacheManager.repairConsistency();
 }

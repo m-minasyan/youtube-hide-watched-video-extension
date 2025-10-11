@@ -1,3 +1,6 @@
+import { DEBUG } from '../utils/constants.js';
+import { debug, warn } from '../../shared/logger.js';
+
 // WeakMap caches for different query types
 const elementParentCache = new WeakMap();
 const elementChildrenCache = new WeakMap();
@@ -44,7 +47,7 @@ export function cachedClosest(element, selector) {
     return result;
   } catch (error) {
     // Invalid selector or element - fall back to uncached query
-    console.warn('[YT-HWV Cache] Error in cachedClosest:', error);
+    warn('[YT-HWV Cache] Error in cachedClosest:', error);
     try {
       return element.closest(selector);
     } catch (fallbackError) {
@@ -81,7 +84,7 @@ export function cachedQuerySelector(element, selector) {
     return result;
   } catch (error) {
     // Invalid selector or element - fall back to uncached query
-    console.warn('[YT-HWV Cache] Error in cachedQuerySelector:', error);
+    warn('[YT-HWV Cache] Error in cachedQuerySelector:', error);
     try {
       return element.querySelector(selector);
     } catch (fallbackError) {
@@ -119,7 +122,7 @@ export function cachedQuerySelectorAll(element, selector) {
     return result;
   } catch (error) {
     // Invalid selector or element - fall back to uncached query
-    console.warn('[YT-HWV Cache] Error in cachedQuerySelectorAll:', error);
+    warn('[YT-HWV Cache] Error in cachedQuerySelectorAll:', error);
     try {
       return Array.from(element.querySelectorAll(selector));
     } catch (fallbackError) {
@@ -163,7 +166,7 @@ export function cachedDocumentQuery(selector, ttl = 1000) {
     return results;
   } catch (error) {
     // Invalid selector - fall back to uncached query
-    console.warn('[YT-HWV Cache] Error in cachedDocumentQuery:', error);
+    warn('[YT-HWV Cache] Error in cachedDocumentQuery:', error);
     try {
       return Array.from(document.querySelectorAll(selector));
     } catch (fallbackError) {
@@ -311,11 +314,77 @@ export function resetCacheStats() {
  */
 export function logCacheStats() {
   const stats = getCacheStats();
-  console.log('[YT-HWV DOM Cache]', {
+  debug('[YT-HWV DOM Cache]', {
     'Hit Rate': `${stats.hitRate}%`,
     'Hits': stats.hits,
     'Misses': stats.misses,
     'Invalidations': stats.invalidations,
     'Total Queries': stats.totalQueries
   });
+}
+
+/**
+ * Query with fallback selector chain
+ * Tries each selector until one succeeds
+ * @param {string} selectorKey - Key for health tracking
+ * @param {Array<string>} selectors - Array of selectors to try
+ * @param {number} ttl - Cache TTL
+ * @returns {Array<Element>} Matched elements
+ */
+export function cachedDocumentQueryWithFallback(selectorKey, selectors, ttl = 1000) {
+  if (!selectors || selectors.length === 0) {
+    return [];
+  }
+
+  // Try each selector in order
+  for (let i = 0; i < selectors.length; i++) {
+    const selector = selectors[i];
+    try {
+      const results = cachedDocumentQuery(selector, ttl);
+
+      if (results.length > 0) {
+        // Log if using fallback selector (not the first one)
+        if (i > 0 && DEBUG) {
+          debug(`[YT-HWV] Using fallback selector #${i} for ${selectorKey}:`, selector);
+        }
+
+        return results;
+      }
+    } catch (error) {
+      warn(`[YT-HWV] Selector failed: ${selector}`, error);
+    }
+  }
+
+  // All selectors failed
+  return [];
+}
+
+/**
+ * Element query with fallback selector chain
+ * @param {Element} element - Parent element
+ * @param {string} selectorKey - Key for health tracking
+ * @param {Array<string>} selectors - Array of selectors to try
+ * @returns {Element|null} First matched element
+ */
+export function cachedQuerySelectorWithFallback(element, selectorKey, selectors) {
+  if (!element || !selectors || selectors.length === 0) {
+    return null;
+  }
+
+  for (let i = 0; i < selectors.length; i++) {
+    const selector = selectors[i];
+    try {
+      const result = cachedQuerySelector(element, selector);
+      if (result) {
+        if (i > 0 && DEBUG) {
+          debug(`[YT-HWV] Using fallback selector #${i} for ${selectorKey}:`, selector);
+        }
+        return result;
+      }
+    } catch (error) {
+      warn(`[YT-HWV] Selector failed: ${selector}`, error);
+    }
+  }
+
+  return null;
 }

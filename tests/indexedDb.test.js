@@ -17,20 +17,20 @@ describe('IndexedDB hidden videos store', () => {
 
   test('upserts and retrieves hidden videos by id', async () => {
     await dbModule.upsertHiddenVideos([
-      { videoId: 'a', state: 'hidden', title: 'First', updatedAt: 1000 },
-      { videoId: 'b', state: 'dimmed', title: 'Second', updatedAt: 2000 }
+      { videoId: 'video-a-test', state: 'hidden', title: 'First', updatedAt: 1000 },
+      { videoId: 'video-b-test', state: 'dimmed', title: 'Second', updatedAt: 2000 }
     ]);
-    const result = await dbModule.getHiddenVideosByIds(['a', 'b', 'c']);
-    expect(Object.keys(result)).toEqual(['a', 'b']);
-    expect(result.a.state).toBe('hidden');
-    expect(result.b.state).toBe('dimmed');
+    const result = await dbModule.getHiddenVideosByIds(['video-a-test', 'video-b-test', 'video-c-test']);
+    expect(Object.keys(result)).toEqual(['video-a-test', 'video-b-test']);
+    expect(result['video-a-test'].state).toBe('hidden');
+    expect(result['video-b-test'].state).toBe('dimmed');
   });
 
   test('paginates results ordered by updatedAt', async () => {
     const records = [];
     for (let i = 0; i < 5; i += 1) {
       records.push({
-        videoId: `video${i}`,
+        videoId: `test-video-${i}`,
         state: i % 2 === 0 ? 'hidden' : 'dimmed',
         title: `Video ${i}`,
         updatedAt: 1000 + i
@@ -38,16 +38,16 @@ describe('IndexedDB hidden videos store', () => {
     }
     await dbModule.upsertHiddenVideos(records);
     const page1 = await dbModule.getHiddenVideosPage({ limit: 2 });
-    expect(page1.items.map((item) => item.videoId)).toEqual(['video4', 'video3']);
+    expect(page1.items.map((item) => item.videoId)).toEqual(['test-video-4', 'test-video-3']);
     expect(page1.hasMore).toBe(true);
     const page2 = await dbModule.getHiddenVideosPage({ limit: 2, cursor: page1.nextCursor });
-    expect(page2.items.map((item) => item.videoId)).toEqual(['video2', 'video1']);
+    expect(page2.items.map((item) => item.videoId)).toEqual(['test-video-2', 'test-video-1']);
   });
 
   test('computes stats and clears store', async () => {
     await dbModule.upsertHiddenVideos([
-      { videoId: 'x', state: 'hidden', title: '', updatedAt: Date.now() },
-      { videoId: 'y', state: 'dimmed', title: '', updatedAt: Date.now() }
+      { videoId: 'video-x-test', state: 'hidden', title: '', updatedAt: Date.now() },
+      { videoId: 'video-y-test', state: 'dimmed', title: '', updatedAt: Date.now() }
     ]);
     const stats = await dbModule.getHiddenVideosStats();
     expect(stats.total).toBe(2);
@@ -61,12 +61,12 @@ describe('IndexedDB hidden videos store', () => {
   test('removes oldest records when pruning', async () => {
     const now = Date.now();
     await dbModule.upsertHiddenVideos([
-      { videoId: 'old', state: 'hidden', title: '', updatedAt: now - 100 },
-      { videoId: 'new', state: 'hidden', title: '', updatedAt: now }
+      { videoId: 'video-old-test', state: 'hidden', title: '', updatedAt: now - 100 },
+      { videoId: 'video-new-test', state: 'hidden', title: '', updatedAt: now }
     ]);
     await dbModule.deleteOldestHiddenVideos(1);
-    const remaining = await dbModule.getHiddenVideosByIds(['old', 'new']);
-    expect(remaining.old).toBeUndefined();
-    expect(remaining.new).toBeTruthy();
+    const remaining = await dbModule.getHiddenVideosByIds(['video-old-test', 'video-new-test']);
+    expect(remaining['video-old-test']).toBeUndefined();
+    expect(remaining['video-new-test']).toBeTruthy();
   });
 });

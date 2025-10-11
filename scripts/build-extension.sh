@@ -21,13 +21,23 @@ fi
 
 echo "✅ Content script built successfully"
 
+echo "🔨 Building background service worker..."
+npm run build:background:prod
+
+if [ $? -ne 0 ]; then
+  echo "❌ Background script build failed!"
+  exit 1
+fi
+
+echo "✅ Background service worker built successfully"
+
 rm -rf "$BUILD_DIR" "$DIST_DIR"
 mkdir -p "$BUILD_DIR" "$DIST_DIR"
 
 echo "📋 Copying extension files..."
 
 cp manifest.json "$BUILD_DIR/"
-cp background.js "$BUILD_DIR/"
+cp background.bundle.js "$BUILD_DIR/"
 cp -r background "$BUILD_DIR/"
 cp -r shared "$BUILD_DIR/"
 cp content.js "$BUILD_DIR/"
@@ -57,6 +67,27 @@ cd "$PROJECT_ROOT" || exit 1
 
 echo "🧹 Cleaning up build directory..."
 rm -rf "$BUILD_DIR"
+
+# Extract to Downloads folder
+DOWNLOADS_DIR="/Users/kuberstar/Downloads"
+EXTRACT_DIR="$DOWNLOADS_DIR/$EXTENSION_NAME-v$VERSION"
+
+if [ -d "$DOWNLOADS_DIR" ]; then
+  echo ""
+  echo "📂 Extracting to Downloads folder..."
+  rm -rf "$EXTRACT_DIR"
+  mkdir -p "$EXTRACT_DIR"
+  unzip -q "$DIST_DIR/$ZIP_NAME" -d "$EXTRACT_DIR"
+
+  if [ $? -eq 0 ]; then
+    echo "✅ Extension extracted to:"
+    echo "   $EXTRACT_DIR"
+  else
+    echo "⚠️  Failed to extract to Downloads folder"
+  fi
+else
+  echo "⚠️  Downloads folder not found: $DOWNLOADS_DIR"
+fi
 
 echo ""
 echo "✨ Build complete!"

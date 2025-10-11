@@ -1,5 +1,6 @@
 import { getCacheStats, resetCacheStats } from './domCache.js';
 import { DEBUG } from '../../shared/constants.js';
+import { debug } from './logger.js';
 
 const performanceMetrics = {
   domQueryTime: 0,
@@ -24,7 +25,7 @@ export function measureQuery(queryFn, label = 'Query') {
   performanceMetrics.domQueryTime += duration;
 
   if (duration > 10) { // Log slow queries
-    console.log(`[YT-HWV Performance] Slow ${label}: ${duration.toFixed(2)}ms`);
+    debug(`[YT-HWV Performance] Slow ${label}: ${duration.toFixed(2)}ms`);
   }
 
   return result;

@@ -38,6 +38,9 @@ describe('Shared Constants', () => {
       expect(HIDDEN_VIDEO_MESSAGES.GET_STATS).toBe('HIDDEN_VIDEOS_GET_STATS');
       expect(HIDDEN_VIDEO_MESSAGES.SET_STATE).toBe('HIDDEN_VIDEOS_SET_STATE');
       expect(HIDDEN_VIDEO_MESSAGES.CLEAR_ALL).toBe('HIDDEN_VIDEOS_CLEAR_ALL');
+      expect(HIDDEN_VIDEO_MESSAGES.EXPORT_ALL).toBe('HIDDEN_VIDEOS_EXPORT_ALL');
+      expect(HIDDEN_VIDEO_MESSAGES.IMPORT_RECORDS).toBe('HIDDEN_VIDEOS_IMPORT_RECORDS');
+      expect(HIDDEN_VIDEO_MESSAGES.VALIDATE_IMPORT).toBe('HIDDEN_VIDEOS_VALIDATE_IMPORT');
     });
 
     test('all message types have HIDDEN_VIDEOS prefix', () => {
@@ -47,7 +50,7 @@ describe('Shared Constants', () => {
     });
 
     test('message types object has correct number of types', () => {
-      expect(Object.keys(HIDDEN_VIDEO_MESSAGES).length).toBe(6);
+      expect(Object.keys(HIDDEN_VIDEO_MESSAGES).length).toBe(9);
     });
   });
 

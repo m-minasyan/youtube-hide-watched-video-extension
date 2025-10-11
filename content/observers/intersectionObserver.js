@@ -1,7 +1,7 @@
 import { INTERSECTION_OBSERVER_CONFIG, SELECTOR_STRINGS } from '../utils/constants.js';
 import { processIntersectionEntries, clearVisibilityTracking } from '../utils/visibilityTracker.js';
 import { debounce } from '../utils/debounce.js';
-import { logDebug } from '../utils/logger.js';
+import { logDebug } from '../../shared/logger.js';
 import { cachedDocumentQuery } from '../utils/domCache.js';
 
 let intersectionObserver = null;

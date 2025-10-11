@@ -1,40 +1,82 @@
-import { SELECTORS, CACHE_CONFIG } from '../utils/constants.js';
+import { SELECTOR_CHAINS, CACHE_CONFIG } from '../../shared/constants.js';
 import { getThreshold } from '../storage/settings.js';
-import { logDebug } from '../utils/logger.js';
+import { logDebug } from '../../shared/logger.js';
 import { extractVideoIdFromHref } from '../utils/dom.js';
-import { cachedDocumentQuery, cachedQuerySelectorAll } from '../utils/domCache.js';
+import { cachedDocumentQueryWithFallback, cachedQuerySelectorWithFallback } from '../utils/domCache.js';
 
 export function getVideoId(element) {
-  // Use cached querySelector for links
-  const links = cachedQuerySelectorAll(element, 'a[href*="/watch?v="], a[href*="/shorts/"]');
-  for (const link of links) {
-    const href = link.getAttribute('href');
+  // Use fallback chain for video links
+  const videoLink = cachedQuerySelectorWithFallback(
+    element,
+    'VIDEO_LINK',
+    SELECTOR_CHAINS.VIDEO_LINK
+  );
+
+  if (videoLink) {
+    const href = videoLink.getAttribute('href');
     const videoId = extractVideoIdFromHref(href);
     if (videoId) return videoId;
   }
+
+  // Try shorts link as fallback
+  const shortsLink = cachedQuerySelectorWithFallback(
+    element,
+    'SHORTS_LINK',
+    SELECTOR_CHAINS.SHORTS_LINK
+  );
+
+  if (shortsLink) {
+    const href = shortsLink.getAttribute('href');
+    const videoId = extractVideoIdFromHref(href);
+    if (videoId) return videoId;
+  }
+
   return null;
 }
 
 export function findWatchedElements() {
-  const watched = [];
-  const seen = new Set();
-
-  SELECTORS.PROGRESS_BAR.forEach(selector => {
-    // Use cached query with short TTL for progress bars (they update frequently)
-    cachedDocumentQuery(selector, CACHE_CONFIG.PROGRESS_BAR_TTL).forEach(el => {
-      if (!seen.has(el)) {
-        seen.add(el);
-        watched.push(el);
-      }
-    });
-  });
+  // Use fallback chain for progress bars
+  const progressBars = cachedDocumentQueryWithFallback(
+    'PROGRESS_BAR',
+    SELECTOR_CHAINS.PROGRESS_BAR,
+    CACHE_CONFIG.PROGRESS_BAR_TTL
+  );
 
   const threshold = getThreshold();
-  const withThreshold = watched.filter((bar) => {
-    return bar.style.width && parseInt(bar.style.width, 10) >= threshold;
+  const withThreshold = progressBars.filter((bar) => {
+    // First, check if the element itself has style.width
+    if (bar.style.width) {
+      return parseInt(bar.style.width, 10) >= threshold;
+    }
+
+    // If not, try to find the actual progress bar element inside the container
+    // This handles cases where the selector returns a container element
+    // but the actual progress bar with width is nested inside
+    // Use specific known YouTube progress bar selectors in order of reliability
+    const progressSelectors =
+      '#progress, ' +
+      '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment, ' +
+      '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar, ' +
+      '.progress-bar';
+
+    // Try regular DOM first
+    let progressChild = bar.querySelector(progressSelectors);
+
+    // If not found in regular DOM, try Shadow DOM
+    // YouTube uses Shadow DOM for some custom elements
+    if (!progressChild && bar.shadowRoot) {
+      progressChild = bar.shadowRoot.querySelector(progressSelectors);
+    }
+
+    if (progressChild && progressChild.style.width) {
+      return parseInt(progressChild.style.width, 10) >= threshold;
+    }
+
+    // No width found
+    return false;
   });
 
-  logDebug(`Found ${watched.length} watched elements (${withThreshold.length} within threshold)`);
+  logDebug(`Found ${progressBars.length} watched elements (${withThreshold.length} within threshold)`);
 
   return withThreshold;
 }

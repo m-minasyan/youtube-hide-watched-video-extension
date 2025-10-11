@@ -47,12 +47,12 @@ describe('EventHandler Module', () => {
     test('should handle "updated" event and update cache', () => {
       const event = {
         type: 'updated',
-        record: { videoId: 'vid-1', state: 'dimmed', timestamp: 1000 }
+        record: { videoId: 'test-video-1', state: 'dimmed', timestamp: 1000 }
       };
 
       handleHiddenVideosEvent(event);
 
-      const cached = getCachedHiddenVideo('vid-1');
+      const cached = getCachedHiddenVideo('test-video-1');
       expect(cached).toEqual(event.record);
       expect(applyIndividualHiding).toHaveBeenCalled();
     });
@@ -60,12 +60,12 @@ describe('EventHandler Module', () => {
     test('should update eye button state on "updated" event', () => {
       const button = document.createElement('button');
       button.className = 'yt-hwv-eye-button';
-      button.setAttribute('data-video-id', 'vid-1');
+      button.setAttribute('data-video-id', 'test-video-1');
       document.body.appendChild(button);
 
       const event = {
         type: 'updated',
-        record: { videoId: 'vid-1', state: 'hidden', timestamp: 1000 }
+        record: { videoId: 'test-video-1', state: 'hidden', timestamp: 1000 }
       };
 
       handleHiddenVideosEvent(event);
@@ -74,28 +74,28 @@ describe('EventHandler Module', () => {
     });
 
     test('should handle "removed" event and clear cache', () => {
-      applyCacheUpdate('vid-1', { videoId: 'vid-1', state: 'dimmed', timestamp: 1000 });
+      applyCacheUpdate('test-video-1', { videoId: 'test-video-1', state: 'dimmed', timestamp: 1000 });
 
       const event = {
         type: 'removed',
-        videoId: 'vid-1'
+        videoId: 'test-video-1'
       };
 
       handleHiddenVideosEvent(event);
 
-      expect(getCachedHiddenVideo('vid-1')).toBeNull();
+      expect(getCachedHiddenVideo('test-video-1')).toBeNull();
       expect(applyIndividualHiding).toHaveBeenCalled();
     });
 
     test('should reset eye button state on "removed" event', () => {
       const button = document.createElement('button');
       button.className = 'yt-hwv-eye-button hidden';
-      button.setAttribute('data-video-id', 'vid-1');
+      button.setAttribute('data-video-id', 'test-video-1');
       document.body.appendChild(button);
 
       const event = {
         type: 'removed',
-        videoId: 'vid-1'
+        videoId: 'test-video-1'
       };
 
       handleHiddenVideosEvent(event);
@@ -105,8 +105,8 @@ describe('EventHandler Module', () => {
     });
 
     test('should handle "cleared" event and clear entire cache', () => {
-      applyCacheUpdate('vid-1', { videoId: 'vid-1', state: 'dimmed', timestamp: 1000 });
-      applyCacheUpdate('vid-2', { videoId: 'vid-2', state: 'hidden', timestamp: 2000 });
+      applyCacheUpdate('test-video-1', { videoId: 'test-video-1', state: 'dimmed', timestamp: 1000 });
+      applyCacheUpdate('test-video-2', { videoId: 'test-video-2', state: 'hidden', timestamp: 2000 });
 
       const event = {
         type: 'cleared'
@@ -114,8 +114,8 @@ describe('EventHandler Module', () => {
 
       handleHiddenVideosEvent(event);
 
-      expect(getCachedHiddenVideo('vid-1')).toBeNull();
-      expect(getCachedHiddenVideo('vid-2')).toBeNull();
+      expect(getCachedHiddenVideo('test-video-1')).toBeNull();
+      expect(getCachedHiddenVideo('test-video-2')).toBeNull();
       expect(applyIndividualHiding).toHaveBeenCalled();
     });
 
@@ -153,21 +153,21 @@ describe('EventHandler Module', () => {
       jest.useRealTimers();
     });
 
-    test('should call watched and shorts hiding functions', () => {
-      applyHiding();
+    test('should call watched and shorts hiding functions', async () => {
+      await applyHiding();
 
       expect(updateClassOnWatchedItems).toHaveBeenCalled();
       expect(updateClassOnShortsItems).toHaveBeenCalled();
     });
 
-    test('should add eye buttons immediately', () => {
-      applyHiding();
+    test('should add eye buttons immediately', async () => {
+      await applyHiding();
 
       expect(addEyeButtons).toHaveBeenCalled();
     });
 
-    test('should apply individual hiding immediately', () => {
-      applyHiding();
+    test('should apply individual hiding and wait for completion', async () => {
+      await applyHiding();
 
       expect(applyIndividualHiding).toHaveBeenCalled();
     });
@@ -225,14 +225,14 @@ describe('EventHandler Module', () => {
 
       setupMessageListener();
 
-      const event = { videoId: 'vid-1', state: 'dimmed' };
+      const event = { videoId: 'test-video-1', state: 'dimmed' };
       await messageHandler(
         { type: 'HIDDEN_VIDEOS_EVENT', event: { type: 'updated', record: event } },
         {},
         jest.fn()
       );
 
-      const cached = getCachedHiddenVideo('vid-1');
+      const cached = getCachedHiddenVideo('test-video-1');
       expect(cached).toEqual(event);
     });
 

@@ -1,5 +1,5 @@
 import { STORAGE_KEYS } from '../utils/constants.js';
-import { logDebug } from '../utils/logger.js';
+import { logDebug } from '../../shared/logger.js';
 
 let settings = {
   threshold: 10,
