@@ -213,9 +213,9 @@ export const INDEXEDDB_CONFIG = {
 
   // Timeout settings
   OPERATION_TIMEOUT: 30000, // 30 seconds - timeout for individual operations
-  CURSOR_TIMEOUT: 60000, // 60 seconds - timeout for cursor operations (can be longer)
-  DB_OPEN_TIMEOUT: 10000, // 10 seconds - timeout for opening database
-  RESET_TIMEOUT: 30000 // 30 seconds - timeout for database reset
+  CURSOR_TIMEOUT: 120000, // 2 minutes - timeout for cursor operations (handles 200k+ records on slow devices)
+  DB_OPEN_TIMEOUT: 30000, // 30 seconds - timeout for opening database (old Android devices need 15-20s)
+  RESET_TIMEOUT: 60000 // 1 minute - timeout for database reset (handles large DB cleanup)
 };
 
 // Feature flags for IndexedDB optimizations
