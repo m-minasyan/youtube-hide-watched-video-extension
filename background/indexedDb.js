@@ -19,6 +19,10 @@ let activeOperations = 0;
 let shutdownRequested = false;
 let pendingCloseCallback = null;
 
+// Fallback storage processing lock to prevent race conditions
+let fallbackProcessingInProgress = false;
+let fallbackProcessingPromise = null;
+
 /**
  * Wraps a promise with a timeout to prevent indefinite hanging
  * @param {Promise} promise - The promise to wrap
@@ -357,7 +361,8 @@ async function withStore(mode, handler, operationContext = null) {
       if (quotaResult.success && quotaResult.cleanupPerformed) {
         try {
           // Retry the operation with up to QUOTA_CONFIG.MAX_RETRY_ATTEMPTS attempts
-          const maxRetries = QUOTA_CONFIG.MAX_RETRY_ATTEMPTS || 3;
+          // Validate retry attempts to prevent excessive retries (1-10 range)
+          const maxRetries = Math.max(1, Math.min(QUOTA_CONFIG.MAX_RETRY_ATTEMPTS || 3, 10));
           let lastError = error;
 
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -915,88 +920,109 @@ export { attemptDatabaseReset };
 /**
  * Processes fallback storage and attempts to save pending records to IndexedDB
  * Should be called periodically or when quota is likely available
+ * Uses a lock to prevent race conditions when multiple alarm callbacks trigger simultaneously
  * @returns {Promise<Object>} Result with success count and remaining records
  */
 export async function processFallbackStorage() {
-  try {
-    const fallbackRecords = await getFromFallbackStorage();
-
-    if (fallbackRecords.length === 0) {
-      return {
-        success: true,
-        processed: 0,
-        remaining: 0,
-        message: 'No fallback records to process'
-      };
-    }
-
-    logError('IndexedDB', new Error('Processing fallback storage'), {
+  // Prevent race condition: if already processing, return the existing promise
+  if (fallbackProcessingInProgress && fallbackProcessingPromise) {
+    logError('IndexedDB', new Error('Fallback processing already in progress'), {
       operation: 'processFallbackStorage',
-      recordCount: fallbackRecords.length
+      skipped: true
     });
+    return fallbackProcessingPromise;
+  }
 
-    // Process in batches to avoid overwhelming IndexedDB
-    const BATCH_SIZE = 100;
-    let processedCount = 0;
-    let failedAtBatch = -1;
+  // Set lock flag and create promise
+  fallbackProcessingInProgress = true;
 
-    for (let i = 0; i < fallbackRecords.length; i += BATCH_SIZE) {
-      const batch = fallbackRecords.slice(i, Math.min(i + BATCH_SIZE, fallbackRecords.length));
+  fallbackProcessingPromise = (async () => {
+    try {
+      const fallbackRecords = await getFromFallbackStorage();
 
-      try {
-        await upsertHiddenVideos(batch);
-        processedCount += batch.length;
+      if (fallbackRecords.length === 0) {
+        return {
+          success: true,
+          processed: 0,
+          remaining: 0,
+          message: 'No fallback records to process'
+        };
+      }
 
-        // Successfully saved this batch - remove from fallback storage
-        await removeFromFallbackStorage(batch.length);
-      } catch (error) {
-        const errorType = classifyError(error);
+      logError('IndexedDB', new Error('Processing fallback storage'), {
+        operation: 'processFallbackStorage',
+        recordCount: fallbackRecords.length
+      });
 
-        if (errorType === ErrorType.QUOTA_EXCEEDED) {
-          // Still quota exceeded - stop processing
-          failedAtBatch = i;
-          logError('IndexedDB', error, {
-            operation: 'processFallbackStorage',
-            quotaStillExceeded: true,
-            processedCount,
-            remainingCount: fallbackRecords.length - processedCount
-          });
-          break;
-        } else {
-          // Other error - log and continue with next batch
-          logError('IndexedDB', error, {
-            operation: 'processFallbackStorage',
-            batchIndex: i,
-            batchSize: batch.length,
-            continuing: true
-          });
+      // Process in batches to avoid overwhelming IndexedDB
+      const BATCH_SIZE = 100;
+      let processedCount = 0;
+      let failedAtBatch = -1;
+
+      for (let i = 0; i < fallbackRecords.length; i += BATCH_SIZE) {
+        const batch = fallbackRecords.slice(i, Math.min(i + BATCH_SIZE, fallbackRecords.length));
+
+        try {
+          await upsertHiddenVideos(batch);
+          processedCount += batch.length;
+
+          // Successfully saved this batch - remove from fallback storage
+          await removeFromFallbackStorage(batch.length);
+        } catch (error) {
+          const errorType = classifyError(error);
+
+          if (errorType === ErrorType.QUOTA_EXCEEDED) {
+            // Still quota exceeded - stop processing
+            failedAtBatch = i;
+            logError('IndexedDB', error, {
+              operation: 'processFallbackStorage',
+              quotaStillExceeded: true,
+              processedCount,
+              remainingCount: fallbackRecords.length - processedCount
+            });
+            break;
+          } else {
+            // Other error - log and continue with next batch
+            logError('IndexedDB', error, {
+              operation: 'processFallbackStorage',
+              batchIndex: i,
+              batchSize: batch.length,
+              continuing: true
+            });
+          }
         }
       }
+
+      const remaining = fallbackRecords.length - processedCount;
+
+      return {
+        success: processedCount > 0,
+        processed: processedCount,
+        remaining,
+        message: processedCount > 0
+          ? `Successfully processed ${processedCount} records from fallback storage. ${remaining} remaining.`
+          : 'Failed to process fallback records - quota may still be exceeded.'
+      };
+    } catch (error) {
+      logError('IndexedDB', error, {
+        operation: 'processFallbackStorage',
+        fatal: true
+      });
+
+      return {
+        success: false,
+        processed: 0,
+        remaining: 0,
+        error: error.message
+      };
+    } finally {
+      // Release lock
+      fallbackProcessingInProgress = false;
+      fallbackProcessingPromise = null;
     }
+  })();
 
-    const remaining = fallbackRecords.length - processedCount;
-
-    return {
-      success: processedCount > 0,
-      processed: processedCount,
-      remaining,
-      message: processedCount > 0
-        ? `Successfully processed ${processedCount} records from fallback storage. ${remaining} remaining.`
-        : 'Failed to process fallback records - quota may still be exceeded.'
-    };
-  } catch (error) {
-    logError('IndexedDB', error, {
-      operation: 'processFallbackStorage',
-      fatal: true
-    });
-
-    return {
-      success: false,
-      processed: 0,
-      remaining: 0,
-      error: error.message
-    };
-  }
+  return fallbackProcessingPromise;
 }
 
 /**
