@@ -819,8 +819,10 @@ export async function initializeHiddenVideosService() {
     return;
   }
 
-  // Create and assign lock atomically to prevent race condition
-  const lock = (async () => {
+  // CRITICAL FIX: Assign lock BEFORE starting async operation to prevent race condition
+  // Previous code had a gap between creating the promise and assigning it to initializationLock
+  // where another call could slip through and create a second initialization
+  initializationLock = (async () => {
     try {
       await initializeDb();
       dbInitialized = true;
@@ -835,6 +837,5 @@ export async function initializeHiddenVideosService() {
     }
   })();
 
-  initializationLock = lock;
-  return lock;
+  return initializationLock;
 }
