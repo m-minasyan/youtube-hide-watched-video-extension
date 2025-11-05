@@ -12,7 +12,6 @@ import {
 } from './cache.js';
 import { sendHiddenVideosMessage } from '../../shared/messaging.js';
 import { logError, classifyError, ErrorType } from '../../shared/errorHandler.js';
-import { showNotification } from '../../shared/notifications.js';
 
 // Re-export sendHiddenVideosMessage for backward compatibility
 export { sendHiddenVideosMessage };
@@ -137,16 +136,7 @@ export async function setHiddenVideoState(videoId, state, title) {
       state
     });
 
-    // Show user notification for persistent errors (after all retries exhausted)
-    const errorType = classifyError(error);
-    // Check for DOM availability before showing notification
-    if (typeof document !== 'undefined' && document.body) {
-      const message = errorType === ErrorType.NETWORK
-        ? 'Unable to connect to extension. Please check your connection.'
-        : 'Failed to save video state. Please try again.';
-      showNotification(message, 'error', 3000);
-    }
-
+    // Error logged to console only, no user-facing notification
     // Revert optimistic update on failure
     applyCacheUpdate(sanitizedId, null);
     throw error;

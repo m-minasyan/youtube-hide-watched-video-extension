@@ -46,9 +46,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": [
-        "shared/notifications.css"
-      ],
+      "resources": [],
       "matches": ["*://*.youtube.com/*"]
     }
   ]

@@ -9,7 +9,6 @@ import { logDebug, warn } from './utils/logger.js';
 import { sendHiddenVideosMessage } from '../shared/messaging.js';
 import { HIDDEN_VIDEO_MESSAGES } from '../shared/constants.js';
 import { logError } from '../shared/errorHandler.js';
-import { showNotification } from '../shared/notifications.js';
 import { setupDOMHealthMonitoring } from './utils/domErrorDetection.js';
 import { resetSelectorStats } from './utils/domSelectorHealth.js';
 
@@ -66,9 +65,7 @@ async function init() {
       injectStyles();
     } catch (styleError) {
       logError('ContentInit', styleError, { component: 'styles', fatal: true });
-      if (typeof document !== 'undefined' && document.body) {
-        showNotification('YouTube Hide Watched Videos failed to load styles', 'error', 5000);
-      }
+      // Error logged to console only, no user-facing notification
       throw styleError;
     }
 
@@ -94,9 +91,7 @@ async function init() {
     setupMessageListener();
   } catch (error) {
     logError('ContentInit', error, { fatal: true });
-    if (typeof document !== 'undefined' && document.body) {
-      showNotification('YouTube Hide Watched Videos extension failed to initialize', 'error', 5000);
-    }
+    // Error logged to console only, no user-facing notification
   }
 }
 
