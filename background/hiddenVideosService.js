@@ -681,9 +681,9 @@ const MESSAGE_HANDLERS = {
 function registerMessageListener() {
   console.log('[HiddenVideos] Registering message listener');
 
-  chrome.runtime.onMessage.addListener((message, sender) => {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // CRITICAL: Early returns must not prevent response for valid messages
-    // Only return undefined for truly invalid messages
+    // Only return false for truly invalid messages
     if (!message || typeof message.type !== 'string') {
       return false; // Explicitly signal no async response for invalid messages
     }
@@ -696,10 +696,8 @@ function registerMessageListener() {
 
     console.log('[HiddenVideos] Handling message:', message.type);
 
-    // IMPORTANT: Return a Promise immediately to keep the message channel open
-    // This is the Manifest V3 way - Chrome will wait for the promise to resolve
-    // and send the resolved value as the response
-    return (async () => {
+    // Handle both promise-based (tests) and callback-based (Chrome API) patterns
+    const handleAsync = async () => {
       try {
         let result;
 
@@ -717,20 +715,35 @@ function registerMessageListener() {
           } catch (initError) {
             // If initialization failed, return meaningful error
             console.error('[HiddenVideos] Initialization error:', initError);
-            return {
+            const errorResponse = {
               ok: false,
               error: `Background service initialization failed: ${initError.message}`
             };
+            if (sendResponse) sendResponse(errorResponse);
+            return errorResponse;
           }
         }
 
-        console.log('[HiddenVideos] Returning success response for:', message.type);
-        return { ok: true, result };
+        console.log('[HiddenVideos] Sending success response for:', message.type);
+        const successResponse = { ok: true, result };
+        if (sendResponse) sendResponse(successResponse);
+        return successResponse;
       } catch (error) {
         console.error('[HiddenVideos] Message handler error:', error);
-        return { ok: false, error: error.message };
+        const errorResponse = { ok: false, error: error.message };
+        if (sendResponse) sendResponse(errorResponse);
+        return errorResponse;
       }
-    })();
+    };
+
+    // If sendResponse is not provided (tests), return the promise directly
+    // Otherwise, call the async function and return true to keep channel open
+    if (!sendResponse) {
+      return handleAsync();
+    }
+
+    handleAsync();
+    return true; // Keep message channel open for async response
   });
 
   console.log('[HiddenVideos] Message listener registration complete');
