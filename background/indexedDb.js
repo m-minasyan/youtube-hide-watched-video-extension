@@ -220,9 +220,26 @@ async function withStore(mode, handler, operationContext = null) {
 
     // Handle quota exceeded with comprehensive quota manager
     if (errorType === ErrorType.QUOTA_EXCEEDED) {
+      // Check if we're already in a quota retry loop to prevent infinite recursion
+      const quotaRetryDepth = (operationContext?.quotaRetryDepth || 0);
+      const maxQuotaRetryDepth = 1; // Only allow one level of quota retry
+
+      if (quotaRetryDepth >= maxQuotaRetryDepth) {
+        // Already in a quota retry - don't create nested retry loops
+        logError('IndexedDB', error, {
+          operation: 'withStore',
+          quotaExceeded: true,
+          quotaRetryDepth,
+          preventingNestedRetry: true,
+          operationContext
+        });
+        throw error;
+      }
+
       logError('IndexedDB', error, {
         operation: 'withStore',
         quotaExceeded: true,
+        quotaRetryDepth,
         operationContext
       });
 
@@ -242,9 +259,11 @@ async function withStore(mode, handler, operationContext = null) {
 
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
+              // Pass increased quota retry depth to prevent nested loops
               return await withStore(mode, handler, {
                 ...operationContext,
-                retryAttempt: attempt
+                retryAttempt: attempt,
+                quotaRetryDepth: quotaRetryDepth + 1
               });
             } catch (retryError) {
               lastError = retryError;
@@ -255,6 +274,7 @@ async function withStore(mode, handler, operationContext = null) {
                 logError('IndexedDB', retryError, {
                   operation: 'quota_retry',
                   attempt,
+                  quotaRetryDepth,
                   performingAdditionalCleanup: true
                 });
 
@@ -271,6 +291,7 @@ async function withStore(mode, handler, operationContext = null) {
           // All retries exhausted - data is safely in fallback storage
           logError('IndexedDB', lastError, {
             operation: 'quota_retry_exhausted',
+            quotaRetryDepth,
             dataInFallbackStorage: quotaResult.fallbackSaved,
             fallbackRecords: quotaResult.fallbackRecords,
             fatal: true
@@ -285,6 +306,7 @@ async function withStore(mode, handler, operationContext = null) {
       // Cleanup failed - data is in fallback storage if available
       logError('IndexedDB', error, {
         operation: 'quota_cleanup_failed',
+        quotaRetryDepth,
         quotaResult,
         fatal: true
       });
