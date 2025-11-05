@@ -726,7 +726,13 @@ function registerMessageListener() {
 
         console.log('[HiddenVideos] Sending success response for:', message.type);
         const successResponse = { ok: true, result };
-        if (sendResponse) sendResponse(successResponse);
+        if (sendResponse) {
+          console.log('[HiddenVideos] Calling sendResponse with:', successResponse);
+          sendResponse(successResponse);
+          console.log('[HiddenVideos] sendResponse called successfully');
+        } else {
+          console.log('[HiddenVideos] No sendResponse callback available');
+        }
         return successResponse;
       } catch (error) {
         console.error('[HiddenVideos] Message handler error:', error);
@@ -739,10 +745,13 @@ function registerMessageListener() {
     // If sendResponse is not provided (tests), return the promise directly
     // Otherwise, call the async function and return true to keep channel open
     if (!sendResponse) {
+      console.log('[HiddenVideos] Test mode - returning promise directly');
       return handleAsync();
     }
 
+    console.log('[HiddenVideos] Chrome mode - calling handleAsync and returning true');
     handleAsync();
+    console.log('[HiddenVideos] Returned true to keep message channel open');
     return true; // Keep message channel open for async response
   });
 
