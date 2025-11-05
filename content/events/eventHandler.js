@@ -42,7 +42,7 @@ export function handleHiddenVideosEvent(event) {
   }
 }
 
-export function applyHiding() {
+export async function applyHiding() {
   logDebug('Applying hiding/dimming');
   updateClassOnWatchedItems();
   updateClassOnShortsItems();
@@ -50,7 +50,7 @@ export function applyHiding() {
   // This improves responsiveness and prevents race condition where container state
   // is applied before cache is populated
   addEyeButtons();
-  applyIndividualHiding();
+  await applyIndividualHiding();
 }
 
 // Visibility change handler
@@ -63,10 +63,10 @@ export function setupMessageListener() {
     (async () => {
       if (request.action === 'settingsUpdated') {
         await loadSettings();
-        applyHiding();
+        await applyHiding();
       } else if (request.action === 'resetSettings') {
         await loadSettings();
-        applyHiding();
+        await applyHiding();
       } else if (request.type === 'HIDDEN_VIDEOS_EVENT') {
         handleHiddenVideosEvent(request.event);
       }
