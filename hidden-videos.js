@@ -981,14 +981,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       refreshStats().then(async () => {
         const totalVideos = getTotalVideosForCurrentFilter();
         const maxPages = Math.max(1, Math.ceil(Math.max(totalVideos, 0) / videosPerPage));
-        
+
         if (hiddenVideosState.currentPage > maxPages && maxPages > 0) {
           hiddenVideosState.currentPage = maxPages;
           hiddenVideosState.pageCursors = hiddenVideosState.pageCursors.slice(0, hiddenVideosState.currentPage);
         }
-        
+
         await loadHiddenVideos();
-      }).catch(() => {});
+      }).catch((error) => {
+        if (!error.message?.includes('context invalidated')) {
+          console.error('Failed to refresh hidden videos after event:', error);
+        }
+      });
     }
   });
 });
