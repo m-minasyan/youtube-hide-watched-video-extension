@@ -65,13 +65,15 @@ export function getCachedRecord(videoId) {
   const entry = backgroundCache.get(videoId);
   if (!entry) return undefined; // Return undefined for "not cached"
 
+  // Check TTL and clean up expired entries from BOTH Maps to prevent memory leak
   if (Date.now() - entry.timestamp > CACHE_TTL) {
     backgroundCache.delete(videoId);
-    cacheAccessOrder.delete(videoId);
+    cacheAccessOrder.delete(videoId); // Critical: Remove from access order to prevent orphaned entries
     return undefined; // Return undefined for expired cache
   }
 
-  // Update access time for LRU tracking
+  // Update access time for LRU tracking ONLY for valid (non-expired) entries
+  // This prevents memory leak by ensuring cacheAccessOrder only tracks active cached items
   cacheAccessOrder.set(videoId, Date.now());
   return entry.record; // Can be null for deleted records or an object
 }
