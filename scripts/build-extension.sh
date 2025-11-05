@@ -21,13 +21,23 @@ fi
 
 echo "✅ Content script built successfully"
 
+echo "🔨 Building background service worker..."
+npm run build:background:prod
+
+if [ $? -ne 0 ]; then
+  echo "❌ Background script build failed!"
+  exit 1
+fi
+
+echo "✅ Background service worker built successfully"
+
 rm -rf "$BUILD_DIR" "$DIST_DIR"
 mkdir -p "$BUILD_DIR" "$DIST_DIR"
 
 echo "📋 Copying extension files..."
 
 cp manifest.json "$BUILD_DIR/"
-cp background.js "$BUILD_DIR/"
+cp background.bundle.js "$BUILD_DIR/"
 cp -r background "$BUILD_DIR/"
 cp -r shared "$BUILD_DIR/"
 cp content.js "$BUILD_DIR/"
