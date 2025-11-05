@@ -211,6 +211,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       const estimatedMemoryKB = Math.round((allItems.length * 500) / 1024);
       console.log(`[Memory] Loaded ${allItems.length} items (~${estimatedMemoryKB}KB) for search`);
 
+      // Check if we hit the limit and there are more items
+      const limitReached = hasMore && allItems.length >= maxItems;
+      if (limitReached) {
+        console.warn(`[Memory] Search limit reached (${maxItems} items). Consider using filters to narrow results.`);
+
+        // Show warning notification to user
+        const filterSuggestion = hiddenVideosState.filter === 'all'
+          ? 'Try using the "Dimmed" or "Hidden" filter to narrow your search results.'
+          : 'Try refining your search query to find specific videos.';
+
+        showNotification(
+          `Search limited to first ${maxItems} videos. ${filterSuggestion}`,
+          NotificationType.WARNING,
+          6000
+        );
+      }
+
       // Filter by search query
       const filteredItems = filterItemsBySearch(allItems, hiddenVideosState.searchQuery);
 
