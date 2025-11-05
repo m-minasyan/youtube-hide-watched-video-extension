@@ -1,3 +1,6 @@
+// Log IMMEDIATELY before any imports to verify script loads
+console.log('[Background] ===== BACKGROUND SCRIPT STARTED =====');
+
 import { initializeHiddenVideosService, ensureMessageListenerRegistered } from './background/hiddenVideosService.js';
 import { closeDb } from './background/indexedDb.js';
 import { STORAGE_KEYS, DEFAULT_SETTINGS, SERVICE_WORKER_CONFIG } from './shared/constants.js';
@@ -5,14 +8,20 @@ import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 import { processFallbackStorage } from './background/indexedDb.js';
 import { getFallbackStats } from './background/quotaManager.js';
 
+console.log('[Background] All imports loaded successfully');
+
 // CRITICAL: Register message listener IMMEDIATELY at top level (synchronously)
 // This must happen before any async operations to avoid race conditions where
 // content scripts try to send messages before the listener is registered.
 // The listener will handle messages even during initialization by waiting
 // for the init to complete internally.
-console.log('[Background] Service worker starting, registering message listener...');
-ensureMessageListenerRegistered();
-console.log('[Background] Message listener registered successfully');
+console.log('[Background] Registering message listener...');
+try {
+  ensureMessageListenerRegistered();
+  console.log('[Background] Message listener registered successfully');
+} catch (error) {
+  console.error('[Background] FATAL: Failed to register message listener:', error);
+}
 
 let hiddenVideosInitializationPromise = null;
 let keepAliveStarted = false; // Prevents duplicate keep-alive alarm creation
