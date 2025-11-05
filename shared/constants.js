@@ -196,7 +196,13 @@ export const INDEXEDDB_CONFIG = {
   PREFETCH_DELAY: 100,
 
   // Broadcast
-  BROADCAST_DEBOUNCE: 100
+  BROADCAST_DEBOUNCE: 100,
+
+  // Timeout settings
+  OPERATION_TIMEOUT: 30000, // 30 seconds - timeout for individual operations
+  CURSOR_TIMEOUT: 60000, // 60 seconds - timeout for cursor operations (can be longer)
+  DB_OPEN_TIMEOUT: 10000, // 10 seconds - timeout for opening database
+  RESET_TIMEOUT: 30000 // 30 seconds - timeout for database reset
 };
 
 // Feature flags for IndexedDB optimizations
