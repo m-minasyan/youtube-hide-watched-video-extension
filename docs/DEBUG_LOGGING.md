@@ -143,13 +143,19 @@ optimization: {
 The `DEBUG` constant in `shared/constants.js` is dynamically set:
 
 ```javascript
-export const DEBUG = typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV !== 'production';
+export const DEBUG = typeof __DEV__ !== 'undefined' ? __DEV__ :
+  (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production');
 ```
 
 In production builds:
 - Webpack replaces `__DEV__` with `false`
 - Expression evaluates to `false`
 - All `if (DEBUG)` blocks are removed by dead code elimination
+
+For direct browser loads (popup.js):
+- `__DEV__` is undefined
+- Safely checks if `process` exists before accessing `process.env.NODE_ENV`
+- Defaults to `false` if `process` is not available
 
 ## Benefits
 

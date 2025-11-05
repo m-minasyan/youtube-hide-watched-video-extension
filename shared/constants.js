@@ -142,8 +142,10 @@ export const SELECTOR_STRINGS = {
 
 // Debug flag - replaced at build time by webpack DefinePlugin
 // In development: true, In production: false
-// DO NOT hardcode this value - it must be set by the build system
-export const DEBUG = typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV !== 'production';
+// For webpack builds: __DEV__ is defined by DefinePlugin
+// For direct browser loads (popup.js): check if process exists before accessing
+export const DEBUG = typeof __DEV__ !== 'undefined' ? __DEV__ :
+  (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production');
 
 // DOM Cache Configuration
 export const CACHE_CONFIG = {
