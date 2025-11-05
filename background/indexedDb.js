@@ -137,19 +137,64 @@ async function withStore(mode, handler, operationContext = null) {
         new Promise((resolve, reject) => {
           const tx = db.transaction(STORE_NAME, mode);
           const store = tx.objectStore(STORE_NAME);
-          const handlerPromise = Promise.resolve().then(() => handler(store, tx));
+          let handlerPromise;
+          let handlerRejected = false;
+          let handlerError = null;
+
+          // Wrap handler call to catch synchronous errors
+          try {
+            handlerPromise = Promise.resolve().then(() => handler(store, tx));
+          } catch (error) {
+            // Handler threw synchronously - abort transaction immediately
+            try {
+              tx.abort();
+            } catch (abortError) {
+              // Transaction may already be inactive
+            }
+            reject(error);
+            return;
+          }
+
+          // Handle handler promise rejection - abort transaction explicitly
+          handlerPromise.catch((error) => {
+            handlerRejected = true;
+            handlerError = error;
+            // Abort transaction if handler fails
+            try {
+              tx.abort();
+            } catch (abortError) {
+              // Transaction may already be finishing/finished, or inactive
+              // Continue with error propagation through onabort handler
+            }
+          });
 
           tx.oncomplete = async () => {
+            // If handler was rejected, reject promise even if transaction completed
+            // (shouldn't happen if abort() worked, but defensive programming)
+            if (handlerRejected) {
+              reject(handlerError);
+              return;
+            }
+
             try {
               const value = await handlerPromise;
               resolve(value);
             } catch (error) {
+              // Handler failed after transaction completed
               reject(error);
             }
           };
 
           tx.onerror = () => reject(tx.error);
-          tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
+
+          tx.onabort = () => {
+            // If handler was rejected, use that error instead of generic abort error
+            if (handlerRejected) {
+              reject(handlerError);
+            } else {
+              reject(tx.error || new Error('Transaction aborted'));
+            }
+          };
         }),
         INDEXEDDB_CONFIG.OPERATION_TIMEOUT,
         `IndexedDB ${mode} transaction`
