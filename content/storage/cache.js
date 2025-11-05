@@ -71,9 +71,11 @@ export function mergeFetchedRecord(videoId, record) {
 export function getCachedHiddenVideo(videoId) {
   if (!videoId) return null;
   const record = hiddenVideoCache.get(videoId);
-  // Always update access time, even for cache misses
-  // This ensures LRU tracking works correctly for all queries
-  cacheAccessOrder.set(videoId, Date.now());
+  // Only update access time for cache hits to prevent memory leak
+  // Cache misses should not populate cacheAccessOrder
+  if (record) {
+    cacheAccessOrder.set(videoId, Date.now());
+  }
   return record || null;
 }
 
