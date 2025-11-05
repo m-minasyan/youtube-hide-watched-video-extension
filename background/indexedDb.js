@@ -14,6 +14,11 @@ let dbPromise = null;
 let dbResetInProgress = false;
 let dbResetPromise = null;
 
+// Active operations tracking for graceful shutdown
+let activeOperations = 0;
+let shutdownRequested = false;
+let pendingCloseCallback = null;
+
 /**
  * Wraps a promise with a timeout to prevent indefinite hanging
  * @param {Promise} promise - The promise to wrap
@@ -40,6 +45,12 @@ function withTimeout(promise, timeoutMs, operationName = 'Operation') {
 
 function openDb() {
   if (dbPromise) return dbPromise;
+
+  // Reset shutdown flag when opening database
+  // This handles service worker restart after suspension
+  shutdownRequested = false;
+  activeOperations = 0;
+  pendingCloseCallback = null;
 
   dbPromise = retryOperation(
     () => withTimeout(
@@ -129,8 +140,100 @@ export async function closeDb() {
   }
 }
 
+/**
+ * Synchronously closes the database connection if possible
+ * This is the SAFE version to use in chrome.runtime.onSuspend
+ *
+ * Chrome can terminate the service worker before async operations complete in onSuspend.
+ * This function handles graceful shutdown:
+ *
+ * 1. If no active operations: Closes connection immediately (if already resolved)
+ * 2. If active operations exist: Sets shutdown flag for auto-close after completion
+ *
+ * This prevents:
+ * - Blocking database on next startup
+ * - Data corruption from interrupted operations
+ * - Timeout errors from orphaned connections
+ *
+ * @returns {void} - Synchronous operation, no promise
+ */
+export function closeDbSync() {
+  // Set shutdown flag to prevent new operations
+  shutdownRequested = true;
+
+  if (!dbPromise) {
+    // No database connection to close
+    clearBackgroundCache();
+    return;
+  }
+
+  // If there are active operations, let them complete gracefully
+  // The finally block in withStore() will close the database automatically
+  if (activeOperations > 0) {
+    logError('IndexedDB', new Error('Graceful shutdown initiated - waiting for active operations'), {
+      operation: 'closeDbSync',
+      activeOperations,
+      shutdownRequested: true
+    });
+    return;
+  }
+
+  // No active operations - safe to close immediately
+  // Check if dbPromise is already resolved (synchronous access)
+  if (dbPromise && typeof dbPromise.then === 'function') {
+    // Try to close synchronously if the promise is already resolved
+    // We use a non-awaited promise to avoid blocking
+    dbPromise
+      .then(db => {
+        try {
+          db.close();
+          logError('IndexedDB', new Error('Database closed successfully'), {
+            operation: 'closeDbSync',
+            success: true
+          });
+        } catch (error) {
+          logError('IndexedDB', error, {
+            operation: 'closeDbSync',
+            phase: 'close',
+            nonBlocking: true
+          });
+        }
+      })
+      .catch(error => {
+        logError('IndexedDB', error, {
+          operation: 'closeDbSync',
+          phase: 'resolve',
+          nonBlocking: true
+        });
+      })
+      .finally(() => {
+        dbPromise = null;
+        clearBackgroundCache();
+      });
+  }
+
+  // Clear state immediately (synchronously)
+  // The actual db.close() will happen asynchronously if dbPromise is pending
+  // but we reset our state to prevent new operations
+  dbPromise = null;
+  clearBackgroundCache();
+}
+
 async function withStore(mode, handler, operationContext = null) {
+  // Track active operations for graceful shutdown
+  activeOperations++;
+
   try {
+    // Check if shutdown has been requested
+    if (shutdownRequested) {
+      logError('IndexedDB', new Error('Operation rejected - shutdown in progress'), {
+        operation: 'withStore',
+        mode,
+        shutdownRequested: true
+      });
+      throw new Error('Database is shutting down');
+    }
+
     const db = await openDb();
     return await retryOperation(
       () => withTimeout(
@@ -323,6 +426,41 @@ async function withStore(mode, handler, operationContext = null) {
 
     logError('IndexedDB', error, { operation: 'withStore', mode, fatal: true });
     throw error;
+  } finally {
+    // Decrement active operations counter
+    activeOperations--;
+
+    // If shutdown was requested and no operations are active, close the database
+    if (shutdownRequested && activeOperations === 0) {
+      if (dbPromise) {
+        try {
+          dbPromise.then(db => {
+            db.close();
+            dbPromise = null;
+            clearBackgroundCache();
+          }).catch(() => {
+            // Database may already be closed or in error state
+            dbPromise = null;
+            clearBackgroundCache();
+          });
+        } catch (error) {
+          // Ignore errors during shutdown cleanup
+          dbPromise = null;
+          clearBackgroundCache();
+        }
+      }
+
+      // Call pending close callback if registered
+      if (pendingCloseCallback) {
+        const callback = pendingCloseCallback;
+        pendingCloseCallback = null;
+        try {
+          callback();
+        } catch (error) {
+          logError('IndexedDB', error, { operation: 'pendingCloseCallback' });
+        }
+      }
+    }
   }
 }
 
@@ -859,4 +997,18 @@ export async function processFallbackStorage() {
       error: error.message
     };
   }
+}
+
+/**
+ * Returns the current shutdown state for monitoring and testing
+ * This is useful for debugging graceful shutdown behavior
+ * @returns {Object} Current state of shutdown mechanism
+ */
+export function getShutdownState() {
+  return {
+    shutdownRequested,
+    activeOperations,
+    hasPendingCallback: !!pendingCloseCallback,
+    hasDbConnection: !!dbPromise
+  };
 }
