@@ -265,30 +265,155 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
-   * Highlights search term in text
+   * Creates a DOM element with highlighted search term
+   * This is XSS-safe as it uses textContent instead of innerHTML
+   * @param {string} text - The text to display
+   * @param {string} query - The search query to highlight
+   * @returns {DocumentFragment} - A document fragment containing text nodes and mark elements
    */
-  function highlightSearchTerm(text, query) {
+  function createHighlightedElement(text, query) {
+    const fragment = document.createDocumentFragment();
+
     if (!query || !query.trim()) {
-      return escapeHtml(text);
+      const textNode = document.createTextNode(text);
+      fragment.appendChild(textNode);
+      return fragment;
     }
 
-    const escapedText = escapeHtml(text);
     const normalizedQuery = normalizeString(query);
     const normalizedText = normalizeString(text);
 
     const index = normalizedText.indexOf(normalizedQuery);
     if (index === -1) {
-      return escapedText;
+      const textNode = document.createTextNode(text);
+      fragment.appendChild(textNode);
+      return fragment;
     }
 
     // Get the actual substring from original text (preserving case)
-    // Use normalizedQuery.length instead of query.length to handle Unicode correctly
     const actualMatchLength = normalizedQuery.length;
     const beforeMatch = text.substring(0, index);
     const match = text.substring(index, index + actualMatchLength);
     const afterMatch = text.substring(index + actualMatchLength);
 
-    return `${escapeHtml(beforeMatch)}<mark style="background: var(--accent-color); color: white; padding: 2px 4px; border-radius: 3px;">${escapeHtml(match)}</mark>${escapeHtml(afterMatch)}`;
+    // Create text nodes and mark element safely
+    if (beforeMatch) {
+      fragment.appendChild(document.createTextNode(beforeMatch));
+    }
+
+    const mark = document.createElement('mark');
+    mark.style.background = 'var(--accent-color)';
+    mark.style.color = 'white';
+    mark.style.padding = '2px 4px';
+    mark.style.borderRadius = '3px';
+    mark.textContent = match; // XSS-safe: uses textContent
+    fragment.appendChild(mark);
+
+    if (afterMatch) {
+      fragment.appendChild(document.createTextNode(afterMatch));
+    }
+
+    return fragment;
+  }
+
+  /**
+   * Creates a video card DOM element
+   * XSS-safe: all user data is set via textContent or safely created DOM elements
+   * @param {Object} record - The video record
+   * @param {boolean} isSearching - Whether a search is active
+   * @returns {HTMLElement} - The video card element
+   */
+  function createVideoCard(record, isSearching) {
+    const { videoId, state, title = '' } = record;
+    const isShortsVideo = isShorts(videoId);
+    const encodedVideoId = encodeURIComponent(videoId);
+    const videoUrl = isShortsVideo
+      ? `https://www.youtube.com/shorts/${encodedVideoId}`
+      : `https://www.youtube.com/watch?v=${encodedVideoId}`;
+    const thumbnailUrl = `https://img.youtube.com/vi/${encodedVideoId}/mqdefault.jpg`;
+    const displayTitle = title || (isShortsVideo ? 'YouTube Shorts' : 'YouTube Video');
+
+    // Create the video card container
+    const card = document.createElement('div');
+    card.className = `video-card ${state}`;
+    card.setAttribute('data-video-id', videoId);
+
+    // Create video info section
+    const videoInfo = document.createElement('div');
+    videoInfo.className = 'video-info';
+
+    // Create thumbnail
+    const thumbnail = document.createElement('img');
+    thumbnail.src = thumbnailUrl;
+    thumbnail.alt = 'Video thumbnail';
+    thumbnail.className = 'video-thumbnail';
+    thumbnail.onerror = function() { this.style.display = 'none'; };
+
+    // Create video details
+    const videoDetails = document.createElement('div');
+    videoDetails.className = 'video-details';
+
+    // Create and populate title with highlighting if searching
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'video-title';
+    if (isSearching) {
+      const highlightedFragment = createHighlightedElement(displayTitle, hiddenVideosState.searchQuery);
+      titleDiv.appendChild(highlightedFragment);
+    } else {
+      titleDiv.textContent = displayTitle; // XSS-safe: uses textContent
+    }
+
+    // Create video ID display
+    const videoIdDiv = document.createElement('div');
+    videoIdDiv.className = 'video-id';
+    videoIdDiv.textContent = videoId; // XSS-safe: uses textContent
+
+    // Assemble video details
+    videoDetails.appendChild(titleDiv);
+    videoDetails.appendChild(videoIdDiv);
+
+    // Assemble video info
+    videoInfo.appendChild(thumbnail);
+    videoInfo.appendChild(videoDetails);
+
+    // Create video actions section
+    const videoActions = document.createElement('div');
+    videoActions.className = 'video-actions';
+
+    // Create toggle button
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'video-action-btn';
+    toggleBtn.setAttribute('data-action', 'toggle');
+    toggleBtn.setAttribute('data-video-id', videoId);
+    toggleBtn.textContent = state === 'dimmed' ? 'Hide' : 'Dim';
+    toggleBtn.addEventListener('click', handleVideoAction);
+
+    // Create view button
+    const viewBtn = document.createElement('button');
+    viewBtn.className = 'video-action-btn';
+    viewBtn.setAttribute('data-action', 'view');
+    viewBtn.setAttribute('data-video-id', videoId);
+    viewBtn.textContent = 'View on YouTube';
+    viewBtn.addEventListener('click', handleVideoAction);
+
+    // Create remove button
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'video-action-btn remove';
+    removeBtn.setAttribute('data-action', 'remove');
+    removeBtn.setAttribute('data-video-id', videoId);
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', handleVideoAction);
+
+    // Assemble actions
+    videoActions.appendChild(toggleBtn);
+    videoActions.appendChild(viewBtn);
+    videoActions.appendChild(removeBtn);
+
+    // Assemble card
+    card.appendChild(videoInfo);
+    card.appendChild(videoActions);
+
+    return card;
   }
 
   /**
@@ -364,49 +489,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Render video cards
-    videosContainer.innerHTML = videos.map((record) => {
-      const videoId = record.videoId;
-      const state = record.state;
-      const title = record.title || '';
-      const isShortsVideo = isShorts(videoId);
-      // Properly encode videoId for URLs to prevent injection
-      const encodedVideoId = encodeURIComponent(videoId);
-      const videoUrl = isShortsVideo
-        ? `https://www.youtube.com/shorts/${encodedVideoId}`
-        : `https://www.youtube.com/watch?v=${encodedVideoId}`;
-      const thumbnailUrl = `https://img.youtube.com/vi/${encodedVideoId}/mqdefault.jpg`;
-      const displayTitle = title || (isShortsVideo ? 'YouTube Shorts' : 'YouTube Video');
+    // Render video cards using safe DOM creation (XSS-protected)
+    // Clear the container first
+    videosContainer.innerHTML = '';
 
-      // Highlight search term in title if searching
-      const highlightedTitle = isSearching ? highlightSearchTerm(displayTitle, hiddenVideosState.searchQuery) : escapeHtml(displayTitle);
-
-      return `
-        <div class="video-card ${state}" data-video-id="${escapeHtml(videoId)}">
-          <div class="video-info">
-            <img src="${thumbnailUrl}" alt="Video thumbnail" class="video-thumbnail" onerror="this.style.display='none'">
-            <div class="video-details">
-              <div class="video-title">${highlightedTitle}</div>
-              <div class="video-id">${escapeHtml(videoId)}</div>
-            </div>
-          </div>
-          <div class="video-actions">
-            <button class="video-action-btn" data-action="toggle" data-video-id="${escapeHtml(videoId)}">
-              ${state === 'dimmed' ? 'Hide' : 'Dim'}
-            </button>
-            <button class="video-action-btn" data-action="view" data-video-id="${escapeHtml(videoId)}">
-              View on YouTube
-            </button>
-            <button class="video-action-btn remove" data-action="remove" data-video-id="${escapeHtml(videoId)}">
-              Remove
-            </button>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    document.querySelectorAll('.video-action-btn').forEach((btn) => {
-      btn.addEventListener('click', handleVideoAction);
+    // Create and append each video card using DOM methods
+    videos.forEach((record) => {
+      const videoCard = createVideoCard(record, isSearching);
+      videosContainer.appendChild(videoCard);
     });
 
     updateSearchResultsStatus();
