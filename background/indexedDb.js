@@ -537,6 +537,9 @@ async function attemptDatabaseReset() {
       // Reopen database
       await openDb();
 
+      // Clear the entire background cache since database was reset
+      clearBackgroundCache();
+
       logError('IndexedDB', new Error('Database reset successful'), {
         operation: 'reset',
         success: true
