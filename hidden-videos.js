@@ -4,6 +4,10 @@ import { initTheme, toggleTheme } from './shared/theme.js';
 import { sendHiddenVideosMessage } from './shared/messaging.js';
 import { showNotification, NotificationType } from './shared/notifications.js';
 
+// Debug flag for development logging
+// Set to false before production release
+const DEBUG = false;
+
 /**
  * Debounce function to limit the rate of function calls
  * @param {Function} func - Function to debounce
@@ -216,7 +220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       hiddenVideosState.items = filteredItems.slice(startIndex, endIndex);
       hiddenVideosState.hasMore = endIndex < filteredItems.length;
     } catch (error) {
-      console.error('Search failed:', error);
+      if (DEBUG) console.error('Search failed:', error);
       // Display error message to user
       videosContainer.innerHTML = `
         <div class="empty-state">
@@ -759,7 +763,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       showNotification(`Successfully exported ${exportData.count} videos`, NotificationType.SUCCESS);
 
     } catch (error) {
-      console.error('Export failed:', error);
+      if (DEBUG) console.error('Export failed:', error);
       showNotification(`Export failed: ${error.message}`, NotificationType.ERROR);
     } finally {
       // Restore button state
@@ -823,7 +827,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
     } catch (error) {
-      console.error('Import preparation failed:', error);
+      if (DEBUG) console.error('Import preparation failed:', error);
       showNotification(`Import failed: ${error.message}`, NotificationType.ERROR);
     } finally {
       // Reset file input
@@ -1002,7 +1006,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }, 500);
 
     } catch (error) {
-      console.error('Import execution failed:', error);
+      if (DEBUG) console.error('Import execution failed:', error);
 
       progressDiv.style.display = 'none';
       showNotification(`Import failed: ${error.message}`, NotificationType.ERROR);
@@ -1080,7 +1084,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadHiddenVideos();
       }).catch((error) => {
         if (!error.message?.includes('context invalidated')) {
-          console.error('Failed to refresh hidden videos after event:', error);
+          if (DEBUG) console.error('Failed to refresh hidden videos after event:', error);
         }
       });
     }

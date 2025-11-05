@@ -140,8 +140,10 @@ export const SELECTOR_STRINGS = {
   SHORTS_CONTAINERS: SELECTORS.SHORTS_CONTAINERS.join(', ')
 };
 
-// Debug flag
-export const DEBUG = false;
+// Debug flag - replaced at build time by webpack DefinePlugin
+// In development: true, In production: false
+// DO NOT hardcode this value - it must be set by the build system
+export const DEBUG = typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV !== 'production';
 
 // DOM Cache Configuration
 export const CACHE_CONFIG = {

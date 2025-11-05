@@ -6,11 +6,11 @@ module.exports = (env, argv) => {
   const isProduction = argv.mode === 'production';
 
   return {
-    entry: './content/index.js',
+    entry: './background.js',
     output: {
-      filename: 'content.js',
+      filename: 'background.bundle.js',
       path: path.resolve(__dirname, '.'),
-      iife: true,
+      iife: false, // Keep as module for service worker
       clean: false
     },
     mode: isProduction ? 'production' : 'development',
@@ -32,10 +32,6 @@ module.exports = (env, argv) => {
           terserOptions: {
             compress: {
               // Remove all console.* calls in production
-              // This works in combination with DefinePlugin to strip debug code:
-              // 1. DefinePlugin replaces __DEV__ with false
-              // 2. Dead code elimination removes if (false) blocks
-              // 3. drop_console removes any remaining console statements
               drop_console: isProduction,
               // Remove debugger statements in production
               drop_debugger: isProduction,

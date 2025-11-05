@@ -1,3 +1,5 @@
+import { error } from '../logger.js';
+
 /**
  * Unified Cache Manager
  *
@@ -103,8 +105,8 @@ export class UnifiedCacheManager {
    */
   _validateSizeConsistency() {
     if (this.separateTimestamps && this.cache.size !== this.timestamps.size) {
-      console.error('[UnifiedCacheManager] Inconsistency detected: cache size', this.cache.size,
-                    'vs timestamps size', this.timestamps.size);
+      error('[UnifiedCacheManager] Inconsistency detected: cache size', this.cache.size,
+            'vs timestamps size', this.timestamps.size);
     }
   }
 

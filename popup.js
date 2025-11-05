@@ -2,6 +2,10 @@ import { STORAGE_KEYS, DEFAULT_SETTINGS } from './shared/constants.js';
 import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 import { initTheme, toggleTheme } from './shared/theme.js';
 
+// Debug flag for development logging
+// Set to false before production release
+const DEBUG = false;
+
 /**
  * Check if an error should be suppressed when sending messages to content scripts
  * These errors are expected when:
@@ -145,7 +149,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           })).catch((error) => {
             // Suppress expected errors (tabs without content script, loading, etc.)
             if (!shouldSuppressTabMessageError(error)) {
-              console.error('Tab message failed:', error);
+              if (DEBUG) console.error('Tab message failed:', error);
             }
           });
         });
@@ -179,7 +183,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const allSettings = await chrome.storage.sync.get(null);
         updateQuickToggleStates(allSettings);
       }).catch(error => {
-        console.error('Failed to save settings:', error);
+        if (DEBUG) console.error('Failed to save settings:', error);
         siblingButtons.forEach(btn => btn.classList.remove('active'));
         loadSettings();
       });
@@ -231,14 +235,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             })).catch((error) => {
               // Suppress expected errors (tabs without content script, loading, etc.)
               if (!shouldSuppressTabMessageError(error)) {
-                console.error('Tab message failed:', error);
+                if (DEBUG) console.error('Tab message failed:', error);
               }
             });
           });
         });
       });
     }).catch(error => {
-      console.error('Failed to save type mode settings:', error);
+      if (DEBUG) console.error('Failed to save type mode settings:', error);
       loadSettings();
     });
   }
@@ -284,7 +288,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       button.classList.add('active');
       
       setTypeToMode(type, mode).catch(error => {
-        console.error('Failed to set type mode:', error);
+        if (DEBUG) console.error('Failed to set type mode:', error);
         loadSettings();
       });
     });
@@ -300,7 +304,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED, enabled).catch(error => {
-      console.error('Failed to save individual mode toggle:', error);
+      if (DEBUG) console.error('Failed to save individual mode toggle:', error);
       individualModeToggle.checked = !enabled;
       if (!enabled) {
         individualModeOptions.classList.remove('disabled');
@@ -318,7 +322,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       button.classList.add('active');
       
       saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE, mode).catch(error => {
-        console.error('Failed to save individual mode:', error);
+        if (DEBUG) console.error('Failed to save individual mode:', error);
         initIndividualMode();
       });
     });
@@ -334,7 +338,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         await chrome.runtime.sendMessage({ type: 'HIDDEN_VIDEOS_CLEAR_ALL' });
       } catch (error) {
-        console.error('Failed to clear hidden videos data', error);
+        if (DEBUG) console.error('Failed to clear hidden videos data', error);
       }
 
       const defaultData = buildDefaultSettings(STORAGE_KEYS, DEFAULT_SETTINGS);
@@ -349,7 +353,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           ensurePromise(chrome.tabs.sendMessage(tab.id, {action: 'resetSettings'})).catch((error) => {
             // Suppress expected errors (tabs without content script, loading, etc.)
             if (!shouldSuppressTabMessageError(error)) {
-              console.error('Tab message failed:', error);
+              if (DEBUG) console.error('Tab message failed:', error);
             }
           });
         });
