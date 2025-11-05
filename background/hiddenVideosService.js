@@ -722,10 +722,18 @@ async function ensureMigration() {
   }
 
   if (!migrationPromise) {
-    migrationPromise = migrateLegacyHiddenVideos().catch((error) => {
-      console.error('Hidden videos migration failed', error);
-      throw error;
-    });
+    // Create and assign the promise IMMEDIATELY in the same execution context
+    // This prevents race conditions from concurrent calls
+    migrationPromise = (async () => {
+      try {
+        await migrateLegacyHiddenVideos();
+      } catch (error) {
+        console.error('Hidden videos migration failed', error);
+        // Reset the promise on failure to allow retry
+        migrationPromise = null;
+        throw error;
+      }
+    })();
   }
   return migrationPromise;
 }
