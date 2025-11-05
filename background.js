@@ -3,6 +3,7 @@ import { STORAGE_KEYS, DEFAULT_SETTINGS, SERVICE_WORKER_CONFIG } from './shared/
 import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 
 let hiddenVideosInitializationPromise = null;
+let keepAliveStarted = false; // Prevents duplicate keep-alive alarm creation
 const KEEP_ALIVE_ALARM = 'keep-alive';
 
 async function initializeHiddenVideos() {
@@ -18,12 +19,17 @@ async function initializeHiddenVideos() {
 // Keep service worker alive during active usage using chrome.alarms API
 // This is more efficient than setInterval for service workers
 function startKeepAlive() {
+  if (keepAliveStarted) {
+    return; // Already started, prevent duplicate alarms
+  }
+  keepAliveStarted = true;
   chrome.alarms.create(KEEP_ALIVE_ALARM, {
     periodInMinutes: SERVICE_WORKER_CONFIG.KEEP_ALIVE_INTERVAL / 60000 // Convert ms to minutes
   });
 }
 
 function stopKeepAlive() {
+  keepAliveStarted = false;
   chrome.alarms.clear(KEEP_ALIVE_ALARM);
 }
 
@@ -49,12 +55,6 @@ async function ensureDefaultSettings(details) {
 chrome.runtime.onInstalled.addListener((details) => {
   ensureDefaultSettings(details).catch((error) => {
     console.error('Failed to set default settings', error);
-  });
-});
-
-chrome.runtime.onStartup.addListener(() => {
-  initializeHiddenVideos().catch((error) => {
-    console.error('Failed to initialize hidden videos service on startup', error);
   });
 });
 
