@@ -1,10 +1,12 @@
 import { initializeHiddenVideosService } from './background/hiddenVideosService.js';
+import { closeDb } from './background/indexedDb.js';
 import { STORAGE_KEYS, DEFAULT_SETTINGS, SERVICE_WORKER_CONFIG } from './shared/constants.js';
 import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 import { processFallbackStorage } from './background/indexedDb.js';
 import { getFallbackStats } from './background/quotaManager.js';
 
 let hiddenVideosInitializationPromise = null;
+let keepAliveStarted = false; // Prevents duplicate keep-alive alarm creation
 const KEEP_ALIVE_ALARM = 'keep-alive';
 const FALLBACK_PROCESSING_ALARM = 'process-fallback-storage';
 
@@ -21,12 +23,17 @@ async function initializeHiddenVideos() {
 // Keep service worker alive during active usage using chrome.alarms API
 // This is more efficient than setInterval for service workers
 function startKeepAlive() {
+  if (keepAliveStarted) {
+    return; // Already started, prevent duplicate alarms
+  }
+  keepAliveStarted = true;
   chrome.alarms.create(KEEP_ALIVE_ALARM, {
     periodInMinutes: SERVICE_WORKER_CONFIG.KEEP_ALIVE_INTERVAL / 60000 // Convert ms to minutes
   });
 }
 
 function stopKeepAlive() {
+  keepAliveStarted = false;
   chrome.alarms.clear(KEEP_ALIVE_ALARM);
 }
 
@@ -96,12 +103,6 @@ chrome.runtime.onInstalled.addListener((details) => {
   });
 });
 
-chrome.runtime.onStartup.addListener(() => {
-  initializeHiddenVideos().catch((error) => {
-    console.error('Failed to initialize hidden videos service on startup', error);
-  });
-});
-
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('youtube.com')) {
     ensurePromise(chrome.tabs.sendMessage(tabId, { action: 'pageUpdated' })).catch(() => {});
@@ -119,7 +120,9 @@ initializeHiddenVideos()
   });
 
 // Clean up on suspend
-chrome.runtime.onSuspend.addListener(() => {
+chrome.runtime.onSuspend.addListener(async () => {
   stopKeepAlive();
   stopFallbackProcessing();
+  // Close IndexedDB connection to prevent blocking on next startup
+  await closeDb();
 });

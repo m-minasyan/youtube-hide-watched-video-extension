@@ -81,6 +81,26 @@ function openDb() {
   return dbPromise;
 }
 
+/**
+ * Closes the database connection and clears the cache
+ * Should be called when the service worker is about to suspend
+ * @returns {Promise<void>}
+ */
+export async function closeDb() {
+  if (dbPromise) {
+    try {
+      const db = await dbPromise;
+      db.close();
+    } catch (error) {
+      logError('IndexedDB', error, { operation: 'closeDb', phase: 'close' });
+    } finally {
+      dbPromise = null;
+      // Clear the cache when closing the database
+      clearBackgroundCache();
+    }
+  }
+}
+
 async function withStore(mode, handler, operationContext = null) {
   try {
     const db = await openDb();
