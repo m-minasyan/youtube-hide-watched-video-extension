@@ -560,31 +560,40 @@ const MESSAGE_HANDLERS = {
 };
 
 function registerMessageListener() {
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message, sender) => {
     if (!message || typeof message.type !== 'string') return;
     const handler = MESSAGE_HANDLERS[message.type];
     if (!handler) return;
 
-    // Wait for initialization before processing (except health check)
-    const promise = message.type === 'HIDDEN_VIDEOS_HEALTH_CHECK'
-      ? Promise.resolve().then(() => handler(message, sender))
-      : ensureMigration()
-          .then(() => handler(message, sender))
-          .catch((initError) => {
+    // Return a Promise directly - this is the proper Manifest V3 pattern
+    // Chrome will automatically wait for the promise and send the response
+    // This avoids issues with service worker suspension and message port closure
+    return (async () => {
+      try {
+        let result;
+
+        // Wait for initialization before processing (except health check)
+        if (message.type === 'HIDDEN_VIDEOS_HEALTH_CHECK') {
+          result = await handler(message, sender);
+        } else {
+          try {
+            await ensureMigration();
+            result = await handler(message, sender);
+          } catch (initError) {
             // If initialization failed, return meaningful error
             if (initializationError) {
               throw new Error('Background service initialization failed: ' + initError.message);
             }
             throw initError;
-          });
+          }
+        }
 
-    promise.then((result) => {
-      sendResponse({ ok: true, result });
-    }).catch((error) => {
-      console.error('Hidden videos handler error', error);
-      sendResponse({ ok: false, error: error.message });
-    });
-    return true;
+        return { ok: true, result };
+      } catch (error) {
+        console.error('Hidden videos handler error', error);
+        return { ok: false, error: error.message };
+      }
+    })();
   });
 }
 async function ensureMigration() {
