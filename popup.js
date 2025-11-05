@@ -127,7 +127,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             action: 'settingsUpdated',
             key: key,
             value: value
-          })).catch(() => {});
+          })).catch((error) => {
+            if (!error.message?.includes('context invalidated')) {
+              console.error('Tab message failed:', error);
+            }
+          });
         });
       });
     }
@@ -208,7 +212,11 @@ document.addEventListener('DOMContentLoaded', async () => {
               action: 'settingsUpdated',
               key: key,
               value: mode
-            })).catch(() => {});
+            })).catch((error) => {
+              if (!error.message?.includes('context invalidated')) {
+                console.error('Tab message failed:', error);
+              }
+            });
           });
         });
       });
@@ -321,7 +329,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       chrome.tabs.query({url: '*://*.youtube.com/*'}, (tabs) => {
         tabs.forEach(tab => {
-          ensurePromise(chrome.tabs.sendMessage(tab.id, {action: 'resetSettings'})).catch(() => {});
+          ensurePromise(chrome.tabs.sendMessage(tab.id, {action: 'resetSettings'})).catch((error) => {
+            if (!error.message?.includes('context invalidated')) {
+              console.error('Tab message failed:', error);
+            }
+          });
         });
       });
     }
