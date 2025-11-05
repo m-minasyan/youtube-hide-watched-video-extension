@@ -1,6 +1,7 @@
 import { retryOperation, logError, classifyError, ErrorType } from '../shared/errorHandler.js';
 import { getCachedRecord, setCachedRecord, invalidateCache, clearBackgroundCache } from './indexedDbCache.js';
-import { INDEXEDDB_CONFIG } from '../shared/constants.js';
+import { INDEXEDDB_CONFIG, QUOTA_CONFIG } from '../shared/constants.js';
+import { handleQuotaExceeded, getFromFallbackStorage, removeFromFallbackStorage } from './quotaManager.js';
 
 const DB_NAME = 'ythwvHiddenVideos';
 const DB_VERSION = 1;
@@ -80,7 +81,7 @@ function openDb() {
   return dbPromise;
 }
 
-async function withStore(mode, handler) {
+async function withStore(mode, handler, operationContext = null) {
   try {
     const db = await openDb();
     return await retryOperation(
@@ -120,19 +121,78 @@ async function withStore(mode, handler) {
   } catch (error) {
     const errorType = classifyError(error);
 
-    // Handle quota exceeded
+    // Handle quota exceeded with comprehensive quota manager
     if (errorType === ErrorType.QUOTA_EXCEEDED) {
-      logError('IndexedDB', error, { operation: 'withStore', quotaExceeded: true });
+      logError('IndexedDB', error, {
+        operation: 'withStore',
+        quotaExceeded: true,
+        operationContext
+      });
 
-      // Attempt to free space by deleting oldest records
-      try {
-        await deleteOldestHiddenVideos(1000);
-        // Retry the operation once after cleanup
-        return await withStore(mode, handler);
-      } catch (cleanupError) {
-        logError('IndexedDB', cleanupError, { operation: 'quota_cleanup', fatal: true });
-        throw error;
+      // Use the comprehensive quota manager
+      const quotaResult = await handleQuotaExceeded(
+        error,
+        deleteOldestHiddenVideos,
+        operationContext || { operationType: 'unknown' }
+      );
+
+      // If cleanup was successful, retry the operation
+      if (quotaResult.success && quotaResult.cleanupPerformed) {
+        try {
+          // Retry the operation with up to QUOTA_CONFIG.MAX_RETRY_ATTEMPTS attempts
+          const maxRetries = QUOTA_CONFIG.MAX_RETRY_ATTEMPTS || 3;
+          let lastError = error;
+
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              return await withStore(mode, handler, {
+                ...operationContext,
+                retryAttempt: attempt
+              });
+            } catch (retryError) {
+              lastError = retryError;
+              const retryErrorType = classifyError(retryError);
+
+              // If still quota exceeded, perform additional cleanup
+              if (retryErrorType === ErrorType.QUOTA_EXCEEDED && attempt < maxRetries) {
+                logError('IndexedDB', retryError, {
+                  operation: 'quota_retry',
+                  attempt,
+                  performingAdditionalCleanup: true
+                });
+
+                // Progressive cleanup - delete more records each retry
+                const additionalCleanup = quotaResult.recordsDeleted * 0.5; // 50% more each time
+                await deleteOldestHiddenVideos(Math.floor(additionalCleanup));
+              } else if (retryErrorType !== ErrorType.QUOTA_EXCEEDED) {
+                // Different error - throw immediately
+                throw retryError;
+              }
+            }
+          }
+
+          // All retries exhausted - data is safely in fallback storage
+          logError('IndexedDB', lastError, {
+            operation: 'quota_retry_exhausted',
+            dataInFallbackStorage: quotaResult.fallbackSaved,
+            fallbackRecords: quotaResult.fallbackRecords,
+            fatal: true
+          });
+
+          throw lastError;
+        } catch (retryError) {
+          throw retryError;
+        }
       }
+
+      // Cleanup failed - data is in fallback storage if available
+      logError('IndexedDB', error, {
+        operation: 'quota_cleanup_failed',
+        quotaResult,
+        fatal: true
+      });
+
+      throw error;
     }
 
     // Handle corruption
@@ -152,13 +212,21 @@ export async function initializeDb() {
 }
 export async function upsertHiddenVideos(records) {
   if (!records || records.length === 0) return;
+
+  // Pass operation context for quota management
+  const operationContext = {
+    operationType: 'upsert_batch',
+    data: records,
+    recordCount: records.length
+  };
+
   await withStore('readwrite', (store) => {
     records.forEach((record) => {
       store.put(record);
       // Update background cache
       setCachedRecord(record.videoId, record);
     });
-  });
+  }, operationContext);
 }
 
 export async function upsertHiddenVideo(record) {
@@ -555,3 +623,90 @@ async function attemptDatabaseReset() {
 
 // Export reset function for external use
 export { attemptDatabaseReset };
+
+/**
+ * Processes fallback storage and attempts to save pending records to IndexedDB
+ * Should be called periodically or when quota is likely available
+ * @returns {Promise<Object>} Result with success count and remaining records
+ */
+export async function processFallbackStorage() {
+  try {
+    const fallbackRecords = await getFromFallbackStorage();
+
+    if (fallbackRecords.length === 0) {
+      return {
+        success: true,
+        processed: 0,
+        remaining: 0,
+        message: 'No fallback records to process'
+      };
+    }
+
+    logError('IndexedDB', new Error('Processing fallback storage'), {
+      operation: 'processFallbackStorage',
+      recordCount: fallbackRecords.length
+    });
+
+    // Process in batches to avoid overwhelming IndexedDB
+    const BATCH_SIZE = 100;
+    let processedCount = 0;
+    let failedAtBatch = -1;
+
+    for (let i = 0; i < fallbackRecords.length; i += BATCH_SIZE) {
+      const batch = fallbackRecords.slice(i, Math.min(i + BATCH_SIZE, fallbackRecords.length));
+
+      try {
+        await upsertHiddenVideos(batch);
+        processedCount += batch.length;
+
+        // Successfully saved this batch - remove from fallback storage
+        await removeFromFallbackStorage(batch.length);
+      } catch (error) {
+        const errorType = classifyError(error);
+
+        if (errorType === ErrorType.QUOTA_EXCEEDED) {
+          // Still quota exceeded - stop processing
+          failedAtBatch = i;
+          logError('IndexedDB', error, {
+            operation: 'processFallbackStorage',
+            quotaStillExceeded: true,
+            processedCount,
+            remainingCount: fallbackRecords.length - processedCount
+          });
+          break;
+        } else {
+          // Other error - log and continue with next batch
+          logError('IndexedDB', error, {
+            operation: 'processFallbackStorage',
+            batchIndex: i,
+            batchSize: batch.length,
+            continuing: true
+          });
+        }
+      }
+    }
+
+    const remaining = fallbackRecords.length - processedCount;
+
+    return {
+      success: processedCount > 0,
+      processed: processedCount,
+      remaining,
+      message: processedCount > 0
+        ? `Successfully processed ${processedCount} records from fallback storage. ${remaining} remaining.`
+        : 'Failed to process fallback records - quota may still be exceeded.'
+    };
+  } catch (error) {
+    logError('IndexedDB', error, {
+      operation: 'processFallbackStorage',
+      fatal: true
+    });
+
+    return {
+      success: false,
+      processed: 0,
+      remaining: 0,
+      error: error.message
+    };
+  }
+}
