@@ -116,8 +116,21 @@ export const ERROR_CONFIG = {
 };
 
 // Background service worker configuration
+// NOTE: Chrome's alarms API enforces a MINIMUM periodInMinutes of 1 minute for both
+// packed and unpacked extensions. Values below 1 minute are rounded UP to 1 minute.
+// This means we cannot ping more frequently than once per minute using chrome.alarms.
+//
+// Chrome suspends service workers after ~30 seconds of inactivity, so with a 1-minute
+// alarm interval, the worker WILL be suspended between pings. This is acceptable because:
+// - All critical data is persisted in IndexedDB (survives suspensions)
+// - Message listeners are automatically re-registered on wake-up
+// - The worker can restart quickly when needed (< 100ms typically)
+//
+// For more aggressive keep-alive, we would need long-lived connections from content
+// scripts, but that adds complexity and battery drain. The current approach balances
+// performance with resource efficiency.
 export const SERVICE_WORKER_CONFIG = {
-  KEEP_ALIVE_INTERVAL: 20000 // 20 seconds - keeps service worker active during usage
+  KEEP_ALIVE_INTERVAL: 60000 // 1 minute - Chrome's enforced minimum for chrome.alarms
 };
 
 // Pre-computed selector strings for performance

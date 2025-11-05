@@ -16,10 +16,13 @@ async function initializeHiddenVideos() {
 }
 
 // Keep service worker alive during active usage using chrome.alarms API
-// This is more efficient than setInterval for service workers
+// Chrome enforces a minimum alarm period of 1 minute, so the worker will still
+// be suspended between pings (~30s inactivity threshold). This is acceptable
+// because the service worker is designed to be ephemeral - all state is persisted
+// in IndexedDB and the worker restarts quickly when needed.
 function startKeepAlive() {
   chrome.alarms.create(KEEP_ALIVE_ALARM, {
-    periodInMinutes: SERVICE_WORKER_CONFIG.KEEP_ALIVE_INTERVAL / 60000 // Convert ms to minutes
+    periodInMinutes: SERVICE_WORKER_CONFIG.KEEP_ALIVE_INTERVAL / 60000 // 1 minute (Chrome API minimum)
   });
 }
 
