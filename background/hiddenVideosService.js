@@ -679,42 +679,96 @@ const MESSAGE_HANDLERS = {
 };
 
 function registerMessageListener() {
-  chrome.runtime.onMessage.addListener((message, sender) => {
-    if (!message || typeof message.type !== 'string') return;
-    const handler = MESSAGE_HANDLERS[message.type];
-    if (!handler) return;
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // CRITICAL: Early returns must not prevent response for valid messages
+    // Only return false for truly invalid messages
+    if (!message || typeof message.type !== 'string') {
+      return false; // Explicitly signal no async response for invalid messages
+    }
 
-    // Return a Promise directly - this is the proper Manifest V3 pattern
-    // Chrome will automatically wait for the promise and send the response
-    // This avoids issues with service worker suspension and message port closure
-    return (async () => {
+    const handler = MESSAGE_HANDLERS[message.type];
+    if (!handler) {
+      return false; // No handler for this message type
+    }
+
+    // Handle both promise-based (tests) and callback-based (Chrome API) patterns
+    const handleAsync = async () => {
       try {
         let result;
 
-        // Wait for initialization before processing (except health check)
+        // Health checks bypass initialization to provide immediate status
         if (message.type === 'HIDDEN_VIDEOS_HEALTH_CHECK') {
           result = await handler(message, sender);
         } else {
           try {
-            await ensureMigration();
+            // Wait for FULL initialization (DB + migration), not just migration
+            // This prevents race conditions where migration starts before DB is ready
+            await ensureInitialization();
             result = await handler(message, sender);
           } catch (initError) {
             // If initialization failed, return meaningful error
-            if (initializationError) {
-              throw new Error('Background service initialization failed: ' + initError.message);
-            }
-            throw initError;
+            console.error('[HiddenVideos] Initialization error:', initError);
+            const errorResponse = {
+              ok: false,
+              error: `Background service initialization failed: ${initError.message}`
+            };
+            if (sendResponse) sendResponse(errorResponse);
+            return errorResponse;
           }
         }
 
-        return { ok: true, result };
+        const successResponse = { ok: true, result };
+        if (sendResponse) sendResponse(successResponse);
+        return successResponse;
       } catch (error) {
-        console.error('Hidden videos handler error', error);
-        return { ok: false, error: error.message };
+        console.error('[HiddenVideos] Message handler error:', error);
+        const errorResponse = { ok: false, error: error.message };
+        if (sendResponse) sendResponse(errorResponse);
+        return errorResponse;
       }
-    })();
+    };
+
+    // If sendResponse is not provided (tests), return the promise directly
+    // Otherwise, call the async function and return true to keep channel open
+    if (!sendResponse) {
+      return handleAsync();
+    }
+
+    handleAsync();
+    return true; // Keep message channel open for async response
   });
 }
+/**
+ * Ensure full initialization is complete (DB + migration)
+ * This should be called by message handlers to ensure the service is ready
+ */
+async function ensureInitialization() {
+  // If initialization already failed, throw the error immediately
+  if (initializationError) {
+    throw initializationError;
+  }
+
+  // If there's an initialization in progress, wait for it
+  if (initializationLock) {
+    await initializationLock;
+    // Check again if it failed during wait
+    if (initializationError) {
+      throw initializationError;
+    }
+    return;
+  }
+
+  // If initialization is complete, we're done
+  if (initializationComplete && !initializationError) {
+    return;
+  }
+
+  // Otherwise, start initialization
+  // This shouldn't normally happen because background.js calls initializeHiddenVideos()
+  // at startup, but we handle it here as a fallback
+  await initializeHiddenVideosService();
+}
+
 async function ensureMigration() {
   // If initialization failed, throw the error
   if (initializationError) {
@@ -738,12 +792,20 @@ async function ensureMigration() {
   return migrationPromise;
 }
 
-export async function initializeHiddenVideosService() {
-  // Register listener FIRST, before any async operations
+/**
+ * Register message listener immediately (synchronous)
+ * This must be called at the top level to avoid race conditions
+ */
+export function ensureMessageListenerRegistered() {
   if (!initialized) {
     registerMessageListener();
     initialized = true;
   }
+}
+
+export async function initializeHiddenVideosService() {
+  // Ensure message listener is registered (idempotent)
+  ensureMessageListenerRegistered();
 
   // Prevent concurrent initialization calls using a lock
   if (initializationLock) {

@@ -2,6 +2,21 @@ import { STORAGE_KEYS, DEFAULT_SETTINGS } from './shared/constants.js';
 import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 import { initTheme, toggleTheme } from './shared/theme.js';
 
+/**
+ * Check if an error should be suppressed when sending messages to content scripts
+ * These errors are expected when:
+ * - Tab doesn't have content script loaded yet
+ * - Tab is loading/navigating
+ * - Tab is suspended/inactive
+ * - Extension context is invalidated
+ */
+function shouldSuppressTabMessageError(error) {
+  const message = error.message?.toLowerCase() || '';
+  return message.includes('context invalidated') ||
+         message.includes('receiving end does not exist') ||
+         message.includes('could not establish connection');
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   const thresholdSlider = document.getElementById('threshold');
   const thresholdValue = document.getElementById('threshold-value');
@@ -119,7 +134,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const data = {};
     data[key] = value;
     await chrome.storage.sync.set(data);
-    
+
     if (key !== STORAGE_KEYS.THEME) {
       chrome.tabs.query({url: '*://*.youtube.com/*'}, (tabs) => {
         tabs.forEach(tab => {
@@ -128,7 +143,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             key: key,
             value: value
           })).catch((error) => {
-            if (!error.message?.includes('context invalidated')) {
+            // Suppress expected errors (tabs without content script, loading, etc.)
+            if (!shouldSuppressTabMessageError(error)) {
               console.error('Tab message failed:', error);
             }
           });
@@ -213,7 +229,8 @@ document.addEventListener('DOMContentLoaded', async () => {
               key: key,
               value: mode
             })).catch((error) => {
-              if (!error.message?.includes('context invalidated')) {
+              // Suppress expected errors (tabs without content script, loading, etc.)
+              if (!shouldSuppressTabMessageError(error)) {
                 console.error('Tab message failed:', error);
               }
             });
@@ -330,7 +347,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       chrome.tabs.query({url: '*://*.youtube.com/*'}, (tabs) => {
         tabs.forEach(tab => {
           ensurePromise(chrome.tabs.sendMessage(tab.id, {action: 'resetSettings'})).catch((error) => {
-            if (!error.message?.includes('context invalidated')) {
+            // Suppress expected errors (tabs without content script, loading, etc.)
+            if (!shouldSuppressTabMessageError(error)) {
               console.error('Tab message failed:', error);
             }
           });
