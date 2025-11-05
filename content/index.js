@@ -5,7 +5,7 @@ import { setupMutationObserver } from './observers/mutationObserver.js';
 import { setupUrlObserver } from './observers/urlObserver.js';
 import { setupXhrObserver } from './observers/xhrObserver.js';
 import { setupIntersectionObserver, disconnectIntersectionObserver } from './observers/intersectionObserver.js';
-import { logDebug } from './utils/logger.js';
+import { logDebug, warn } from './utils/logger.js';
 import { sendHiddenVideosMessage } from '../shared/messaging.js';
 import { HIDDEN_VIDEO_MESSAGES } from '../shared/constants.js';
 import { logError } from '../shared/errorHandler.js';
@@ -58,7 +58,7 @@ async function init() {
     const isReady = await waitForBackgroundReady();
 
     if (!isReady) {
-      console.warn('[YT-HWV] Background script not ready, starting with limited functionality. Individual video hiding/dimming may not work until background service is ready.');
+      warn('[YT-HWV] Background script not ready, starting with limited functionality. Individual video hiding/dimming may not work until background service is ready.');
       // Continue anyway but with graceful degradation
     }
 

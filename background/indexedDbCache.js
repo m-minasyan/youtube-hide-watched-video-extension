@@ -3,6 +3,8 @@
  * Provides TTL-based caching with LRU eviction to reduce IndexedDB reads
  */
 
+import { debug, error, warn, info } from '../shared/logger.js';
+
 const CACHE_TTL = 30000; // 30 seconds
 const MAX_CACHE_SIZE = 5000; // Maximum number of entries in background cache
 const backgroundCache = new Map(); // videoId -> { record, timestamp }
@@ -47,7 +49,7 @@ function evictLRUEntries() {
 
     // Validate consistency: both Maps should have same size
     if (backgroundCache.size !== cacheAccessOrder.size) {
-      console.error('[IndexedDbCache] Inconsistency detected: backgroundCache size', backgroundCache.size,
+      error('[IndexedDbCache] Inconsistency detected: backgroundCache size', backgroundCache.size,
                     'vs cacheAccessOrder size', cacheAccessOrder.size);
     }
   } finally {

@@ -1,4 +1,4 @@
-import { logDebug } from '../utils/logger.js';
+import { logDebug, error } from '../utils/logger.js';
 import { CSS_CLASSES, INTERSECTION_OBSERVER_CONFIG } from '../utils/constants.js';
 import { applyCacheUpdate, clearCache } from '../storage/cache.js';
 import { loadSettings } from '../storage/settings.js';
@@ -70,8 +70,8 @@ export function setupMessageListener() {
       } else if (request.type === 'HIDDEN_VIDEOS_EVENT') {
         handleHiddenVideosEvent(request.event);
       }
-    })().catch((error) => {
-      console.error('Error handling message in content script:', error);
+    })().catch((err) => {
+      error('Error handling message in content script:', err);
     });
 
     // No response needed for these messages

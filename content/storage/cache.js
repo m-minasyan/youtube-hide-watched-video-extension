@@ -1,3 +1,5 @@
+import { error } from '../utils/logger.js';
+
 const MAX_CACHE_SIZE = 1000;
 
 const hiddenVideoCache = new Map();
@@ -49,8 +51,8 @@ function evictLRUEntries() {
 
     // Validate consistency: all three Maps should have same size
     if (hiddenVideoCache.size !== hiddenVideoTimestamps.size) {
-      console.error('[Cache] Inconsistency detected: hiddenVideoCache size', hiddenVideoCache.size,
-                    'vs hiddenVideoTimestamps size', hiddenVideoTimestamps.size);
+      error('[Cache] Inconsistency detected: hiddenVideoCache size', hiddenVideoCache.size,
+            'vs hiddenVideoTimestamps size', hiddenVideoTimestamps.size);
     }
   } finally {
     // Always release lock, even if error occurs

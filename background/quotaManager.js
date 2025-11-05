@@ -10,6 +10,7 @@
  */
 
 import { logError } from '../shared/errorHandler.js';
+import { debug, error, warn, info } from '../shared/logger.js';
 
 // Fallback storage keys
 const FALLBACK_STORAGE_KEY = 'YTHWV_FALLBACK_STORAGE';
@@ -100,9 +101,9 @@ async function logQuotaEvent(event) {
     }
 
     await chrome.storage.local.set({ [QUOTA_EVENTS_KEY]: events });
-  } catch (error) {
+  } catch (err) {
     // Silently fail - don't want logging to cause more errors
-    console.error('Failed to log quota event:', error);
+    error('Failed to log quota event:', err);
   }
 }
 

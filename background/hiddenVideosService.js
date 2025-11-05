@@ -12,6 +12,7 @@ import {
 import { getCacheStats } from './indexedDbCache.js';
 import { ensurePromise, queryYoutubeTabs } from '../shared/utils.js';
 import { IMPORT_EXPORT_CONFIG } from '../shared/constants.js';
+import { debug, error, warn, info } from '../shared/logger.js';
 
 const STORAGE_KEYS = {
   HIDDEN_VIDEOS: 'YTHWV_HIDDEN_VIDEOS',
@@ -58,14 +59,14 @@ function buildRecord(videoId, state, title, updatedAt) {
 async function broadcastHiddenVideosEvent(event) {
   try {
     ensurePromise(chrome.runtime.sendMessage({ type: 'HIDDEN_VIDEOS_EVENT', event })).catch(() => {});
-  } catch (error) {
-    console.error('Failed to broadcast runtime event', error);
+  } catch (err) {
+    error('Failed to broadcast runtime event', err);
   }
   try {
     const tabs = await queryYoutubeTabs();
     await Promise.all(tabs.map((tab) => ensurePromise(chrome.tabs.sendMessage(tab.id, { type: 'HIDDEN_VIDEOS_EVENT', event })).catch(() => {})));
-  } catch (error) {
-    console.error('Failed to broadcast tab event', error);
+  } catch (err) {
+    error('Failed to broadcast tab event', err);
   }
 }
 function extractLegacyEntries(source) {
@@ -236,8 +237,8 @@ async function handleHealthCheck() {
   let cacheStats;
   try {
     cacheStats = getCacheStats();
-  } catch (error) {
-    console.error('Failed to get cache stats', error);
+  } catch (err) {
+    error('Failed to get cache stats', err);
     cacheStats = { error: 'Failed to retrieve cache stats' };
   }
 
@@ -460,13 +461,13 @@ function checkMemorySafety(threshold = 40 * 1024 * 1024) {
   const memoryUsage = estimateMemoryUsage();
   if (memoryUsage === null) {
     // If memory API not available, allow operation but log warning
-    console.warn('Memory monitoring unavailable - proceeding with import');
+    warn('Memory monitoring unavailable - proceeding with import');
     return true;
   }
 
   const isSafe = memoryUsage < threshold;
   if (!isSafe) {
-    console.warn(`Memory usage (${(memoryUsage / 1024 / 1024).toFixed(2)}MB) approaching limit (${(threshold / 1024 / 1024).toFixed(2)}MB)`);
+    warn(`Memory usage (${(memoryUsage / 1024 / 1024).toFixed(2)}MB) approaching limit (${(threshold / 1024 / 1024).toFixed(2)}MB)`);
   }
   return isSafe;
 }
@@ -646,12 +647,12 @@ async function handleImportRecords(message) {
         await delay(0);
       }
 
-    } catch (error) {
+    } catch (err) {
       results.errors.push(
-        `Failed to process batch starting at record ${i}: ${error.message}`
+        `Failed to process batch starting at record ${i}: ${err.message}`
       );
       // Don't break - try to continue with next batch unless it's a quota error
-      if (error.message.includes('exceed maximum record limit')) {
+      if (err.message.includes('exceed maximum record limit')) {
         break;
       }
     }
@@ -707,7 +708,7 @@ function registerMessageListener() {
             result = await handler(message, sender);
           } catch (initError) {
             // If initialization failed, return meaningful error
-            console.error('[HiddenVideos] Initialization error:', initError);
+            error('[HiddenVideos] Initialization error:', initError);
             const errorResponse = {
               ok: false,
               error: `Background service initialization failed: ${initError.message}`
@@ -720,9 +721,9 @@ function registerMessageListener() {
         const successResponse = { ok: true, result };
         if (sendResponse) sendResponse(successResponse);
         return successResponse;
-      } catch (error) {
-        console.error('[HiddenVideos] Message handler error:', error);
-        const errorResponse = { ok: false, error: error.message };
+      } catch (err) {
+        error('[HiddenVideos] Message handler error:', err);
+        const errorResponse = { ok: false, error: err.message };
         if (sendResponse) sendResponse(errorResponse);
         return errorResponse;
       }
@@ -781,11 +782,11 @@ async function ensureMigration() {
     migrationPromise = (async () => {
       try {
         await migrateLegacyHiddenVideos();
-      } catch (error) {
-        console.error('Hidden videos migration failed', error);
+      } catch (err) {
+        error('Hidden videos migration failed', err);
         // Reset the promise on failure to allow retry
         migrationPromise = null;
-        throw error;
+        throw err;
       }
     })();
   }
