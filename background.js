@@ -1,5 +1,5 @@
 import { initializeHiddenVideosService, ensureMessageListenerRegistered } from './background/hiddenVideosService.js';
-import { closeDb } from './background/indexedDb.js';
+import { closeDbSync } from './background/indexedDb.js';
 import { STORAGE_KEYS, DEFAULT_SETTINGS, SERVICE_WORKER_CONFIG } from './shared/constants.js';
 import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 import { processFallbackStorage } from './background/indexedDb.js';
@@ -147,9 +147,13 @@ initializeHiddenVideos()
   });
 
 // Clean up on suspend
-chrome.runtime.onSuspend.addListener(async () => {
+// CRITICAL: onSuspend must use SYNCHRONOUS operations only
+// Chrome can terminate the service worker before async operations complete,
+// which would leave IndexedDB connections open and cause blocking on next startup
+chrome.runtime.onSuspend.addListener(() => {
   stopKeepAlive();
   stopFallbackProcessing();
-  // Close IndexedDB connection to prevent blocking on next startup
-  await closeDb();
+  // Close IndexedDB connection synchronously to prevent blocking on next startup
+  // closeDbSync() handles graceful shutdown of active operations
+  closeDbSync();
 });
