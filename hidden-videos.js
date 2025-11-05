@@ -4,6 +4,10 @@ import { initTheme, toggleTheme } from './shared/theme.js';
 import { sendHiddenVideosMessage } from './shared/messaging.js';
 import { showNotification, NotificationType } from './shared/notifications.js';
 
+// Debug flag for development logging
+// Set to false before production release
+const DEBUG = false;
+
 /**
  * Debounce function to limit the rate of function calls
  * @param {Function} func - Function to debounce
@@ -19,23 +23,6 @@ function debounce(func, delay) {
   };
 }
 
-/**
- * Detects if the current device is mobile based on screen width
- * @returns {boolean} - True if device is mobile
- */
-function isMobileDevice() {
-  return window.innerWidth <= 768;
-}
-
-/**
- * Returns maximum search items based on device type
- * Mobile devices get lower limits to prevent memory issues
- * @returns {number} - Maximum items to load for search
- */
-function getMaxSearchItems() {
-  return isMobileDevice() ? 2000 : 5000;
-}
-
 document.addEventListener('DOMContentLoaded', async () => {
   const themeToggle = document.getElementById('theme-toggle');
   const filterButtons = document.querySelectorAll('.filter-btn');
@@ -46,6 +33,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   const hiddenCount = document.getElementById('hidden-count');
 
   const videosPerPage = 12;
+
+  /**
+   * Detects if the current device is mobile
+   * @returns {boolean} - True if mobile device
+   */
+  function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+           (window.innerWidth <= 768);
+  }
+
+  /**
+   * Gets maximum items for search based on device type
+   * Mobile: 500 items (~250KB) to prevent memory issues
+   * Desktop: 1000 items (~500KB) for better search coverage
+   * @returns {number} - Maximum items to load for search
+   */
+  function getMaxSearchItems() {
+    return isMobileDevice() ? 500 : 1000;
+  }
+
   const hiddenVideosState = {
     filter: 'all',
     currentPage: 1,
@@ -53,7 +60,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     hasMore: false,
     items: [],
     searchQuery: '',
-    allItems: [] // Cleared when search is cancelled, filter changed, or on error to prevent memory leaks
+    allItems: [], // Cleared when search is cancelled, filter changed, or on error to prevent memory leaks
+    isSearchMode: false // Track if we're in search mode to manage memory properly
   };
   let hiddenVideoStats = { total: 0, dimmed: 0, hidden: 0 };
 
@@ -63,10 +71,19 @@ document.addEventListener('DOMContentLoaded', async () => {
    * - Search is cleared/cancelled
    * - Filter is changed (switches to server-side pagination)
    * - Component encounters an error
+   * - Switching from search mode to normal pagination mode
+   * - After video actions that require data reload
+   * @param {boolean} clearQuery - Whether to also clear the search query (default: true)
    */
-  function clearSearchMemory() {
+  function clearSearchMemory(clearQuery = true) {
+    if (hiddenVideosState.allItems.length > 0) {
+      console.log('[Memory] Clearing search memory:', hiddenVideosState.allItems.length, 'items');
+    }
     hiddenVideosState.allItems = [];
-    hiddenVideosState.searchQuery = '';
+    if (clearQuery) {
+      hiddenVideosState.searchQuery = '';
+    }
+    hiddenVideosState.isSearchMode = false;
   }
 
   /**
@@ -116,6 +133,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function loadPaginatedItems() {
+    // Clear search memory when switching to normal pagination mode
+    // This prevents memory leaks when transitioning from search to normal browsing
+    if (hiddenVideosState.isSearchMode || hiddenVideosState.allItems.length > 0) {
+      clearSearchMemory(false); // Don't clear query as it's already empty in normal mode
+    }
+
     const cursorIndex = hiddenVideosState.currentPage - 1;
     const cursor = cursorIndex < hiddenVideosState.pageCursors.length ? hiddenVideosState.pageCursors[cursorIndex] : null;
     const stateFilter = hiddenVideosState.filter === 'all' ? null : hiddenVideosState.filter;
@@ -143,6 +166,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     try {
+      // Mark that we're entering search mode
+      hiddenVideosState.isSearchMode = true;
+
       // Load all items for search filtering
       const stateFilter = hiddenVideosState.filter === 'all' ? null : hiddenVideosState.filter;
       let allItems = [];
@@ -150,8 +176,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       let hasMore = true;
 
       // Fetch items with dynamic limit based on device type
-      // Mobile: 2000 items (~1MB) to prevent memory issues on constrained devices
-      // Desktop: 5000 items (~2.5MB) for better search coverage
+      // Mobile: 500 items (~250KB) to prevent memory issues on constrained devices
+      // Desktop: 1000 items (~500KB) for better search coverage
       // Rationale: Loading more items causes significant memory usage and UI lag
       // during search filtering. Users with larger datasets should use pagination
       // or filter by state (dimmed/hidden) to narrow results.
@@ -211,7 +237,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       hiddenVideosState.items = filteredItems.slice(startIndex, endIndex);
       hiddenVideosState.hasMore = endIndex < filteredItems.length;
     } catch (error) {
-      console.error('Search failed:', error);
+      if (DEBUG) console.error('Search failed:', error);
       // Display error message to user
       videosContainer.innerHTML = `
         <div class="empty-state">
@@ -308,30 +334,155 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
-   * Highlights search term in text
+   * Creates a DOM element with highlighted search term
+   * This is XSS-safe as it uses textContent instead of innerHTML
+   * @param {string} text - The text to display
+   * @param {string} query - The search query to highlight
+   * @returns {DocumentFragment} - A document fragment containing text nodes and mark elements
    */
-  function highlightSearchTerm(text, query) {
+  function createHighlightedElement(text, query) {
+    const fragment = document.createDocumentFragment();
+
     if (!query || !query.trim()) {
-      return escapeHtml(text);
+      const textNode = document.createTextNode(text);
+      fragment.appendChild(textNode);
+      return fragment;
     }
 
-    const escapedText = escapeHtml(text);
     const normalizedQuery = normalizeString(query);
     const normalizedText = normalizeString(text);
 
     const index = normalizedText.indexOf(normalizedQuery);
     if (index === -1) {
-      return escapedText;
+      const textNode = document.createTextNode(text);
+      fragment.appendChild(textNode);
+      return fragment;
     }
 
     // Get the actual substring from original text (preserving case)
-    // Use normalizedQuery.length instead of query.length to handle Unicode correctly
     const actualMatchLength = normalizedQuery.length;
     const beforeMatch = text.substring(0, index);
     const match = text.substring(index, index + actualMatchLength);
     const afterMatch = text.substring(index + actualMatchLength);
 
-    return `${escapeHtml(beforeMatch)}<mark style="background: var(--accent-color); color: white; padding: 2px 4px; border-radius: 3px;">${escapeHtml(match)}</mark>${escapeHtml(afterMatch)}`;
+    // Create text nodes and mark element safely
+    if (beforeMatch) {
+      fragment.appendChild(document.createTextNode(beforeMatch));
+    }
+
+    const mark = document.createElement('mark');
+    mark.style.background = 'var(--accent-color)';
+    mark.style.color = 'white';
+    mark.style.padding = '2px 4px';
+    mark.style.borderRadius = '3px';
+    mark.textContent = match; // XSS-safe: uses textContent
+    fragment.appendChild(mark);
+
+    if (afterMatch) {
+      fragment.appendChild(document.createTextNode(afterMatch));
+    }
+
+    return fragment;
+  }
+
+  /**
+   * Creates a video card DOM element
+   * XSS-safe: all user data is set via textContent or safely created DOM elements
+   * @param {Object} record - The video record
+   * @param {boolean} isSearching - Whether a search is active
+   * @returns {HTMLElement} - The video card element
+   */
+  function createVideoCard(record, isSearching) {
+    const { videoId, state, title = '' } = record;
+    const isShortsVideo = isShorts(videoId);
+    const encodedVideoId = encodeURIComponent(videoId);
+    const videoUrl = isShortsVideo
+      ? `https://www.youtube.com/shorts/${encodedVideoId}`
+      : `https://www.youtube.com/watch?v=${encodedVideoId}`;
+    const thumbnailUrl = `https://img.youtube.com/vi/${encodedVideoId}/mqdefault.jpg`;
+    const displayTitle = title || (isShortsVideo ? 'YouTube Shorts' : 'YouTube Video');
+
+    // Create the video card container
+    const card = document.createElement('div');
+    card.className = `video-card ${state}`;
+    card.setAttribute('data-video-id', videoId);
+
+    // Create video info section
+    const videoInfo = document.createElement('div');
+    videoInfo.className = 'video-info';
+
+    // Create thumbnail
+    const thumbnail = document.createElement('img');
+    thumbnail.src = thumbnailUrl;
+    thumbnail.alt = 'Video thumbnail';
+    thumbnail.className = 'video-thumbnail';
+    thumbnail.onerror = function() { this.style.display = 'none'; };
+
+    // Create video details
+    const videoDetails = document.createElement('div');
+    videoDetails.className = 'video-details';
+
+    // Create and populate title with highlighting if searching
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'video-title';
+    if (isSearching) {
+      const highlightedFragment = createHighlightedElement(displayTitle, hiddenVideosState.searchQuery);
+      titleDiv.appendChild(highlightedFragment);
+    } else {
+      titleDiv.textContent = displayTitle; // XSS-safe: uses textContent
+    }
+
+    // Create video ID display
+    const videoIdDiv = document.createElement('div');
+    videoIdDiv.className = 'video-id';
+    videoIdDiv.textContent = videoId; // XSS-safe: uses textContent
+
+    // Assemble video details
+    videoDetails.appendChild(titleDiv);
+    videoDetails.appendChild(videoIdDiv);
+
+    // Assemble video info
+    videoInfo.appendChild(thumbnail);
+    videoInfo.appendChild(videoDetails);
+
+    // Create video actions section
+    const videoActions = document.createElement('div');
+    videoActions.className = 'video-actions';
+
+    // Create toggle button
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'video-action-btn';
+    toggleBtn.setAttribute('data-action', 'toggle');
+    toggleBtn.setAttribute('data-video-id', videoId);
+    toggleBtn.textContent = state === 'dimmed' ? 'Hide' : 'Dim';
+    toggleBtn.addEventListener('click', handleVideoAction);
+
+    // Create view button
+    const viewBtn = document.createElement('button');
+    viewBtn.className = 'video-action-btn';
+    viewBtn.setAttribute('data-action', 'view');
+    viewBtn.setAttribute('data-video-id', videoId);
+    viewBtn.textContent = 'View on YouTube';
+    viewBtn.addEventListener('click', handleVideoAction);
+
+    // Create remove button
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'video-action-btn remove';
+    removeBtn.setAttribute('data-action', 'remove');
+    removeBtn.setAttribute('data-video-id', videoId);
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', handleVideoAction);
+
+    // Assemble actions
+    videoActions.appendChild(toggleBtn);
+    videoActions.appendChild(viewBtn);
+    videoActions.appendChild(removeBtn);
+
+    // Assemble card
+    card.appendChild(videoInfo);
+    card.appendChild(videoActions);
+
+    return card;
   }
 
   /**
@@ -407,49 +558,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Render video cards
-    videosContainer.innerHTML = videos.map((record) => {
-      const videoId = record.videoId;
-      const state = record.state;
-      const title = record.title || '';
-      const isShortsVideo = isShorts(videoId);
-      // Properly encode videoId for URLs to prevent injection
-      const encodedVideoId = encodeURIComponent(videoId);
-      const videoUrl = isShortsVideo
-        ? `https://www.youtube.com/shorts/${encodedVideoId}`
-        : `https://www.youtube.com/watch?v=${encodedVideoId}`;
-      const thumbnailUrl = `https://img.youtube.com/vi/${encodedVideoId}/mqdefault.jpg`;
-      const displayTitle = title || (isShortsVideo ? 'YouTube Shorts' : 'YouTube Video');
+    // Render video cards using safe DOM creation (XSS-protected)
+    // Clear the container first
+    videosContainer.innerHTML = '';
 
-      // Highlight search term in title if searching
-      const highlightedTitle = isSearching ? highlightSearchTerm(displayTitle, hiddenVideosState.searchQuery) : escapeHtml(displayTitle);
-
-      return `
-        <div class="video-card ${state}" data-video-id="${escapeHtml(videoId)}">
-          <div class="video-info">
-            <img src="${thumbnailUrl}" alt="Video thumbnail" class="video-thumbnail" onerror="this.style.display='none'">
-            <div class="video-details">
-              <div class="video-title">${highlightedTitle}</div>
-              <div class="video-id">${escapeHtml(videoId)}</div>
-            </div>
-          </div>
-          <div class="video-actions">
-            <button class="video-action-btn" data-action="toggle" data-video-id="${escapeHtml(videoId)}">
-              ${state === 'dimmed' ? 'Hide' : 'Dim'}
-            </button>
-            <button class="video-action-btn" data-action="view" data-video-id="${escapeHtml(videoId)}">
-              View on YouTube
-            </button>
-            <button class="video-action-btn remove" data-action="remove" data-video-id="${escapeHtml(videoId)}">
-              Remove
-            </button>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    document.querySelectorAll('.video-action-btn').forEach((btn) => {
-      btn.addEventListener('click', handleVideoAction);
+    // Create and append each video card using DOM methods
+    videos.forEach((record) => {
+      const videoCard = createVideoCard(record, isSearching);
+      videosContainer.appendChild(videoCard);
     });
 
     updateSearchResultsStatus();
@@ -664,7 +780,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       showNotification(`Successfully exported ${exportData.count} videos`, NotificationType.SUCCESS);
 
     } catch (error) {
-      console.error('Export failed:', error);
+      if (DEBUG) console.error('Export failed:', error);
       showNotification(`Export failed: ${error.message}`, NotificationType.ERROR);
     } finally {
       // Restore button state
@@ -728,7 +844,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
     } catch (error) {
-      console.error('Import preparation failed:', error);
+      if (DEBUG) console.error('Import preparation failed:', error);
       showNotification(`Import failed: ${error.message}`, NotificationType.ERROR);
     } finally {
       // Reset file input
@@ -907,7 +1023,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }, 500);
 
     } catch (error) {
-      console.error('Import execution failed:', error);
+      if (DEBUG) console.error('Import execution failed:', error);
 
       progressDiv.style.display = 'none';
       showNotification(`Import failed: ${error.message}`, NotificationType.ERROR);
@@ -976,14 +1092,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       refreshStats().then(async () => {
         const totalVideos = getTotalVideosForCurrentFilter();
         const maxPages = Math.max(1, Math.ceil(Math.max(totalVideos, 0) / videosPerPage));
-        
+
         if (hiddenVideosState.currentPage > maxPages && maxPages > 0) {
           hiddenVideosState.currentPage = maxPages;
           hiddenVideosState.pageCursors = hiddenVideosState.pageCursors.slice(0, hiddenVideosState.currentPage);
         }
-        
+
         await loadHiddenVideos();
-      }).catch(() => {});
+      }).catch((error) => {
+        if (!error.message?.includes('context invalidated')) {
+          if (DEBUG) console.error('Failed to refresh hidden videos after event:', error);
+        }
+      });
     }
   });
 });

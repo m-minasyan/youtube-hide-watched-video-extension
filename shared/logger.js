@@ -1,11 +1,11 @@
 /**
- * @fileoverview Debug logging utility with build-time stripping for production
+ * @fileoverview Shared debug logging utility with build-time stripping for production
  *
  * This module provides logging functions that are automatically removed in production builds.
- * The DEBUG flag is set at build time by webpack DefinePlugin.
+ * The DEBUG flag is imported from constants.js which is set at build time by webpack DefinePlugin.
  *
  * Usage:
- *   import { debug, error, warn, info } from './utils/logger.js';
+ *   import { debug, error, warn, info } from './logger.js';
  *   debug('[Component]', 'Debug message', data);
  *   error('[Component]', 'Error occurred', errorObj);
  *
@@ -24,17 +24,6 @@ import { DEBUG } from './constants.js';
 export function debug(...args) {
   if (DEBUG) {
     console.log(...args);
-  }
-}
-
-/**
- * Legacy function for backward compatibility
- * @param {...any} msgs - Messages to log
- * @deprecated Use debug() instead
- */
-export function logDebug(...msgs) {
-  if (DEBUG) {
-    console.log('[YT-HWV]', ...msgs);
   }
 }
 
@@ -83,3 +72,11 @@ export function createLogger(namespace) {
     info: (...args) => info(prefix, ...args),
   };
 }
+
+export default {
+  debug,
+  error,
+  warn,
+  info,
+  createLogger,
+};

@@ -1,28 +1,22 @@
 /**
  * Background cache layer for IndexedDB operations
  * Provides TTL-based caching with LRU eviction to reduce IndexedDB reads
+ *
+ * REFACTORED: Now uses UnifiedCacheManager for consistency with content script
  */
+
+import { UnifiedCacheManager } from '../shared/cache/UnifiedCacheManager.js';
 
 const CACHE_TTL = 30000; // 30 seconds
 const MAX_CACHE_SIZE = 5000; // Maximum number of entries in background cache
-const backgroundCache = new Map(); // videoId -> { record, timestamp }
-const cacheAccessOrder = new Map(); // videoId -> lastAccessTime for LRU tracking
 
-/**
- * Evicts least recently used entries when cache exceeds MAX_CACHE_SIZE
- */
-function evictLRUEntries() {
-  if (backgroundCache.size <= MAX_CACHE_SIZE) return;
-
-  const entries = Array.from(cacheAccessOrder.entries())
-    .sort((a, b) => a[1] - b[1]); // Sort by access time (oldest first)
-
-  const toEvict = entries.slice(0, backgroundCache.size - MAX_CACHE_SIZE);
-  toEvict.forEach(([videoId]) => {
-    backgroundCache.delete(videoId);
-    cacheAccessOrder.delete(videoId);
-  });
-}
+// Initialize unified cache manager in 2-Map TTL mode (background script mode)
+const cacheManager = new UnifiedCacheManager({
+  maxSize: MAX_CACHE_SIZE,
+  cacheTTL: CACHE_TTL,
+  separateTimestamps: false, // 2-Map mode: {record, timestamp} stored together
+  trackPendingRequests: false // Not needed in background script
+});
 
 /**
  * Gets a cached record if it exists and hasn't expired
@@ -30,18 +24,7 @@ function evictLRUEntries() {
  * @returns {Object|null|undefined} - Cached record, null for deleted records, or undefined if not cached
  */
 export function getCachedRecord(videoId) {
-  const entry = backgroundCache.get(videoId);
-  if (!entry) return undefined; // Return undefined for "not cached"
-
-  if (Date.now() - entry.timestamp > CACHE_TTL) {
-    backgroundCache.delete(videoId);
-    cacheAccessOrder.delete(videoId);
-    return undefined; // Return undefined for expired cache
-  }
-
-  // Update access time for LRU tracking
-  cacheAccessOrder.set(videoId, Date.now());
-  return entry.record; // Can be null for deleted records or an object
+  return cacheManager.get(videoId);
 }
 
 /**
@@ -50,12 +33,7 @@ export function getCachedRecord(videoId) {
  * @param {Object|null} record - Record to cache (null for deleted records)
  */
 export function setCachedRecord(videoId, record) {
-  backgroundCache.set(videoId, {
-    record,
-    timestamp: Date.now()
-  });
-  cacheAccessOrder.set(videoId, Date.now());
-  evictLRUEntries(); // Evict old entries if cache is too large
+  cacheManager.set(videoId, record);
 }
 
 /**
@@ -63,16 +41,14 @@ export function setCachedRecord(videoId, record) {
  * @param {string} videoId - Video identifier
  */
 export function invalidateCache(videoId) {
-  backgroundCache.delete(videoId);
-  cacheAccessOrder.delete(videoId);
+  cacheManager.invalidate(videoId);
 }
 
 /**
  * Clears all cached records
  */
 export function clearBackgroundCache() {
-  backgroundCache.clear();
-  cacheAccessOrder.clear();
+  cacheManager.clear();
 }
 
 /**
@@ -80,9 +56,21 @@ export function clearBackgroundCache() {
  * @returns {Object} - Cache stats (size, maxSize, ttl)
  */
 export function getCacheStats() {
-  return {
-    size: backgroundCache.size,
-    maxSize: MAX_CACHE_SIZE,
-    ttl: CACHE_TTL
-  };
+  return cacheManager.getStats();
+}
+
+/**
+ * Validates cache consistency between backgroundCache and cacheAccessOrder
+ * @returns {Object} - Validation result with status and details
+ */
+export function validateCacheConsistency() {
+  return cacheManager.validateConsistency();
+}
+
+/**
+ * Repairs cache inconsistencies by synchronizing both Map structures
+ * @returns {Object} - Repair result with actions taken
+ */
+export function repairCacheConsistency() {
+  return cacheManager.repairConsistency();
 }

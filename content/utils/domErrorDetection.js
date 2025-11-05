@@ -1,6 +1,7 @@
 import { checkCriticalSelectorsHealth, getSelectorHealth } from './domSelectorHealth.js';
 import { showNotification, NotificationType } from '../../shared/notifications.js';
 import { SELECTOR_HEALTH_CONFIG } from '../../shared/constants.js';
+import { error, warn } from './logger.js';
 
 // Track notification timestamps to prevent spam
 const lastNotifications = new Map();
@@ -76,11 +77,11 @@ function getSeverity(successRate) {
 function showCriticalSelectorFailure(selectorKey, health) {
   const message = 'YouTube structure changed. Some videos may not be detected. Please report this issue.';
 
-  console.error('[YT-HWV] Critical selector failure:', {
-    selector: selectorKey,
-    successRate: health.successRate,
-    queries: health.queries
-  });
+  error('[YT-HWV] Critical selector failure:',
+    'selector:', selectorKey,
+    'successRate:', health.successRate,
+    'queries:', health.queries
+  );
 
   showNotification(message, NotificationType.ERROR, 8000);
 }
@@ -94,10 +95,10 @@ function showCriticalSelectorFailure(selectorKey, health) {
 function showSelectorWarning(selectorKey, health) {
   const message = 'Extension may not detect all videos. YouTube might have changed their layout.';
 
-  console.warn('[YT-HWV] Selector degradation:', {
-    selector: selectorKey,
-    successRate: health.successRate
-  });
+  warn('[YT-HWV] Selector degradation:',
+    'selector:', selectorKey,
+    'successRate:', health.successRate
+  );
 
   showNotification(message, NotificationType.WARNING, 5000);
 }

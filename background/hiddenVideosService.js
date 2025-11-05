@@ -12,6 +12,7 @@ import {
 import { getCacheStats } from './indexedDbCache.js';
 import { ensurePromise, queryYoutubeTabs } from '../shared/utils.js';
 import { IMPORT_EXPORT_CONFIG } from '../shared/constants.js';
+import { debug, error, warn, info } from '../shared/logger.js';
 
 const STORAGE_KEYS = {
   HIDDEN_VIDEOS: 'YTHWV_HIDDEN_VIDEOS',
@@ -58,14 +59,14 @@ function buildRecord(videoId, state, title, updatedAt) {
 async function broadcastHiddenVideosEvent(event) {
   try {
     ensurePromise(chrome.runtime.sendMessage({ type: 'HIDDEN_VIDEOS_EVENT', event })).catch(() => {});
-  } catch (error) {
-    console.error('Failed to broadcast runtime event', error);
+  } catch (err) {
+    error('Failed to broadcast runtime event', err);
   }
   try {
     const tabs = await queryYoutubeTabs();
     await Promise.all(tabs.map((tab) => ensurePromise(chrome.tabs.sendMessage(tab.id, { type: 'HIDDEN_VIDEOS_EVENT', event })).catch(() => {})));
-  } catch (error) {
-    console.error('Failed to broadcast tab event', error);
+  } catch (err) {
+    error('Failed to broadcast tab event', err);
   }
 }
 function extractLegacyEntries(source) {
@@ -236,8 +237,8 @@ async function handleHealthCheck() {
   let cacheStats;
   try {
     cacheStats = getCacheStats();
-  } catch (error) {
-    console.error('Failed to get cache stats', error);
+  } catch (err) {
+    error('Failed to get cache stats', err);
     cacheStats = { error: 'Failed to retrieve cache stats' };
   }
 
@@ -460,13 +461,13 @@ function checkMemorySafety(threshold = 40 * 1024 * 1024) {
   const memoryUsage = estimateMemoryUsage();
   if (memoryUsage === null) {
     // If memory API not available, allow operation but log warning
-    console.warn('Memory monitoring unavailable - proceeding with import');
+    warn('Memory monitoring unavailable - proceeding with import');
     return true;
   }
 
   const isSafe = memoryUsage < threshold;
   if (!isSafe) {
-    console.warn(`Memory usage (${(memoryUsage / 1024 / 1024).toFixed(2)}MB) approaching limit (${(threshold / 1024 / 1024).toFixed(2)}MB)`);
+    warn(`Memory usage (${(memoryUsage / 1024 / 1024).toFixed(2)}MB) approaching limit (${(threshold / 1024 / 1024).toFixed(2)}MB)`);
   }
   return isSafe;
 }
@@ -646,12 +647,12 @@ async function handleImportRecords(message) {
         await delay(0);
       }
 
-    } catch (error) {
+    } catch (err) {
       results.errors.push(
-        `Failed to process batch starting at record ${i}: ${error.message}`
+        `Failed to process batch starting at record ${i}: ${err.message}`
       );
       // Don't break - try to continue with next batch unless it's a quota error
-      if (error.message.includes('exceed maximum record limit')) {
+      if (err.message.includes('exceed maximum record limit')) {
         break;
       }
     }
@@ -680,32 +681,95 @@ const MESSAGE_HANDLERS = {
 
 function registerMessageListener() {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (!message || typeof message.type !== 'string') return;
+    // CRITICAL: Early returns must not prevent response for valid messages
+    // Only return false for truly invalid messages
+    if (!message || typeof message.type !== 'string') {
+      return false; // Explicitly signal no async response for invalid messages
+    }
+
     const handler = MESSAGE_HANDLERS[message.type];
-    if (!handler) return;
+    if (!handler) {
+      return false; // No handler for this message type
+    }
 
-    // Wait for initialization before processing (except health check)
-    const promise = message.type === 'HIDDEN_VIDEOS_HEALTH_CHECK'
-      ? Promise.resolve().then(() => handler(message, sender))
-      : ensureMigration()
-          .then(() => handler(message, sender))
-          .catch((initError) => {
+    // Handle both promise-based (tests) and callback-based (Chrome API) patterns
+    const handleAsync = async () => {
+      try {
+        let result;
+
+        // Health checks bypass initialization to provide immediate status
+        if (message.type === 'HIDDEN_VIDEOS_HEALTH_CHECK') {
+          result = await handler(message, sender);
+        } else {
+          try {
+            // Wait for FULL initialization (DB + migration), not just migration
+            // This prevents race conditions where migration starts before DB is ready
+            await ensureInitialization();
+            result = await handler(message, sender);
+          } catch (initError) {
             // If initialization failed, return meaningful error
-            if (initializationError) {
-              throw new Error('Background service initialization failed: ' + initError.message);
-            }
-            throw initError;
-          });
+            error('[HiddenVideos] Initialization error:', initError);
+            const errorResponse = {
+              ok: false,
+              error: `Background service initialization failed: ${initError.message}`
+            };
+            if (sendResponse) sendResponse(errorResponse);
+            return errorResponse;
+          }
+        }
 
-    promise.then((result) => {
-      sendResponse({ ok: true, result });
-    }).catch((error) => {
-      console.error('Hidden videos handler error', error);
-      sendResponse({ ok: false, error: error.message });
-    });
-    return true;
+        const successResponse = { ok: true, result };
+        if (sendResponse) sendResponse(successResponse);
+        return successResponse;
+      } catch (err) {
+        error('[HiddenVideos] Message handler error:', err);
+        const errorResponse = { ok: false, error: err.message };
+        if (sendResponse) sendResponse(errorResponse);
+        return errorResponse;
+      }
+    };
+
+    // If sendResponse is not provided (tests), return the promise directly
+    // Otherwise, call the async function and return true to keep channel open
+    if (!sendResponse) {
+      return handleAsync();
+    }
+
+    handleAsync();
+    return true; // Keep message channel open for async response
   });
 }
+/**
+ * Ensure full initialization is complete (DB + migration)
+ * This should be called by message handlers to ensure the service is ready
+ */
+async function ensureInitialization() {
+  // If initialization already failed, throw the error immediately
+  if (initializationError) {
+    throw initializationError;
+  }
+
+  // If there's an initialization in progress, wait for it
+  if (initializationLock) {
+    await initializationLock;
+    // Check again if it failed during wait
+    if (initializationError) {
+      throw initializationError;
+    }
+    return;
+  }
+
+  // If initialization is complete, we're done
+  if (initializationComplete && !initializationError) {
+    return;
+  }
+
+  // Otherwise, start initialization
+  // This shouldn't normally happen because background.js calls initializeHiddenVideos()
+  // at startup, but we handle it here as a fallback
+  await initializeHiddenVideosService();
+}
+
 async function ensureMigration() {
   // If initialization failed, throw the error
   if (initializationError) {
@@ -713,20 +777,36 @@ async function ensureMigration() {
   }
 
   if (!migrationPromise) {
-    migrationPromise = migrateLegacyHiddenVideos().catch((error) => {
-      console.error('Hidden videos migration failed', error);
-      throw error;
-    });
+    // Create and assign the promise IMMEDIATELY in the same execution context
+    // This prevents race conditions from concurrent calls
+    migrationPromise = (async () => {
+      try {
+        await migrateLegacyHiddenVideos();
+      } catch (err) {
+        error('Hidden videos migration failed', err);
+        // Reset the promise on failure to allow retry
+        migrationPromise = null;
+        throw err;
+      }
+    })();
   }
   return migrationPromise;
 }
 
-export async function initializeHiddenVideosService() {
-  // Register listener FIRST, before any async operations
+/**
+ * Register message listener immediately (synchronous)
+ * This must be called at the top level to avoid race conditions
+ */
+export function ensureMessageListenerRegistered() {
   if (!initialized) {
     registerMessageListener();
     initialized = true;
   }
+}
+
+export async function initializeHiddenVideosService() {
+  // Ensure message listener is registered (idempotent)
+  ensureMessageListenerRegistered();
 
   // Prevent concurrent initialization calls using a lock
   if (initializationLock) {
@@ -740,6 +820,9 @@ export async function initializeHiddenVideosService() {
     return;
   }
 
+  // CRITICAL FIX: Assign lock BEFORE starting async operation to prevent race condition
+  // Previous code had a gap between creating the promise and assigning it to initializationLock
+  // where another call could slip through and create a second initialization
   initializationLock = (async () => {
     try {
       await initializeDb();

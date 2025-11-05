@@ -116,8 +116,21 @@ export const ERROR_CONFIG = {
 };
 
 // Background service worker configuration
+// NOTE: Chrome's alarms API enforces a MINIMUM periodInMinutes of 1 minute for both
+// packed and unpacked extensions. Values below 1 minute are rounded UP to 1 minute.
+// This means we cannot ping more frequently than once per minute using chrome.alarms.
+//
+// Chrome suspends service workers after ~30 seconds of inactivity, so with a 1-minute
+// alarm interval, the worker WILL be suspended between pings. This is acceptable because:
+// - All critical data is persisted in IndexedDB (survives suspensions)
+// - Message listeners are automatically re-registered on wake-up
+// - The worker can restart quickly when needed (< 100ms typically)
+//
+// For more aggressive keep-alive, we would need long-lived connections from content
+// scripts, but that adds complexity and battery drain. The current approach balances
+// performance with resource efficiency.
 export const SERVICE_WORKER_CONFIG = {
-  KEEP_ALIVE_INTERVAL: 20000 // 20 seconds - keeps service worker active during usage
+  KEEP_ALIVE_INTERVAL: 60000 // 1 minute - Chrome's enforced minimum for chrome.alarms
 };
 
 // Pre-computed selector strings for performance
@@ -127,8 +140,10 @@ export const SELECTOR_STRINGS = {
   SHORTS_CONTAINERS: SELECTORS.SHORTS_CONTAINERS.join(', ')
 };
 
-// Debug flag
-export const DEBUG = false;
+// Debug flag - replaced at build time by webpack DefinePlugin
+// In development: true, In production: false
+// DO NOT hardcode this value - it must be set by the build system
+export const DEBUG = typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV !== 'production';
 
 // DOM Cache Configuration
 export const CACHE_CONFIG = {
@@ -196,7 +211,13 @@ export const INDEXEDDB_CONFIG = {
   PREFETCH_DELAY: 100,
 
   // Broadcast
-  BROADCAST_DEBOUNCE: 100
+  BROADCAST_DEBOUNCE: 100,
+
+  // Timeout settings
+  OPERATION_TIMEOUT: 30000, // 30 seconds - timeout for individual operations
+  CURSOR_TIMEOUT: 120000, // 2 minutes - timeout for cursor operations (handles 200k+ records on slow devices)
+  DB_OPEN_TIMEOUT: 30000, // 30 seconds - timeout for opening database (old Android devices need 15-20s)
+  RESET_TIMEOUT: 60000 // 1 minute - timeout for database reset (handles large DB cleanup)
 };
 
 // Feature flags for IndexedDB optimizations
@@ -221,6 +242,39 @@ export const IMPORT_EXPORT_CONFIG = {
     OVERWRITE: 'overwrite', // Overwrite with imported data
     MERGE: 'merge'          // Keep newer timestamp
   }
+};
+
+// Quota Management Configuration
+export const QUOTA_CONFIG = {
+  // Estimate record size (bytes) - typical video record with metadata
+  ESTIMATED_RECORD_SIZE: 200,
+
+  // Safety margin for cleanup (delete 20% more than estimated need)
+  CLEANUP_SAFETY_MARGIN: 1.2,
+
+  // Minimum records to delete (avoid too frequent cleanups)
+  MIN_CLEANUP_COUNT: 100,
+
+  // Maximum records to delete in one cleanup (prevent excessive deletions)
+  MAX_CLEANUP_COUNT: 5000,
+
+  // Maximum records to store in fallback storage
+  MAX_FALLBACK_RECORDS: 1000,
+
+  // Notification cooldown (5 minutes)
+  NOTIFICATION_COOLDOWN_MS: 5 * 60 * 1000,
+
+  // Maximum quota events to log
+  MAX_QUOTA_EVENTS: 50,
+
+  // Maximum retry attempts for quota exceeded operations
+  MAX_RETRY_ATTEMPTS: 3,
+
+  // Enable fallback storage for critical operations
+  ENABLE_FALLBACK_STORAGE: true,
+
+  // Enable user notifications for quota events
+  ENABLE_QUOTA_NOTIFICATIONS: true
 };
 
 // Selector Fallback Chains

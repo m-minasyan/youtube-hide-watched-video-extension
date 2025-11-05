@@ -1,4 +1,4 @@
-import { logDebug } from '../utils/logger.js';
+import { logDebug, error } from '../utils/logger.js';
 import { CSS_CLASSES, INTERSECTION_OBSERVER_CONFIG } from '../utils/constants.js';
 import { applyCacheUpdate, clearCache } from '../storage/cache.js';
 import { loadSettings } from '../storage/settings.js';
@@ -13,16 +13,22 @@ export function handleHiddenVideosEvent(event) {
   if (!event || !event.type) return;
   if (event.type === 'updated' && event.record) {
     applyCacheUpdate(event.record.videoId, event.record);
-    document.querySelectorAll(`.${CSS_CLASSES.EYE_BUTTON}[data-video-id="${event.record.videoId}"]`).forEach((button) => {
-      applyStateToEyeButton(button, event.record.state);
+    // Use programmatic filtering to prevent CSS selector injection
+    document.querySelectorAll(`.${CSS_CLASSES.EYE_BUTTON}`).forEach((button) => {
+      if (button.dataset.videoId === event.record.videoId) {
+        applyStateToEyeButton(button, event.record.state);
+      }
     });
     applyIndividualHiding();
     return;
   }
   if (event.type === 'removed' && event.videoId) {
     applyCacheUpdate(event.videoId, null);
-    document.querySelectorAll(`.${CSS_CLASSES.EYE_BUTTON}[data-video-id="${event.videoId}"]`).forEach((button) => {
-      applyStateToEyeButton(button, 'normal');
+    // Use programmatic filtering to prevent CSS selector injection
+    document.querySelectorAll(`.${CSS_CLASSES.EYE_BUTTON}`).forEach((button) => {
+      if (button.dataset.videoId === event.videoId) {
+        applyStateToEyeButton(button, 'normal');
+      }
     });
     applyIndividualHiding();
     return;
@@ -36,7 +42,7 @@ export function handleHiddenVideosEvent(event) {
   }
 }
 
-export function applyHiding() {
+export async function applyHiding() {
   logDebug('Applying hiding/dimming');
   updateClassOnWatchedItems();
   updateClassOnShortsItems();
@@ -44,23 +50,32 @@ export function applyHiding() {
   // This improves responsiveness and prevents race condition where container state
   // is applied before cache is populated
   addEyeButtons();
-  applyIndividualHiding();
+  await applyIndividualHiding();
 }
 
 // Visibility change handler
 let visibilityUnsubscribe = null;
 
 export function setupMessageListener() {
-  chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
-    if (request.action === 'settingsUpdated') {
-      await loadSettings();
-      applyHiding();
-    } else if (request.action === 'resetSettings') {
-      await loadSettings();
-      applyHiding();
-    } else if (request.type === 'HIDDEN_VIDEOS_EVENT') {
-      handleHiddenVideosEvent(request.event);
-    }
+  chrome.runtime.onMessage.addListener((request, sender) => {
+    // Handle messages asynchronously without blocking
+    // This listener doesn't send responses, so we handle async work internally
+    (async () => {
+      if (request.action === 'settingsUpdated') {
+        await loadSettings();
+        await applyHiding();
+      } else if (request.action === 'resetSettings') {
+        await loadSettings();
+        await applyHiding();
+      } else if (request.type === 'HIDDEN_VIDEOS_EVENT') {
+        handleHiddenVideosEvent(request.event);
+      }
+    })().catch((err) => {
+      error('Error handling message in content script:', err);
+    });
+
+    // No response needed for these messages
+    return false;
   });
 
   // Listen for custom events from eye buttons

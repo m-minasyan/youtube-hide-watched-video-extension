@@ -1,5 +1,6 @@
 import { SELECTOR_CHAINS } from '../../shared/constants.js';
 import { getAllSelectorStats } from './domSelectorHealth.js';
+import { debug } from './logger.js';
 
 /**
  * Generate comprehensive DOM diagnostic report
@@ -51,7 +52,7 @@ export function generateDOMDiagnosticReport() {
  */
 export function printDOMDiagnostics() {
   const report = generateDOMDiagnosticReport();
-  console.log('[YT-HWV DOM Diagnostics]', JSON.stringify(report, null, 2));
+  debug('[YT-HWV DOM Diagnostics]', JSON.stringify(report, null, 2));
   return report;
 }
 
@@ -70,7 +71,7 @@ export function exportDOMDiagnostics() {
 
   URL.revokeObjectURL(url);
 
-  console.log('[YT-HWV] Diagnostics exported');
+  debug('[YT-HWV] Diagnostics exported');
 }
 
 // Expose for debugging
