@@ -140,4 +140,86 @@ describe('Hidden videos service messaging', () => {
     chrome.tabs.sendMessage = originalTabSend;
     chrome.tabs.query = originalQuery;
   });
+
+  test('prevents concurrent migration race condition', async () => {
+    // Setup with legacy data
+    jest.resetModules();
+    chrome.runtime.onMessage.addListener.mockClear();
+    await deleteDatabase('ythwvHiddenVideos');
+
+    const legacyData = {
+      'video1': { state: 'hidden', title: 'Video 1', updatedAt: 100 },
+      'video2': { state: 'dimmed', title: 'Video 2', updatedAt: 200 },
+      'video3': { state: 'hidden', title: 'Video 3', updatedAt: 300 }
+    };
+
+    let migrationCallCount = 0;
+    const originalStorageGet = chrome.storage.local.get;
+
+    chrome.storage.local.get.mockImplementation((keys) => {
+      // Track migration calls by detecting when HIDDEN_VIDEOS is fetched
+      if (keys === STORAGE_KEYS.HIDDEN_VIDEOS ||
+          (Array.isArray(keys) && keys.includes(STORAGE_KEYS.HIDDEN_VIDEOS))) {
+        migrationCallCount++;
+        return Promise.resolve({ [STORAGE_KEYS.HIDDEN_VIDEOS]: legacyData });
+      }
+      // Handle MIGRATION_PROGRESS key
+      if (keys === STORAGE_KEYS.MIGRATION_PROGRESS ||
+          (Array.isArray(keys) && keys.includes(STORAGE_KEYS.MIGRATION_PROGRESS))) {
+        return Promise.resolve({});
+      }
+      return Promise.resolve({});
+    });
+
+    chrome.storage.sync.get.mockImplementation((keys) => {
+      if (keys === STORAGE_KEYS.HIDDEN_VIDEOS ||
+          (Array.isArray(keys) && keys.includes(STORAGE_KEYS.HIDDEN_VIDEOS))) {
+        return Promise.resolve({ [STORAGE_KEYS.HIDDEN_VIDEOS]: {} });
+      }
+      return Promise.resolve({});
+    });
+
+    // Import and initialize service
+    const service = await import('../background/hiddenVideosService.js');
+    await service.initializeHiddenVideosService();
+    const handler = chrome.runtime.onMessage.addListener.mock.calls.at(-1)[0];
+
+    // Simulate concurrent message requests that would trigger ensureMigration
+    const concurrentRequests = Array.from({ length: 5 }, (_, i) =>
+      invokeHandler(handler, {
+        type: 'HIDDEN_VIDEOS_GET_MANY',
+        ids: [`video${i + 1}`]
+      })
+    );
+
+    // Wait for all concurrent requests to complete
+    const results = await Promise.all(concurrentRequests);
+
+    // Verify all requests succeeded
+    results.forEach((result, i) => {
+      expect(result.ok).toBe(true);
+    });
+
+    // Verify data was migrated correctly (check first 3 videos exist)
+    const getResponse = await invokeHandler(handler, {
+      type: 'HIDDEN_VIDEOS_GET_MANY',
+      ids: ['video1', 'video2', 'video3']
+    });
+
+    expect(getResponse.ok).toBe(true);
+    expect(getResponse.result.records.video1.state).toBe('hidden');
+    expect(getResponse.result.records.video2.state).toBe('dimmed');
+    expect(getResponse.result.records.video3.state).toBe('hidden');
+
+    // The migration should have been called only once during initialization
+    // Even though we had 5 concurrent requests, the migration promise
+    // should prevent duplicate migrations
+    // Note: migrationCallCount is 2 because the migration function calls
+    // chrome.storage.local.get(HIDDEN_VIDEOS) twice in a single run:
+    // once at the start and once to check remaining items
+    // If there was a race condition, we'd see 4 or more calls (2 per migration)
+    expect(migrationCallCount).toBe(2);
+
+    chrome.storage.local.get = originalStorageGet;
+  });
 });
