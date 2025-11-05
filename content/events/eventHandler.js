@@ -13,16 +13,22 @@ export function handleHiddenVideosEvent(event) {
   if (!event || !event.type) return;
   if (event.type === 'updated' && event.record) {
     applyCacheUpdate(event.record.videoId, event.record);
-    document.querySelectorAll(`.${CSS_CLASSES.EYE_BUTTON}[data-video-id="${event.record.videoId}"]`).forEach((button) => {
-      applyStateToEyeButton(button, event.record.state);
+    // Use programmatic filtering to prevent CSS selector injection
+    document.querySelectorAll(`.${CSS_CLASSES.EYE_BUTTON}`).forEach((button) => {
+      if (button.dataset.videoId === event.record.videoId) {
+        applyStateToEyeButton(button, event.record.state);
+      }
     });
     applyIndividualHiding();
     return;
   }
   if (event.type === 'removed' && event.videoId) {
     applyCacheUpdate(event.videoId, null);
-    document.querySelectorAll(`.${CSS_CLASSES.EYE_BUTTON}[data-video-id="${event.videoId}"]`).forEach((button) => {
-      applyStateToEyeButton(button, 'normal');
+    // Use programmatic filtering to prevent CSS selector injection
+    document.querySelectorAll(`.${CSS_CLASSES.EYE_BUTTON}`).forEach((button) => {
+      if (button.dataset.videoId === event.videoId) {
+        applyStateToEyeButton(button, 'normal');
+      }
     });
     applyIndividualHiding();
     return;
