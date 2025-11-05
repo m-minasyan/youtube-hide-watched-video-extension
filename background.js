@@ -1,4 +1,5 @@
 import { initializeHiddenVideosService } from './background/hiddenVideosService.js';
+import { closeDb } from './background/indexedDb.js';
 import { STORAGE_KEYS, DEFAULT_SETTINGS, SERVICE_WORKER_CONFIG } from './shared/constants.js';
 import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 import { processFallbackStorage } from './background/indexedDb.js';
@@ -119,7 +120,9 @@ initializeHiddenVideos()
   });
 
 // Clean up on suspend
-chrome.runtime.onSuspend.addListener(() => {
+chrome.runtime.onSuspend.addListener(async () => {
   stopKeepAlive();
   stopFallbackProcessing();
+  // Close IndexedDB connection to prevent blocking on next startup
+  await closeDb();
 });
