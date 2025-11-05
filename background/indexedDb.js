@@ -1,6 +1,7 @@
 import { retryOperation, logError, classifyError, ErrorType } from '../shared/errorHandler.js';
 import { getCachedRecord, setCachedRecord, invalidateCache, clearBackgroundCache } from './indexedDbCache.js';
-import { INDEXEDDB_CONFIG } from '../shared/constants.js';
+import { INDEXEDDB_CONFIG, QUOTA_CONFIG } from '../shared/constants.js';
+import { handleQuotaExceeded, getFromFallbackStorage, removeFromFallbackStorage } from './quotaManager.js';
 
 const DB_NAME = 'ythwvHiddenVideos';
 const DB_VERSION = 1;
@@ -13,53 +14,81 @@ let dbPromise = null;
 let dbResetInProgress = false;
 let dbResetPromise = null;
 
+/**
+ * Wraps a promise with a timeout to prevent indefinite hanging
+ * @param {Promise} promise - The promise to wrap
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {string} operationName - Name of the operation for error messages
+ * @returns {Promise} - Promise that rejects if timeout is exceeded
+ */
+function withTimeout(promise, timeoutMs, operationName = 'Operation') {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      const timeoutId = setTimeout(() => {
+        const error = new Error(`${operationName} timeout after ${timeoutMs}ms`);
+        error.name = 'TimeoutError';
+        error.timeout = true;
+        reject(error);
+      }, timeoutMs);
+
+      // Clean up timeout if promise resolves first
+      promise.finally(() => clearTimeout(timeoutId));
+    })
+  ]);
+}
+
 function openDb() {
   if (dbPromise) return dbPromise;
 
   dbPromise = retryOperation(
-    () => new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+    () => withTimeout(
+      new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-      request.onupgradeneeded = () => {
-        const db = request.result;
-        let store;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          store = db.createObjectStore(STORE_NAME, { keyPath: 'videoId' });
-        } else {
-          store = request.transaction.objectStore(STORE_NAME);
-        }
-        if (!store.indexNames.contains(UPDATED_AT_INDEX)) {
-          store.createIndex(UPDATED_AT_INDEX, 'updatedAt');
-        }
-        if (!store.indexNames.contains(STATE_INDEX)) {
-          store.createIndex(STATE_INDEX, 'state');
-        }
-        if (!store.indexNames.contains(STATE_UPDATED_AT_INDEX)) {
-          store.createIndex(STATE_UPDATED_AT_INDEX, ['state', 'updatedAt']);
-        }
-      };
-
-      request.onsuccess = () => {
-        const db = request.result;
-        db.onversionchange = () => {
-          db.close();
-          dbPromise = null;
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          let store;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            store = db.createObjectStore(STORE_NAME, { keyPath: 'videoId' });
+          } else {
+            store = request.transaction.objectStore(STORE_NAME);
+          }
+          if (!store.indexNames.contains(UPDATED_AT_INDEX)) {
+            store.createIndex(UPDATED_AT_INDEX, 'updatedAt');
+          }
+          if (!store.indexNames.contains(STATE_INDEX)) {
+            store.createIndex(STATE_INDEX, 'state');
+          }
+          if (!store.indexNames.contains(STATE_UPDATED_AT_INDEX)) {
+            store.createIndex(STATE_UPDATED_AT_INDEX, ['state', 'updatedAt']);
+          }
         };
-        db.onerror = (event) => {
-          logError('IndexedDB', event.target.error, { operation: 'db.onerror' });
+
+        request.onsuccess = () => {
+          const db = request.result;
+          db.onversionchange = () => {
+            db.close();
+            dbPromise = null;
+          };
+          db.onerror = (event) => {
+            logError('IndexedDB', event.target.error, { operation: 'db.onerror' });
+          };
+          resolve(db);
         };
-        resolve(db);
-      };
 
-      request.onerror = () => {
-        reject(request.error);
-      };
+        request.onerror = () => {
+          reject(request.error);
+        };
 
-      request.onblocked = () => {
-        logError('IndexedDB', new Error('Database blocked'), { operation: 'open' });
-        // Continue waiting, don't reject
-      };
-    }),
+        request.onblocked = () => {
+          logError('IndexedDB', new Error('Database blocked'), { operation: 'open' });
+          // Continue waiting, don't reject
+        };
+      }),
+      INDEXEDDB_CONFIG.DB_OPEN_TIMEOUT,
+      'IndexedDB open'
+    ),
     {
       maxAttempts: 3,
       initialDelay: 100,
@@ -80,27 +109,51 @@ function openDb() {
   return dbPromise;
 }
 
-async function withStore(mode, handler) {
+/**
+ * Closes the database connection and clears the cache
+ * Should be called when the service worker is about to suspend
+ * @returns {Promise<void>}
+ */
+export async function closeDb() {
+  if (dbPromise) {
+    try {
+      const db = await dbPromise;
+      db.close();
+    } catch (error) {
+      logError('IndexedDB', error, { operation: 'closeDb', phase: 'close' });
+    } finally {
+      dbPromise = null;
+      // Clear the cache when closing the database
+      clearBackgroundCache();
+    }
+  }
+}
+
+async function withStore(mode, handler, operationContext = null) {
   try {
     const db = await openDb();
     return await retryOperation(
-      () => new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, mode);
-        const store = tx.objectStore(STORE_NAME);
-        const handlerPromise = Promise.resolve().then(() => handler(store, tx));
+      () => withTimeout(
+        new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, mode);
+          const store = tx.objectStore(STORE_NAME);
+          const handlerPromise = Promise.resolve().then(() => handler(store, tx));
 
-        tx.oncomplete = async () => {
-          try {
-            const value = await handlerPromise;
-            resolve(value);
-          } catch (error) {
-            reject(error);
-          }
-        };
+          tx.oncomplete = async () => {
+            try {
+              const value = await handlerPromise;
+              resolve(value);
+            } catch (error) {
+              reject(error);
+            }
+          };
 
-        tx.onerror = () => reject(tx.error);
-        tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
-      }),
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
+        }),
+        INDEXEDDB_CONFIG.OPERATION_TIMEOUT,
+        `IndexedDB ${mode} transaction`
+      ),
       {
         maxAttempts: 3,
         shouldRetry: (error) => {
@@ -120,19 +173,78 @@ async function withStore(mode, handler) {
   } catch (error) {
     const errorType = classifyError(error);
 
-    // Handle quota exceeded
+    // Handle quota exceeded with comprehensive quota manager
     if (errorType === ErrorType.QUOTA_EXCEEDED) {
-      logError('IndexedDB', error, { operation: 'withStore', quotaExceeded: true });
+      logError('IndexedDB', error, {
+        operation: 'withStore',
+        quotaExceeded: true,
+        operationContext
+      });
 
-      // Attempt to free space by deleting oldest records
-      try {
-        await deleteOldestHiddenVideos(1000);
-        // Retry the operation once after cleanup
-        return await withStore(mode, handler);
-      } catch (cleanupError) {
-        logError('IndexedDB', cleanupError, { operation: 'quota_cleanup', fatal: true });
-        throw error;
+      // Use the comprehensive quota manager
+      const quotaResult = await handleQuotaExceeded(
+        error,
+        deleteOldestHiddenVideos,
+        operationContext || { operationType: 'unknown' }
+      );
+
+      // If cleanup was successful, retry the operation
+      if (quotaResult.success && quotaResult.cleanupPerformed) {
+        try {
+          // Retry the operation with up to QUOTA_CONFIG.MAX_RETRY_ATTEMPTS attempts
+          const maxRetries = QUOTA_CONFIG.MAX_RETRY_ATTEMPTS || 3;
+          let lastError = error;
+
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              return await withStore(mode, handler, {
+                ...operationContext,
+                retryAttempt: attempt
+              });
+            } catch (retryError) {
+              lastError = retryError;
+              const retryErrorType = classifyError(retryError);
+
+              // If still quota exceeded, perform additional cleanup
+              if (retryErrorType === ErrorType.QUOTA_EXCEEDED && attempt < maxRetries) {
+                logError('IndexedDB', retryError, {
+                  operation: 'quota_retry',
+                  attempt,
+                  performingAdditionalCleanup: true
+                });
+
+                // Progressive cleanup - delete more records each retry
+                const additionalCleanup = quotaResult.recordsDeleted * 0.5; // 50% more each time
+                await deleteOldestHiddenVideos(Math.floor(additionalCleanup));
+              } else if (retryErrorType !== ErrorType.QUOTA_EXCEEDED) {
+                // Different error - throw immediately
+                throw retryError;
+              }
+            }
+          }
+
+          // All retries exhausted - data is safely in fallback storage
+          logError('IndexedDB', lastError, {
+            operation: 'quota_retry_exhausted',
+            dataInFallbackStorage: quotaResult.fallbackSaved,
+            fallbackRecords: quotaResult.fallbackRecords,
+            fatal: true
+          });
+
+          throw lastError;
+        } catch (retryError) {
+          throw retryError;
+        }
       }
+
+      // Cleanup failed - data is in fallback storage if available
+      logError('IndexedDB', error, {
+        operation: 'quota_cleanup_failed',
+        quotaResult,
+        fatal: true
+      });
+
+      throw error;
     }
 
     // Handle corruption
@@ -152,13 +264,21 @@ export async function initializeDb() {
 }
 export async function upsertHiddenVideos(records) {
   if (!records || records.length === 0) return;
+
+  // Pass operation context for quota management
+  const operationContext = {
+    operationType: 'upsert_batch',
+    data: records,
+    recordCount: records.length
+  };
+
   await withStore('readwrite', (store) => {
     records.forEach((record) => {
       store.put(record);
       // Update background cache
       setCachedRecord(record.videoId, record);
     });
-  });
+  }, operationContext);
 }
 
 export async function upsertHiddenVideo(record) {
@@ -235,27 +355,31 @@ async function getHiddenVideosByIdsCursor(ids) {
   const idSet = new Set(ids);
   const result = {};
 
-  await withStore('readonly', (store) => new Promise((resolve, reject) => {
-    const request = store.openCursor();
+  await withStore('readonly', (store) => withTimeout(
+    new Promise((resolve, reject) => {
+      const request = store.openCursor();
 
-    request.onsuccess = (event) => {
-      const cursor = event.target.result;
-      if (!cursor) {
-        resolve();
-        return;
-      }
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (!cursor) {
+          resolve();
+          return;
+        }
 
-      if (idSet.has(cursor.value.videoId)) {
-        result[cursor.value.videoId] = cursor.value;
-        // Cache the fetched record
-        setCachedRecord(cursor.value.videoId, cursor.value);
-      }
+        if (idSet.has(cursor.value.videoId)) {
+          result[cursor.value.videoId] = cursor.value;
+          // Cache the fetched record
+          setCachedRecord(cursor.value.videoId, cursor.value);
+        }
 
-      cursor.continue();
-    };
+        cursor.continue();
+      };
 
-    request.onerror = () => reject(request.error);
-  }));
+      request.onerror = () => reject(request.error);
+    }),
+    INDEXEDDB_CONFIG.CURSOR_TIMEOUT,
+    'Cursor scan for video IDs'
+  ));
 
   return result;
 }
@@ -296,69 +420,73 @@ export async function getHiddenVideosPage(options = {}) {
   const { state = null, cursor = null, limit = 100 } = options;
   const pageSize = Math.max(1, Math.min(limit, 500));
   const limitPlusOne = pageSize + 1;
-  return withStore('readonly', (store) => new Promise((resolve, reject) => {
-    const items = [];
-    let hasMore = false;
-    let nextCursor = null;
-    let resolved = false;
-    const skip = cursor && cursor.videoId ? cursor : null;
-    let skipping = Boolean(skip);
-    const direction = 'prev';
-    function finish(payload) {
-      if (resolved) return;
-      resolved = true;
-      resolve(payload);
-    }
-    function fail(error) {
-      if (resolved) return;
-      resolved = true;
-      reject(error);
-    }
-    let request;
-    if (state) {
-      const index = store.index(STATE_UPDATED_AT_INDEX);
-      const lower = [state, 0];
-      const upper = [state, Number.MAX_SAFE_INTEGER];
-      const range = IDBKeyRange.bound(lower, upper);
-      request = index.openCursor(range, direction);
-    } else {
-      const index = store.index(UPDATED_AT_INDEX);
-      request = index.openCursor(null, direction);
-    }
-    request.onsuccess = (event) => {
-      const cursorObject = event.target.result;
-      if (!cursorObject) {
-        finish({ items, hasMore, nextCursor });
-        return;
+  return withStore('readonly', (store) => withTimeout(
+    new Promise((resolve, reject) => {
+      const items = [];
+      let hasMore = false;
+      let nextCursor = null;
+      let resolved = false;
+      const skip = cursor && cursor.videoId ? cursor : null;
+      let skipping = Boolean(skip);
+      const direction = 'prev';
+      function finish(payload) {
+        if (resolved) return;
+        resolved = true;
+        resolve(payload);
       }
-      const value = cursorObject.value;
-      if (skipping) {
-        const matchesState = !skip || !skip.state || value.state === skip.state;
-        if (matchesState && value.updatedAt === skip.updatedAt && value.videoId === skip.videoId) {
-          skipping = false;
+      function fail(error) {
+        if (resolved) return;
+        resolved = true;
+        reject(error);
+      }
+      let request;
+      if (state) {
+        const index = store.index(STATE_UPDATED_AT_INDEX);
+        const lower = [state, 0];
+        const upper = [state, Number.MAX_SAFE_INTEGER];
+        const range = IDBKeyRange.bound(lower, upper);
+        request = index.openCursor(range, direction);
+      } else {
+        const index = store.index(UPDATED_AT_INDEX);
+        request = index.openCursor(null, direction);
+      }
+      request.onsuccess = (event) => {
+        const cursorObject = event.target.result;
+        if (!cursorObject) {
+          finish({ items, hasMore, nextCursor });
+          return;
+        }
+        const value = cursorObject.value;
+        if (skipping) {
+          const matchesState = !skip || !skip.state || value.state === skip.state;
+          if (matchesState && value.updatedAt === skip.updatedAt && value.videoId === skip.videoId) {
+            skipping = false;
+          }
+          cursorObject.continue();
+          return;
+        }
+        items.push(value);
+        if (items.length === limitPlusOne) {
+          const lastItem = items[pageSize - 1];
+          items.pop();
+          nextCursor = {
+            state: state || null,
+            updatedAt: lastItem.updatedAt,
+            videoId: lastItem.videoId
+          };
+          hasMore = true;
+          finish({ items, hasMore, nextCursor });
+          return;
         }
         cursorObject.continue();
-        return;
-      }
-      items.push(value);
-      if (items.length === limitPlusOne) {
-        const lastItem = items[pageSize - 1];
-        items.pop();
-        nextCursor = {
-          state: state || null,
-          updatedAt: lastItem.updatedAt,
-          videoId: lastItem.videoId
-        };
-        hasMore = true;
-        finish({ items, hasMore, nextCursor });
-        return;
-      }
-      cursorObject.continue();
-    };
-    request.onerror = () => {
-      fail(request.error);
-    };
-  }));
+      };
+      request.onerror = () => {
+        fail(request.error);
+      };
+    }),
+    INDEXEDDB_CONFIG.CURSOR_TIMEOUT,
+    'Pagination cursor'
+  ));
 }
 // Use cursor for stats calculation on large databases (configurable threshold)
 const STATS_CURSOR_THRESHOLD = INDEXEDDB_CONFIG.STATS_CURSOR_THRESHOLD;
@@ -368,30 +496,34 @@ const STATS_CURSOR_THRESHOLD = INDEXEDDB_CONFIG.STATS_CURSOR_THRESHOLD;
  * @returns {Promise<Object>} - Stats object with total, dimmed, hidden counts
  */
 async function getHiddenVideosStatsCount() {
-  return withStore('readonly', (store) => new Promise((resolve, reject) => {
-    const counts = { total: 0, dimmed: 0, hidden: 0 };
-    let remaining = 3;
-    function handleSuccess(key, request) {
-      counts[key] = request.result || 0;
-      remaining -= 1;
-      if (remaining === 0) {
-        resolve(counts);
+  return withStore('readonly', (store) => withTimeout(
+    new Promise((resolve, reject) => {
+      const counts = { total: 0, dimmed: 0, hidden: 0 };
+      let remaining = 3;
+      function handleSuccess(key, request) {
+        counts[key] = request.result || 0;
+        remaining -= 1;
+        if (remaining === 0) {
+          resolve(counts);
+        }
       }
-    }
-    function handleError(request) {
-      reject(request.error);
-    }
-    const totalRequest = store.count();
-    totalRequest.onsuccess = () => handleSuccess('total', totalRequest);
-    totalRequest.onerror = () => handleError(totalRequest);
-    const stateIndex = store.index(STATE_INDEX);
-    const dimmedRequest = stateIndex.count('dimmed');
-    dimmedRequest.onsuccess = () => handleSuccess('dimmed', dimmedRequest);
-    dimmedRequest.onerror = () => handleError(dimmedRequest);
-    const hiddenRequest = stateIndex.count('hidden');
-    hiddenRequest.onsuccess = () => handleSuccess('hidden', hiddenRequest);
-    hiddenRequest.onerror = () => handleError(hiddenRequest);
-  }));
+      function handleError(request) {
+        reject(request.error);
+      }
+      const totalRequest = store.count();
+      totalRequest.onsuccess = () => handleSuccess('total', totalRequest);
+      totalRequest.onerror = () => handleError(totalRequest);
+      const stateIndex = store.index(STATE_INDEX);
+      const dimmedRequest = stateIndex.count('dimmed');
+      dimmedRequest.onsuccess = () => handleSuccess('dimmed', dimmedRequest);
+      dimmedRequest.onerror = () => handleError(dimmedRequest);
+      const hiddenRequest = stateIndex.count('hidden');
+      hiddenRequest.onsuccess = () => handleSuccess('hidden', hiddenRequest);
+      hiddenRequest.onerror = () => handleError(hiddenRequest);
+    }),
+    INDEXEDDB_CONFIG.OPERATION_TIMEOUT,
+    'Stats count operations'
+  ));
 }
 
 /**
@@ -399,26 +531,30 @@ async function getHiddenVideosStatsCount() {
  * @returns {Promise<Object>} - Stats object with total, dimmed, hidden counts
  */
 async function getHiddenVideosStatsCursor() {
-  return withStore('readonly', (store) => new Promise((resolve, reject) => {
-    const counts = { total: 0, dimmed: 0, hidden: 0 };
-    const request = store.openCursor();
+  return withStore('readonly', (store) => withTimeout(
+    new Promise((resolve, reject) => {
+      const counts = { total: 0, dimmed: 0, hidden: 0 };
+      const request = store.openCursor();
 
-    request.onsuccess = (event) => {
-      const cursor = event.target.result;
-      if (!cursor) {
-        resolve(counts);
-        return;
-      }
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (!cursor) {
+          resolve(counts);
+          return;
+        }
 
-      counts.total++;
-      if (cursor.value.state === 'dimmed') counts.dimmed++;
-      if (cursor.value.state === 'hidden') counts.hidden++;
+        counts.total++;
+        if (cursor.value.state === 'dimmed') counts.dimmed++;
+        if (cursor.value.state === 'hidden') counts.hidden++;
 
-      cursor.continue();
-    };
+        cursor.continue();
+      };
 
-    request.onerror = () => reject(request.error);
-  }));
+      request.onerror = () => reject(request.error);
+    }),
+    INDEXEDDB_CONFIG.CURSOR_TIMEOUT,
+    'Stats cursor scan'
+  ));
 }
 
 /**
@@ -429,11 +565,15 @@ async function getHiddenVideosStatsCursor() {
  */
 export async function getHiddenVideosStats() {
   // First, get a quick count to decide which method to use
-  const total = await withStore('readonly', (store) => new Promise((resolve, reject) => {
-    const request = store.count();
-    request.onsuccess = () => resolve(request.result || 0);
-    request.onerror = () => reject(request.error);
-  }));
+  const total = await withStore('readonly', (store) => withTimeout(
+    new Promise((resolve, reject) => {
+      const request = store.count();
+      request.onsuccess = () => resolve(request.result || 0);
+      request.onerror = () => reject(request.error);
+    }),
+    INDEXEDDB_CONFIG.OPERATION_TIMEOUT,
+    'Count operation for stats'
+  ));
 
   // For small databases, use separate count operations (faster)
   // For large databases, use cursor scan (single pass)
@@ -449,38 +589,42 @@ export async function deleteOldestHiddenVideos(count) {
   const target = Math.min(Math.floor(count), 1000000);
   const deletedIds = [];
 
-  await withStore('readwrite', (store) => new Promise((resolve, reject) => {
-    const index = store.index(UPDATED_AT_INDEX);
-    let removed = 0;
-    let resolved = false;
-    function finish() {
-      if (resolved) return;
-      resolved = true;
-      resolve();
-    }
-    const request = index.openCursor(null, 'next');
-    request.onsuccess = (event) => {
-      const cursor = event.target.result;
-      if (!cursor) {
-        finish();
-        return;
+  await withStore('readwrite', (store) => withTimeout(
+    new Promise((resolve, reject) => {
+      const index = store.index(UPDATED_AT_INDEX);
+      let removed = 0;
+      let resolved = false;
+      function finish() {
+        if (resolved) return;
+        resolved = true;
+        resolve();
       }
-      const videoId = cursor.value.videoId;
-      cursor.delete();
-      deletedIds.push(videoId);
-      removed += 1;
-      if (removed >= target) {
-        finish();
-        return;
-      }
-      cursor.continue();
-    };
-    request.onerror = () => {
-      if (resolved) return;
-      resolved = true;
-      reject(request.error);
-    };
-  }));
+      const request = index.openCursor(null, 'next');
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (!cursor) {
+          finish();
+          return;
+        }
+        const videoId = cursor.value.videoId;
+        cursor.delete();
+        deletedIds.push(videoId);
+        removed += 1;
+        if (removed >= target) {
+          finish();
+          return;
+        }
+        cursor.continue();
+      };
+      request.onerror = () => {
+        if (resolved) return;
+        resolved = true;
+        reject(request.error);
+      };
+    }),
+    INDEXEDDB_CONFIG.CURSOR_TIMEOUT,
+    'Delete oldest videos cursor'
+  ));
 
   // Invalidate cache for all deleted videos
   deletedIds.forEach(videoId => invalidateCache(videoId));
@@ -523,16 +667,20 @@ async function attemptDatabaseReset() {
       }
 
       // Delete and recreate database
-      await new Promise((resolve, reject) => {
-        const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
-        deleteRequest.onsuccess = () => resolve();
-        deleteRequest.onerror = () => reject(deleteRequest.error);
-        deleteRequest.onblocked = () => {
-          logError('IndexedDB', new Error('Delete blocked'), { operation: 'reset' });
-          // Continue anyway
-          resolve();
-        };
-      });
+      await withTimeout(
+        new Promise((resolve, reject) => {
+          const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
+          deleteRequest.onsuccess = () => resolve();
+          deleteRequest.onerror = () => reject(deleteRequest.error);
+          deleteRequest.onblocked = () => {
+            logError('IndexedDB', new Error('Delete blocked'), { operation: 'reset' });
+            // Continue anyway
+            resolve();
+          };
+        }),
+        INDEXEDDB_CONFIG.RESET_TIMEOUT,
+        'Database delete for reset'
+      );
 
       // Reopen database
       await openDb();
@@ -555,3 +703,90 @@ async function attemptDatabaseReset() {
 
 // Export reset function for external use
 export { attemptDatabaseReset };
+
+/**
+ * Processes fallback storage and attempts to save pending records to IndexedDB
+ * Should be called periodically or when quota is likely available
+ * @returns {Promise<Object>} Result with success count and remaining records
+ */
+export async function processFallbackStorage() {
+  try {
+    const fallbackRecords = await getFromFallbackStorage();
+
+    if (fallbackRecords.length === 0) {
+      return {
+        success: true,
+        processed: 0,
+        remaining: 0,
+        message: 'No fallback records to process'
+      };
+    }
+
+    logError('IndexedDB', new Error('Processing fallback storage'), {
+      operation: 'processFallbackStorage',
+      recordCount: fallbackRecords.length
+    });
+
+    // Process in batches to avoid overwhelming IndexedDB
+    const BATCH_SIZE = 100;
+    let processedCount = 0;
+    let failedAtBatch = -1;
+
+    for (let i = 0; i < fallbackRecords.length; i += BATCH_SIZE) {
+      const batch = fallbackRecords.slice(i, Math.min(i + BATCH_SIZE, fallbackRecords.length));
+
+      try {
+        await upsertHiddenVideos(batch);
+        processedCount += batch.length;
+
+        // Successfully saved this batch - remove from fallback storage
+        await removeFromFallbackStorage(batch.length);
+      } catch (error) {
+        const errorType = classifyError(error);
+
+        if (errorType === ErrorType.QUOTA_EXCEEDED) {
+          // Still quota exceeded - stop processing
+          failedAtBatch = i;
+          logError('IndexedDB', error, {
+            operation: 'processFallbackStorage',
+            quotaStillExceeded: true,
+            processedCount,
+            remainingCount: fallbackRecords.length - processedCount
+          });
+          break;
+        } else {
+          // Other error - log and continue with next batch
+          logError('IndexedDB', error, {
+            operation: 'processFallbackStorage',
+            batchIndex: i,
+            batchSize: batch.length,
+            continuing: true
+          });
+        }
+      }
+    }
+
+    const remaining = fallbackRecords.length - processedCount;
+
+    return {
+      success: processedCount > 0,
+      processed: processedCount,
+      remaining,
+      message: processedCount > 0
+        ? `Successfully processed ${processedCount} records from fallback storage. ${remaining} remaining.`
+        : 'Failed to process fallback records - quota may still be exceeded.'
+    };
+  } catch (error) {
+    logError('IndexedDB', error, {
+      operation: 'processFallbackStorage',
+      fatal: true
+    });
+
+    return {
+      success: false,
+      processed: 0,
+      remaining: 0,
+      error: error.message
+    };
+  }
+}

@@ -196,7 +196,13 @@ export const INDEXEDDB_CONFIG = {
   PREFETCH_DELAY: 100,
 
   // Broadcast
-  BROADCAST_DEBOUNCE: 100
+  BROADCAST_DEBOUNCE: 100,
+
+  // Timeout settings
+  OPERATION_TIMEOUT: 30000, // 30 seconds - timeout for individual operations
+  CURSOR_TIMEOUT: 60000, // 60 seconds - timeout for cursor operations (can be longer)
+  DB_OPEN_TIMEOUT: 10000, // 10 seconds - timeout for opening database
+  RESET_TIMEOUT: 30000 // 30 seconds - timeout for database reset
 };
 
 // Feature flags for IndexedDB optimizations
@@ -221,6 +227,39 @@ export const IMPORT_EXPORT_CONFIG = {
     OVERWRITE: 'overwrite', // Overwrite with imported data
     MERGE: 'merge'          // Keep newer timestamp
   }
+};
+
+// Quota Management Configuration
+export const QUOTA_CONFIG = {
+  // Estimate record size (bytes) - typical video record with metadata
+  ESTIMATED_RECORD_SIZE: 200,
+
+  // Safety margin for cleanup (delete 20% more than estimated need)
+  CLEANUP_SAFETY_MARGIN: 1.2,
+
+  // Minimum records to delete (avoid too frequent cleanups)
+  MIN_CLEANUP_COUNT: 100,
+
+  // Maximum records to delete in one cleanup (prevent excessive deletions)
+  MAX_CLEANUP_COUNT: 5000,
+
+  // Maximum records to store in fallback storage
+  MAX_FALLBACK_RECORDS: 1000,
+
+  // Notification cooldown (5 minutes)
+  NOTIFICATION_COOLDOWN_MS: 5 * 60 * 1000,
+
+  // Maximum quota events to log
+  MAX_QUOTA_EVENTS: 50,
+
+  // Maximum retry attempts for quota exceeded operations
+  MAX_RETRY_ATTEMPTS: 3,
+
+  // Enable fallback storage for critical operations
+  ENABLE_FALLBACK_STORAGE: true,
+
+  // Enable user notifications for quota events
+  ENABLE_QUOTA_NOTIFICATIONS: true
 };
 
 // Selector Fallback Chains

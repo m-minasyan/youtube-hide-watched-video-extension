@@ -1,6 +1,7 @@
 // Error categories
 export const ErrorType = {
   TRANSIENT: 'transient',      // Retry automatically
+  TIMEOUT: 'timeout',           // Operation timeout - may be retryable
   QUOTA_EXCEEDED: 'quota',      // Special handling needed
   PERMISSION: 'permission',     // User action required
   CORRUPTION: 'corruption',     // Data recovery needed
@@ -14,6 +15,13 @@ export function classifyError(error) {
 
   const message = error.message?.toLowerCase() || '';
   const name = error.name?.toLowerCase() || '';
+
+  // Timeout errors - check flag first, then name and message
+  if (error.timeout === true ||
+      name === 'timeouterror' ||
+      (message.includes('timeout') && message.includes('operation'))) {
+    return ErrorType.TIMEOUT;
+  }
 
   // IndexedDB quota errors
   if (message.includes('quota') || name.includes('quotaexceedederror')) {
@@ -34,7 +42,7 @@ export function classifyError(error) {
     return ErrorType.PERMANENT;
   }
 
-  // Network/messaging errors - ENHANCED
+  // Network/messaging errors - ENHANCED (but not our custom timeout errors)
   if (message.includes('message') ||
       message.includes('no response') ||
       message.includes('no receiver') ||

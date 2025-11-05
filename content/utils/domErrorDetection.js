@@ -76,11 +76,11 @@ function getSeverity(successRate) {
 function showCriticalSelectorFailure(selectorKey, health) {
   const message = 'YouTube structure changed. Some videos may not be detected. Please report this issue.';
 
-  console.error('[YT-HWV] Critical selector failure:', {
-    selector: selectorKey,
-    successRate: health.successRate,
-    queries: health.queries
-  });
+  console.error('[YT-HWV] Critical selector failure:',
+    'selector:', selectorKey,
+    'successRate:', health.successRate,
+    'queries:', health.queries
+  );
 
   showNotification(message, NotificationType.ERROR, 8000);
 }
@@ -94,10 +94,10 @@ function showCriticalSelectorFailure(selectorKey, health) {
 function showSelectorWarning(selectorKey, health) {
   const message = 'Extension may not detect all videos. YouTube might have changed their layout.';
 
-  console.warn('[YT-HWV] Selector degradation:', {
-    selector: selectorKey,
-    successRate: health.successRate
-  });
+  console.warn('[YT-HWV] Selector degradation:',
+    'selector:', selectorKey,
+    'successRate:', health.successRate
+  );
 
   showNotification(message, NotificationType.WARNING, 5000);
 }

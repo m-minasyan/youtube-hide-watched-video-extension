@@ -1,9 +1,14 @@
 import { initializeHiddenVideosService } from './background/hiddenVideosService.js';
+import { closeDb } from './background/indexedDb.js';
 import { STORAGE_KEYS, DEFAULT_SETTINGS, SERVICE_WORKER_CONFIG } from './shared/constants.js';
 import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
+import { processFallbackStorage } from './background/indexedDb.js';
+import { getFallbackStats } from './background/quotaManager.js';
 
 let hiddenVideosInitializationPromise = null;
+let keepAliveStarted = false; // Prevents duplicate keep-alive alarm creation
 const KEEP_ALIVE_ALARM = 'keep-alive';
+const FALLBACK_PROCESSING_ALARM = 'process-fallback-storage';
 
 async function initializeHiddenVideos() {
   if (!hiddenVideosInitializationPromise) {
@@ -18,24 +23,70 @@ async function initializeHiddenVideos() {
 // Keep service worker alive during active usage using chrome.alarms API
 // This is more efficient than setInterval for service workers
 function startKeepAlive() {
+  if (keepAliveStarted) {
+    return; // Already started, prevent duplicate alarms
+  }
+  keepAliveStarted = true;
   chrome.alarms.create(KEEP_ALIVE_ALARM, {
     periodInMinutes: SERVICE_WORKER_CONFIG.KEEP_ALIVE_INTERVAL / 60000 // Convert ms to minutes
   });
 }
 
 function stopKeepAlive() {
+  keepAliveStarted = false;
   chrome.alarms.clear(KEEP_ALIVE_ALARM);
 }
 
-// Handle keep-alive alarm
+// Fallback storage processing
+// Periodically processes fallback storage to retry failed quota operations
+function startFallbackProcessing() {
+  // Check every 5 minutes if there's data in fallback storage
+  chrome.alarms.create(FALLBACK_PROCESSING_ALARM, {
+    periodInMinutes: 5
+  });
+}
+
+function stopFallbackProcessing() {
+  chrome.alarms.clear(FALLBACK_PROCESSING_ALARM);
+}
+
+// Handle alarms
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === KEEP_ALIVE_ALARM) {
     // Ping to keep worker alive
     chrome.runtime.getPlatformInfo(() => {
       // No-op, just keep alive
     });
+  } else if (alarm.name === FALLBACK_PROCESSING_ALARM) {
+    // Process fallback storage
+    processFallbackStorageIfNeeded().catch((error) => {
+      console.error('Failed to process fallback storage:', error);
+    });
   }
 });
+
+// Process fallback storage only if there are records waiting
+async function processFallbackStorageIfNeeded() {
+  try {
+    const stats = await getFallbackStats();
+
+    if (stats.recordCount > 0) {
+      console.log(`Processing ${stats.recordCount} records from fallback storage...`);
+
+      const result = await processFallbackStorage();
+
+      console.log('Fallback processing result:', result);
+
+      if (result.success && result.processed > 0) {
+        console.log(`Successfully processed ${result.processed} records. ${result.remaining} remaining.`);
+      } else if (result.remaining > 0) {
+        console.log(`Fallback processing incomplete. ${result.remaining} records still pending.`);
+      }
+    }
+  } catch (error) {
+    console.error('Error in processFallbackStorageIfNeeded:', error);
+  }
+}
 
 export function __getHiddenVideosInitializationPromiseForTests() {
   return hiddenVideosInitializationPromise || Promise.resolve();
@@ -52,28 +103,26 @@ chrome.runtime.onInstalled.addListener((details) => {
   });
 });
 
-chrome.runtime.onStartup.addListener(() => {
-  initializeHiddenVideos().catch((error) => {
-    console.error('Failed to initialize hidden videos service on startup', error);
-  });
-});
-
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('youtube.com')) {
     ensurePromise(chrome.tabs.sendMessage(tabId, { action: 'pageUpdated' })).catch(() => {});
   }
 });
 
-// Start keep-alive when extension loads
+// Start keep-alive and fallback processing when extension loads
 initializeHiddenVideos()
   .then(() => {
     startKeepAlive();
+    startFallbackProcessing();
   })
   .catch((error) => {
     console.error('Failed to initialize hidden videos service', error);
   });
 
 // Clean up on suspend
-chrome.runtime.onSuspend.addListener(() => {
+chrome.runtime.onSuspend.addListener(async () => {
   stopKeepAlive();
+  stopFallbackProcessing();
+  // Close IndexedDB connection to prevent blocking on next startup
+  await closeDb();
 });
