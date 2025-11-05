@@ -80,10 +80,13 @@ async function init() {
     // Setup DOM health monitoring
     setupDOMHealthMonitoring();
 
-    // Setup IntersectionObserver before initial processing
-    setupIntersectionObserver();
+    // Apply initial hiding before setting up IntersectionObserver
+    // This prevents race condition where observer callbacks fire
+    // while initial processing is still happening
+    await applyHiding();
 
-    applyHiding();
+    // Setup IntersectionObserver after initial processing completes
+    setupIntersectionObserver();
 
     setupMutationObserver(applyHiding);
     setupXhrObserver(applyHiding);
