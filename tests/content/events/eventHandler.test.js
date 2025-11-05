@@ -153,21 +153,21 @@ describe('EventHandler Module', () => {
       jest.useRealTimers();
     });
 
-    test('should call watched and shorts hiding functions', () => {
-      applyHiding();
+    test('should call watched and shorts hiding functions', async () => {
+      await applyHiding();
 
       expect(updateClassOnWatchedItems).toHaveBeenCalled();
       expect(updateClassOnShortsItems).toHaveBeenCalled();
     });
 
-    test('should add eye buttons immediately', () => {
-      applyHiding();
+    test('should add eye buttons immediately', async () => {
+      await applyHiding();
 
       expect(addEyeButtons).toHaveBeenCalled();
     });
 
-    test('should apply individual hiding immediately', () => {
-      applyHiding();
+    test('should apply individual hiding and wait for completion', async () => {
+      await applyHiding();
 
       expect(applyIndividualHiding).toHaveBeenCalled();
     });
