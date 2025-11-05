@@ -679,21 +679,35 @@ const MESSAGE_HANDLERS = {
 };
 
 function registerMessageListener() {
-  chrome.runtime.onMessage.addListener((message, sender) => {
-    if (!message || typeof message.type !== 'string') return;
-    const handler = MESSAGE_HANDLERS[message.type];
-    if (!handler) return;
+  console.log('[HiddenVideos] Registering message listener');
 
-    // Return a Promise directly - this is the proper Manifest V3 pattern
-    // Chrome will automatically wait for the promise and send the response
-    // This avoids issues with service worker suspension and message port closure
+  chrome.runtime.onMessage.addListener((message, sender) => {
+    // CRITICAL: Early returns must not prevent response for valid messages
+    // Only return undefined for truly invalid messages
+    if (!message || typeof message.type !== 'string') {
+      return false; // Explicitly signal no async response for invalid messages
+    }
+
+    const handler = MESSAGE_HANDLERS[message.type];
+    if (!handler) {
+      console.log('[HiddenVideos] No handler for message type:', message.type);
+      return false; // No handler for this message type
+    }
+
+    console.log('[HiddenVideos] Handling message:', message.type);
+
+    // IMPORTANT: Return a Promise immediately to keep the message channel open
+    // This is the Manifest V3 way - Chrome will wait for the promise to resolve
+    // and send the resolved value as the response
     return (async () => {
       try {
         let result;
 
-        // Wait for initialization before processing (except health check)
+        // Health checks bypass initialization to provide immediate status
         if (message.type === 'HIDDEN_VIDEOS_HEALTH_CHECK') {
+          console.log('[HiddenVideos] Processing health check');
           result = await handler(message, sender);
+          console.log('[HiddenVideos] Health check result:', result);
         } else {
           try {
             // Wait for FULL initialization (DB + migration), not just migration
@@ -702,20 +716,24 @@ function registerMessageListener() {
             result = await handler(message, sender);
           } catch (initError) {
             // If initialization failed, return meaningful error
-            if (initializationError) {
-              throw new Error('Background service initialization failed: ' + initError.message);
-            }
-            throw initError;
+            console.error('[HiddenVideos] Initialization error:', initError);
+            return {
+              ok: false,
+              error: `Background service initialization failed: ${initError.message}`
+            };
           }
         }
 
+        console.log('[HiddenVideos] Returning success response for:', message.type);
         return { ok: true, result };
       } catch (error) {
-        console.error('Hidden videos handler error', error);
+        console.error('[HiddenVideos] Message handler error:', error);
         return { ok: false, error: error.message };
       }
     })();
   });
+
+  console.log('[HiddenVideos] Message listener registration complete');
 }
 /**
  * Ensure full initialization is complete (DB + migration)
@@ -777,8 +795,12 @@ async function ensureMigration() {
  */
 export function ensureMessageListenerRegistered() {
   if (!initialized) {
+    console.log('[HiddenVideos] ensureMessageListenerRegistered called, initializing...');
     registerMessageListener();
     initialized = true;
+    console.log('[HiddenVideos] initialized flag set to true');
+  } else {
+    console.log('[HiddenVideos] Message listener already registered');
   }
 }
 

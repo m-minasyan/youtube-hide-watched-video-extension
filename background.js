@@ -10,7 +10,9 @@ import { getFallbackStats } from './background/quotaManager.js';
 // content scripts try to send messages before the listener is registered.
 // The listener will handle messages even during initialization by waiting
 // for the init to complete internally.
+console.log('[Background] Service worker starting, registering message listener...');
 ensureMessageListenerRegistered();
+console.log('[Background] Message listener registered successfully');
 
 let hiddenVideosInitializationPromise = null;
 let keepAliveStarted = false; // Prevents duplicate keep-alive alarm creation
