@@ -29,6 +29,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   const hiddenCount = document.getElementById('hidden-count');
 
   const videosPerPage = 12;
+
+  /**
+   * Detects if the current device is mobile
+   * @returns {boolean} - True if mobile device
+   */
+  function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+           (window.innerWidth <= 768);
+  }
+
+  /**
+   * Gets maximum items for search based on device type
+   * Mobile: 500 items (~250KB) to prevent memory issues
+   * Desktop: 1000 items (~500KB) for better search coverage
+   * @returns {number} - Maximum items to load for search
+   */
+  function getMaxSearchItems() {
+    return isMobileDevice() ? 500 : 1000;
+  }
+
   const hiddenVideosState = {
     filter: 'all',
     currentPage: 1,
@@ -36,7 +56,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     hasMore: false,
     items: [],
     searchQuery: '',
-    allItems: [] // Cleared when search is cancelled, filter changed, or on error to prevent memory leaks
+    allItems: [], // Cleared when search is cancelled, filter changed, or on error to prevent memory leaks
+    isSearchMode: false // Track if we're in search mode to manage memory properly
   };
   let hiddenVideoStats = { total: 0, dimmed: 0, hidden: 0 };
 
@@ -46,10 +67,19 @@ document.addEventListener('DOMContentLoaded', async () => {
    * - Search is cleared/cancelled
    * - Filter is changed (switches to server-side pagination)
    * - Component encounters an error
+   * - Switching from search mode to normal pagination mode
+   * - After video actions that require data reload
+   * @param {boolean} clearQuery - Whether to also clear the search query (default: true)
    */
-  function clearSearchMemory() {
+  function clearSearchMemory(clearQuery = true) {
+    if (hiddenVideosState.allItems.length > 0) {
+      console.log('[Memory] Clearing search memory:', hiddenVideosState.allItems.length, 'items');
+    }
     hiddenVideosState.allItems = [];
-    hiddenVideosState.searchQuery = '';
+    if (clearQuery) {
+      hiddenVideosState.searchQuery = '';
+    }
+    hiddenVideosState.isSearchMode = false;
   }
 
   /**
@@ -99,6 +129,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function loadPaginatedItems() {
+    // Clear search memory when switching to normal pagination mode
+    // This prevents memory leaks when transitioning from search to normal browsing
+    if (hiddenVideosState.isSearchMode || hiddenVideosState.allItems.length > 0) {
+      clearSearchMemory(false); // Don't clear query as it's already empty in normal mode
+    }
+
     const cursorIndex = hiddenVideosState.currentPage - 1;
     const cursor = cursorIndex < hiddenVideosState.pageCursors.length ? hiddenVideosState.pageCursors[cursorIndex] : null;
     const stateFilter = hiddenVideosState.filter === 'all' ? null : hiddenVideosState.filter;
@@ -126,17 +162,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     try {
+      // Mark that we're entering search mode
+      hiddenVideosState.isSearchMode = true;
+
       // Load all items for search filtering
       const stateFilter = hiddenVideosState.filter === 'all' ? null : hiddenVideosState.filter;
       let allItems = [];
       let cursor = null;
       let hasMore = true;
 
-      // Fetch all items with 1000-item limit for client-side search performance
-      // Rationale: Loading more than 1000 items would cause significant memory usage
-      // and UI lag during search filtering. Users with larger datasets should use
-      // pagination or filter by state (dimmed/hidden) to narrow results.
-      const maxItems = 1000;
+      // Fetch items with dynamic limit based on device type
+      // Mobile: 500 items (~250KB) to prevent memory issues on constrained devices
+      // Desktop: 1000 items (~500KB) for better search coverage
+      // Rationale: Loading more items causes significant memory usage and UI lag
+      // during search filtering. Users with larger datasets should use pagination
+      // or filter by state (dimmed/hidden) to narrow results.
+      const maxItems = getMaxSearchItems();
+      const isMobile = isMobileDevice();
+      console.log(`[Memory] Loading search items (max: ${maxItems}, mobile: ${isMobile})`);
+
       while (hasMore && allItems.length < maxItems) {
         const result = await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.GET_PAGE, {
           state: stateFilter,
@@ -158,6 +202,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Store all items
       hiddenVideosState.allItems = allItems;
+
+      // Log memory usage for monitoring
+      const estimatedMemoryKB = Math.round((allItems.length * 500) / 1024);
+      console.log(`[Memory] Loaded ${allItems.length} items (~${estimatedMemoryKB}KB) for search`);
 
       // Filter by search query
       const filteredItems = filterItemsBySearch(allItems, hiddenVideosState.searchQuery);
