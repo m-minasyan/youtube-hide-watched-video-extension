@@ -19,6 +19,23 @@ function debounce(func, delay) {
   };
 }
 
+/**
+ * Detects if the current device is mobile based on screen width
+ * @returns {boolean} - True if device is mobile
+ */
+function isMobileDevice() {
+  return window.innerWidth <= 768;
+}
+
+/**
+ * Returns maximum search items based on device type
+ * Mobile devices get lower limits to prevent memory issues
+ * @returns {number} - Maximum items to load for search
+ */
+function getMaxSearchItems() {
+  return isMobileDevice() ? 2000 : 5000;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   const themeToggle = document.getElementById('theme-toggle');
   const filterButtons = document.querySelectorAll('.filter-btn');
@@ -132,11 +149,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       let cursor = null;
       let hasMore = true;
 
-      // Fetch all items with 1000-item limit for client-side search performance
-      // Rationale: Loading more than 1000 items would cause significant memory usage
-      // and UI lag during search filtering. Users with larger datasets should use
-      // pagination or filter by state (dimmed/hidden) to narrow results.
-      const maxItems = 1000;
+      // Fetch items with dynamic limit based on device type
+      // Mobile: 2000 items (~1MB) to prevent memory issues on constrained devices
+      // Desktop: 5000 items (~2.5MB) for better search coverage
+      // Rationale: Loading more items causes significant memory usage and UI lag
+      // during search filtering. Users with larger datasets should use pagination
+      // or filter by state (dimmed/hidden) to narrow results.
+      const maxItems = getMaxSearchItems();
+      const isMobile = isMobileDevice();
+      console.log(`[Memory] Loading search items (max: ${maxItems}, mobile: ${isMobile})`);
+
       while (hasMore && allItems.length < maxItems) {
         const result = await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.GET_PAGE, {
           state: stateFilter,
@@ -158,6 +180,27 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Store all items
       hiddenVideosState.allItems = allItems;
+
+      // Log memory usage for monitoring
+      const estimatedMemoryKB = Math.round((allItems.length * 500) / 1024);
+      console.log(`[Memory] Loaded ${allItems.length} items (~${estimatedMemoryKB}KB) for search`);
+
+      // Check if we hit the limit and there are more items
+      const limitReached = hasMore && allItems.length >= maxItems;
+      if (limitReached) {
+        console.warn(`[Memory] Search limit reached (${maxItems} items). Consider using filters to narrow results.`);
+
+        // Show warning notification to user
+        const filterSuggestion = hiddenVideosState.filter === 'all'
+          ? 'Try using the "Dimmed" or "Hidden" filter to narrow your search results.'
+          : 'Try refining your search query to find specific videos.';
+
+        showNotification(
+          `Search limited to first ${maxItems} videos. ${filterSuggestion}`,
+          NotificationType.WARNING,
+          6000
+        );
+      }
 
       // Filter by search query
       const filteredItems = filterItemsBySearch(allItems, hiddenVideosState.searchQuery);
