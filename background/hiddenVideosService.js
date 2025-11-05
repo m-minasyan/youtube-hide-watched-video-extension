@@ -679,8 +679,6 @@ const MESSAGE_HANDLERS = {
 };
 
 function registerMessageListener() {
-  console.log('[HiddenVideos] Registering message listener');
-
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // CRITICAL: Early returns must not prevent response for valid messages
     // Only return false for truly invalid messages
@@ -690,11 +688,8 @@ function registerMessageListener() {
 
     const handler = MESSAGE_HANDLERS[message.type];
     if (!handler) {
-      console.log('[HiddenVideos] No handler for message type:', message.type);
       return false; // No handler for this message type
     }
-
-    console.log('[HiddenVideos] Handling message:', message.type);
 
     // Handle both promise-based (tests) and callback-based (Chrome API) patterns
     const handleAsync = async () => {
@@ -703,9 +698,7 @@ function registerMessageListener() {
 
         // Health checks bypass initialization to provide immediate status
         if (message.type === 'HIDDEN_VIDEOS_HEALTH_CHECK') {
-          console.log('[HiddenVideos] Processing health check');
           result = await handler(message, sender);
-          console.log('[HiddenVideos] Health check result:', result);
         } else {
           try {
             // Wait for FULL initialization (DB + migration), not just migration
@@ -724,15 +717,8 @@ function registerMessageListener() {
           }
         }
 
-        console.log('[HiddenVideos] Sending success response for:', message.type);
         const successResponse = { ok: true, result };
-        if (sendResponse) {
-          console.log('[HiddenVideos] Calling sendResponse with:', successResponse);
-          sendResponse(successResponse);
-          console.log('[HiddenVideos] sendResponse called successfully');
-        } else {
-          console.log('[HiddenVideos] No sendResponse callback available');
-        }
+        if (sendResponse) sendResponse(successResponse);
         return successResponse;
       } catch (error) {
         console.error('[HiddenVideos] Message handler error:', error);
@@ -745,17 +731,12 @@ function registerMessageListener() {
     // If sendResponse is not provided (tests), return the promise directly
     // Otherwise, call the async function and return true to keep channel open
     if (!sendResponse) {
-      console.log('[HiddenVideos] Test mode - returning promise directly');
       return handleAsync();
     }
 
-    console.log('[HiddenVideos] Chrome mode - calling handleAsync and returning true');
     handleAsync();
-    console.log('[HiddenVideos] Returned true to keep message channel open');
     return true; // Keep message channel open for async response
   });
-
-  console.log('[HiddenVideos] Message listener registration complete');
 }
 /**
  * Ensure full initialization is complete (DB + migration)
@@ -817,12 +798,8 @@ async function ensureMigration() {
  */
 export function ensureMessageListenerRegistered() {
   if (!initialized) {
-    console.log('[HiddenVideos] ensureMessageListenerRegistered called, initializing...');
     registerMessageListener();
     initialized = true;
-    console.log('[HiddenVideos] initialized flag set to true');
-  } else {
-    console.log('[HiddenVideos] Message listener already registered');
   }
 }
 
