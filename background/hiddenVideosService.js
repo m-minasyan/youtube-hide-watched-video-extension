@@ -738,12 +738,20 @@ async function ensureMigration() {
   return migrationPromise;
 }
 
-export async function initializeHiddenVideosService() {
-  // Register listener FIRST, before any async operations
+/**
+ * Register message listener immediately (synchronous)
+ * This must be called at the top level to avoid race conditions
+ */
+export function ensureMessageListenerRegistered() {
   if (!initialized) {
     registerMessageListener();
     initialized = true;
   }
+}
+
+export async function initializeHiddenVideosService() {
+  // Ensure message listener is registered (idempotent)
+  ensureMessageListenerRegistered();
 
   // Prevent concurrent initialization calls using a lock
   if (initializationLock) {

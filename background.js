@@ -1,9 +1,16 @@
-import { initializeHiddenVideosService } from './background/hiddenVideosService.js';
+import { initializeHiddenVideosService, ensureMessageListenerRegistered } from './background/hiddenVideosService.js';
 import { closeDb } from './background/indexedDb.js';
 import { STORAGE_KEYS, DEFAULT_SETTINGS, SERVICE_WORKER_CONFIG } from './shared/constants.js';
 import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 import { processFallbackStorage } from './background/indexedDb.js';
 import { getFallbackStats } from './background/quotaManager.js';
+
+// CRITICAL: Register message listener IMMEDIATELY at top level (synchronously)
+// This must happen before any async operations to avoid race conditions where
+// content scripts try to send messages before the listener is registered.
+// The listener will handle messages even during initialization by waiting
+// for the init to complete internally.
+ensureMessageListenerRegistered();
 
 let hiddenVideosInitializationPromise = null;
 let keepAliveStarted = false; // Prevents duplicate keep-alive alarm creation
