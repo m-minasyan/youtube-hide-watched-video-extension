@@ -31,7 +31,8 @@ const CONFIG = {
   MAX_CLEANUP_COUNT: 5000,
 
   // Maximum records to store in fallback storage
-  MAX_FALLBACK_RECORDS: 1000,
+  // INCREASED from 1000 to 5000 to prevent data loss during high-volume operations
+  MAX_FALLBACK_RECORDS: 5000,
 
   // Notification cooldown (5 minutes)
   NOTIFICATION_COOLDOWN_MS: 5 * 60 * 1000,
@@ -123,7 +124,7 @@ async function saveToFallbackStorage(records) {
     const newRecords = Array.isArray(records) ? records : [records];
     fallbackData.push(...newRecords);
 
-    // Limit fallback storage size
+    // CRITICAL: Limit fallback storage size to prevent unbounded memory growth
     if (fallbackData.length > CONFIG.MAX_FALLBACK_RECORDS) {
       const removed = fallbackData.splice(0, fallbackData.length - CONFIG.MAX_FALLBACK_RECORDS);
 
@@ -137,6 +138,13 @@ async function saveToFallbackStorage(records) {
       logError('QuotaManager', new Error(`Lost ${removed.length} records - fallback storage full`), {
         recordsLost: removed.length,
         totalInFallback: fallbackData.length
+      });
+
+      // CRITICAL NOTIFICATION: Show immediate warning to user about data loss
+      // Bypass cooldown for critical data loss events
+      await showCriticalNotification({
+        title: '⚠️ CRITICAL: Data Loss Detected',
+        message: `Lost ${removed.length} video records due to storage overflow. Please export your fallback data immediately and clear old videos in settings.`
       });
     }
 
@@ -238,6 +246,50 @@ export async function clearFallbackStorage() {
 }
 
 /**
+ * Exports fallback storage data for user backup/recovery
+ * This allows users to save fallback data before it's lost due to overflow
+ * @returns {Promise<Object>} Export data with metadata and records
+ */
+export async function exportFallbackStorage() {
+  try {
+    const result = await chrome.storage.local.get(FALLBACK_STORAGE_KEY);
+    const fallbackData = result[FALLBACK_STORAGE_KEY] || [];
+
+    const exportData = {
+      exportType: 'fallback_storage',
+      exportDate: new Date().toISOString(),
+      recordCount: fallbackData.length,
+      maxCapacity: CONFIG.MAX_FALLBACK_RECORDS,
+      utilizationPercent: (fallbackData.length / CONFIG.MAX_FALLBACK_RECORDS) * 100,
+      warning: fallbackData.length >= CONFIG.MAX_FALLBACK_RECORDS * 0.8
+        ? 'Fallback storage is at 80%+ capacity. Data loss may occur soon.'
+        : null,
+      records: fallbackData
+    };
+
+    await logQuotaEvent({
+      type: 'fallback_export',
+      recordCount: fallbackData.length
+    });
+
+    return exportData;
+  } catch (error) {
+    logError('QuotaManager', error, {
+      operation: 'exportFallbackStorage',
+      fatal: false
+    });
+
+    return {
+      exportType: 'fallback_storage',
+      exportDate: new Date().toISOString(),
+      recordCount: 0,
+      error: error.message,
+      records: []
+    };
+  }
+}
+
+/**
  * Gets fallback storage statistics
  * @returns {Promise<Object>} Statistics object
  */
@@ -295,6 +347,39 @@ async function showQuotaNotification(options = {}) {
   } catch (error) {
     logError('QuotaManager', error, {
       operation: 'showQuotaNotification',
+      fatal: false
+    });
+  }
+}
+
+/**
+ * Shows CRITICAL notification to user (bypasses cooldown)
+ * Used for critical issues like data loss that require immediate user attention
+ * @param {Object} options - Notification options
+ */
+async function showCriticalNotification(options = {}) {
+  try {
+    const title = options.title || 'YouTube Hide Watched Videos - CRITICAL WARNING';
+    const message = options.message || 'Critical storage issue detected. Please check extension settings immediately.';
+
+    // CRITICAL notifications always show (no cooldown check)
+    await chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title,
+      message,
+      priority: 2, // Maximum priority
+      requireInteraction: true // Force user to dismiss
+    });
+
+    await logQuotaEvent({
+      type: 'critical_notification_shown',
+      title,
+      message
+    });
+  } catch (error) {
+    logError('QuotaManager', error, {
+      operation: 'showCriticalNotification',
       fatal: false
     });
   }
