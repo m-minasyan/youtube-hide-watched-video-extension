@@ -36,7 +36,7 @@ export function handleHiddenVideosEvent(event) {
   }
 }
 
-export async function applyHiding() {
+export function applyHiding() {
   logDebug('Applying hiding/dimming');
   updateClassOnWatchedItems();
   updateClassOnShortsItems();
@@ -44,23 +44,32 @@ export async function applyHiding() {
   // This improves responsiveness and prevents race condition where container state
   // is applied before cache is populated
   addEyeButtons();
-  await applyIndividualHiding();
+  applyIndividualHiding();
 }
 
 // Visibility change handler
 let visibilityUnsubscribe = null;
 
 export function setupMessageListener() {
-  chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
-    if (request.action === 'settingsUpdated') {
-      await loadSettings();
-      await applyHiding();
-    } else if (request.action === 'resetSettings') {
-      await loadSettings();
-      await applyHiding();
-    } else if (request.type === 'HIDDEN_VIDEOS_EVENT') {
-      handleHiddenVideosEvent(request.event);
-    }
+  chrome.runtime.onMessage.addListener((request, sender) => {
+    // Handle messages asynchronously without blocking
+    // This listener doesn't send responses, so we handle async work internally
+    (async () => {
+      if (request.action === 'settingsUpdated') {
+        await loadSettings();
+        applyHiding();
+      } else if (request.action === 'resetSettings') {
+        await loadSettings();
+        applyHiding();
+      } else if (request.type === 'HIDDEN_VIDEOS_EVENT') {
+        handleHiddenVideosEvent(request.event);
+      }
+    })().catch((error) => {
+      console.error('Error handling message in content script:', error);
+    });
+
+    // No response needed for these messages
+    return false;
   });
 
   // Listen for custom events from eye buttons
