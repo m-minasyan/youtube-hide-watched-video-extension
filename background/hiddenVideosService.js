@@ -696,7 +696,9 @@ function registerMessageListener() {
           result = await handler(message, sender);
         } else {
           try {
-            await ensureMigration();
+            // Wait for FULL initialization (DB + migration), not just migration
+            // This prevents race conditions where migration starts before DB is ready
+            await ensureInitialization();
             result = await handler(message, sender);
           } catch (initError) {
             // If initialization failed, return meaningful error
@@ -715,6 +717,37 @@ function registerMessageListener() {
     })();
   });
 }
+/**
+ * Ensure full initialization is complete (DB + migration)
+ * This should be called by message handlers to ensure the service is ready
+ */
+async function ensureInitialization() {
+  // If initialization already failed, throw the error immediately
+  if (initializationError) {
+    throw initializationError;
+  }
+
+  // If there's an initialization in progress, wait for it
+  if (initializationLock) {
+    await initializationLock;
+    // Check again if it failed during wait
+    if (initializationError) {
+      throw initializationError;
+    }
+    return;
+  }
+
+  // If initialization is complete, we're done
+  if (initializationComplete && !initializationError) {
+    return;
+  }
+
+  // Otherwise, start initialization
+  // This shouldn't normally happen because background.js calls initializeHiddenVideos()
+  // at startup, but we handle it here as a fallback
+  await initializeHiddenVideosService();
+}
+
 async function ensureMigration() {
   // If initialization failed, throw the error
   if (initializationError) {
