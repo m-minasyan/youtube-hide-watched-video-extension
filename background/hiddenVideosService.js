@@ -819,7 +819,8 @@ export async function initializeHiddenVideosService() {
     return;
   }
 
-  initializationLock = (async () => {
+  // Create and assign lock atomically to prevent race condition
+  const lock = (async () => {
     try {
       await initializeDb();
       dbInitialized = true;
@@ -834,5 +835,6 @@ export async function initializeHiddenVideosService() {
     }
   })();
 
-  return initializationLock;
+  initializationLock = lock;
+  return lock;
 }
