@@ -106,6 +106,20 @@ chrome.runtime.onInstalled.addListener((details) => {
   });
 });
 
+chrome.runtime.onStartup.addListener(() => {
+  initializeHiddenVideos()
+    .then(() => {
+      startKeepAlive();
+      startFallbackProcessing();
+    })
+    .catch((error) => {
+      console.error('Failed to initialize hidden videos service on startup', error);
+      // Stop alarms if initialization fails
+      stopKeepAlive();
+      stopFallbackProcessing();
+    });
+});
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('youtube.com')) {
     ensurePromise(chrome.tabs.sendMessage(tabId, { action: 'pageUpdated' })).catch(() => {});
@@ -120,6 +134,9 @@ initializeHiddenVideos()
   })
   .catch((error) => {
     console.error('Failed to initialize hidden videos service', error);
+    // Stop alarms if they were running from previous session
+    stopKeepAlive();
+    stopFallbackProcessing();
   });
 
 // Clean up on suspend
