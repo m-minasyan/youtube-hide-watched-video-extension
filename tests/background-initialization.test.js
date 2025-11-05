@@ -91,21 +91,20 @@ describe('Background Initialization', () => {
       await initializeHiddenVideosService();
 
       const listener = chrome.runtime.onMessage.addListener.mock.calls[0][0];
-      const sendResponse = jest.fn();
 
-      // Send health check message
-      const result = listener(
+      // Send health check message - listener now returns a Promise
+      const responsePromise = listener(
         { type: 'HIDDEN_VIDEOS_HEALTH_CHECK' },
-        {},
-        sendResponse
+        {}
       );
 
-      expect(result).toBe(true); // Keep channel open
+      // Should return a Promise
+      expect(responsePromise).toBeInstanceOf(Promise);
 
-      // Wait for async response
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Wait for response
+      const response = await responsePromise;
 
-      expect(sendResponse).toHaveBeenCalledWith({
+      expect(response).toEqual({
         ok: true,
         result: {
           ready: true,
@@ -127,17 +126,12 @@ describe('Background Initialization', () => {
       await initializeHiddenVideosService();
 
       const listener = chrome.runtime.onMessage.addListener.mock.calls[0][0];
-      const sendResponse = jest.fn();
 
-      listener(
+      const response = await listener(
         { type: 'HIDDEN_VIDEOS_HEALTH_CHECK' },
-        {},
-        sendResponse
+        {}
       );
 
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      const response = sendResponse.mock.calls[0][0];
       expect(response.ok).toBe(true);
       expect(response.result.ready).toBe(true);
       expect(response.result.error).toBe(null);
@@ -154,17 +148,12 @@ describe('Background Initialization', () => {
       }
 
       const listener = chrome.runtime.onMessage.addListener.mock.calls[0][0];
-      const sendResponse = jest.fn();
 
-      listener(
+      const response = await listener(
         { type: 'HIDDEN_VIDEOS_HEALTH_CHECK' },
-        {},
-        sendResponse
+        {}
       );
 
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      const response = sendResponse.mock.calls[0][0];
       expect(response.ok).toBe(true);
       expect(response.result.ready).toBe(true); // Marked complete even on error
       expect(response.result.error).toContain('Database initialization failed');
@@ -184,24 +173,25 @@ describe('Background Initialization', () => {
       const initPromise = initializeHiddenVideosService();
 
       const listener = chrome.runtime.onMessage.addListener.mock.calls[0][0];
-      const sendResponse = jest.fn();
 
-      // Try to get stats before initialization completes
-      listener(
+      // Try to get stats before initialization completes - returns a Promise
+      const responsePromise = listener(
         { type: 'HIDDEN_VIDEOS_GET_STATS' },
-        {},
-        sendResponse
+        {}
       );
 
-      // Should not have responded yet (waiting for init)
-      expect(sendResponse).not.toHaveBeenCalled();
+      // Should be a Promise but not resolved yet
+      expect(responsePromise).toBeInstanceOf(Promise);
+      expect(dbInitComplete).toBe(false);
 
       // Wait for initialization to complete
       await initPromise;
-      await new Promise(resolve => setTimeout(resolve, 150));
+
+      // Wait for the response
+      const response = await responsePromise;
 
       // Now should have responded
-      expect(sendResponse).toHaveBeenCalled();
+      expect(response).toBeDefined();
       expect(dbInitComplete).toBe(true);
     });
 
@@ -215,20 +205,17 @@ describe('Background Initialization', () => {
       const initPromise = initializeHiddenVideosService();
 
       const listener = chrome.runtime.onMessage.addListener.mock.calls[0][0];
-      const sendResponse = jest.fn();
 
-      // Send health check immediately
-      listener(
+      // Send health check immediately - returns a Promise
+      const responsePromise = listener(
         { type: 'HIDDEN_VIDEOS_HEALTH_CHECK' },
-        {},
-        sendResponse
+        {}
       );
 
-      // Should respond immediately without waiting
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Should respond quickly (health check doesn't wait for full init)
+      const response = await responsePromise;
 
-      expect(sendResponse).toHaveBeenCalled();
-      const response = sendResponse.mock.calls[0][0];
+      expect(response.ok).toBe(true);
       expect(response.result.ready).toBe(false); // Not ready yet
 
       await initPromise;
@@ -247,17 +234,12 @@ describe('Background Initialization', () => {
       }
 
       const listener = chrome.runtime.onMessage.addListener.mock.calls[0][0];
-      const sendResponse = jest.fn();
 
-      listener(
+      const response = await listener(
         { type: 'HIDDEN_VIDEOS_HEALTH_CHECK' },
-        {},
-        sendResponse
+        {}
       );
 
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      const response = sendResponse.mock.calls[0][0];
       expect(response.result.ready).toBe(true);
       expect(response.result.error).toBeTruthy();
     });
@@ -273,17 +255,12 @@ describe('Background Initialization', () => {
       }
 
       const listener = chrome.runtime.onMessage.addListener.mock.calls[0][0];
-      const sendResponse = jest.fn();
 
-      listener(
+      const response = await listener(
         { type: 'HIDDEN_VIDEOS_GET_STATS' },
-        {},
-        sendResponse
+        {}
       );
 
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      const response = sendResponse.mock.calls[0][0];
       expect(response.ok).toBe(false);
       expect(response.error).toContain('Background service initialization failed');
     });
