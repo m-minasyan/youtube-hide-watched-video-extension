@@ -1,3 +1,5 @@
+import { LRUCache } from '../../shared/lruCache.js';
+
 const MAX_CACHE_SIZE = 1000;
 
 const hiddenVideoCache = new Map();
@@ -5,57 +7,17 @@ const hiddenVideoTimestamps = new Map();
 const cacheAccessOrder = new Map(); // videoId -> lastAccessTime
 const pendingHiddenVideoRequests = new Map();
 
-// Flag to prevent concurrent eviction operations
-let isEvicting = false;
+// Initialize LRU cache manager with timestamps as auxiliary Map
+const lruCache = new LRUCache({
+  maxSize: MAX_CACHE_SIZE,
+  mainCache: hiddenVideoCache,
+  accessOrderMap: cacheAccessOrder,
+  auxiliaryMaps: [hiddenVideoTimestamps],
+  cacheName: 'HiddenVideoCache'
+});
 
 export function getRecordTimestamp(record) {
   return record && Number.isFinite(record.updatedAt) ? record.updatedAt : -1;
-}
-
-/**
- * Evicts least recently used entries when cache exceeds MAX_CACHE_SIZE
- * Uses synchronization to prevent race conditions and ensure cache consistency
- */
-function evictLRUEntries() {
-  // Early exit if cache is within limits
-  if (hiddenVideoCache.size <= MAX_CACHE_SIZE) return;
-
-  // Prevent concurrent eviction operations
-  if (isEvicting) return;
-
-  try {
-    isEvicting = true;
-
-    // Re-check size after acquiring lock (might have changed)
-    if (hiddenVideoCache.size <= MAX_CACHE_SIZE) return;
-
-    // Create snapshot of entries to evict (oldest first)
-    const entries = Array.from(cacheAccessOrder.entries())
-      .sort((a, b) => a[1] - b[1]); // Sort by access time (oldest first)
-
-    const numToEvict = hiddenVideoCache.size - MAX_CACHE_SIZE;
-    const toEvict = entries.slice(0, numToEvict);
-
-    // Batch delete: collect IDs first, then delete atomically
-    // This minimizes the window for inconsistency
-    const videoIdsToEvict = toEvict.map(([videoId]) => videoId);
-
-    // Delete from all Maps in a single pass to maintain consistency
-    videoIdsToEvict.forEach((videoId) => {
-      hiddenVideoCache.delete(videoId);
-      hiddenVideoTimestamps.delete(videoId);
-      cacheAccessOrder.delete(videoId);
-    });
-
-    // Validate consistency: all three Maps should have same size
-    if (hiddenVideoCache.size !== hiddenVideoTimestamps.size) {
-      console.error('[Cache] Inconsistency detected: hiddenVideoCache size', hiddenVideoCache.size,
-                    'vs hiddenVideoTimestamps size', hiddenVideoTimestamps.size);
-    }
-  } finally {
-    // Always release lock, even if error occurs
-    isEvicting = false;
-  }
 }
 
 export function applyCacheUpdate(videoId, record) {
@@ -64,8 +26,8 @@ export function applyCacheUpdate(videoId, record) {
     const timestamp = getRecordTimestamp(record);
     hiddenVideoCache.set(videoId, record);
     hiddenVideoTimestamps.set(videoId, timestamp === -1 ? Date.now() : timestamp);
-    cacheAccessOrder.set(videoId, Date.now());
-    evictLRUEntries();
+    lruCache.updateAccessTime(videoId);
+    lruCache.evictLRUEntries();
     return;
   }
   hiddenVideoCache.delete(videoId);
@@ -80,15 +42,15 @@ export function mergeFetchedRecord(videoId, record) {
     const currentTimestamp = hiddenVideoTimestamps.get(videoId);
     if (incomingTimestamp <= currentTimestamp) {
       // Update access time even if not updating record
-      cacheAccessOrder.set(videoId, Date.now());
+      lruCache.updateAccessTime(videoId);
       return;
     }
   }
   if (record) {
     hiddenVideoCache.set(videoId, record);
     hiddenVideoTimestamps.set(videoId, incomingTimestamp === -1 ? Date.now() : incomingTimestamp);
-    cacheAccessOrder.set(videoId, Date.now());
-    evictLRUEntries();
+    lruCache.updateAccessTime(videoId);
+    lruCache.evictLRUEntries();
     return;
   }
   hiddenVideoCache.delete(videoId);
@@ -109,19 +71,14 @@ export function getCachedHiddenVideo(videoId) {
   // Cache misses (when record is undefined) should NOT populate cacheAccessOrder
   // This prevents orphaned entries in cacheAccessOrder that would never be evicted
   if (record) {
-    cacheAccessOrder.set(videoId, Date.now());
+    lruCache.updateAccessTime(videoId);
   }
 
   return record || null;
 }
 
 export function clearCache() {
-  // Reset eviction flag to prevent deadlock
-  isEvicting = false;
-
-  hiddenVideoCache.clear();
-  hiddenVideoTimestamps.clear();
-  cacheAccessOrder.clear();
+  lruCache.clear();
 }
 
 export function hasPendingRequest(videoId) {
@@ -181,47 +138,7 @@ export function getCacheMemoryUsage() {
  * @returns {Object} - Validation result with status and details
  */
 export function validateCacheConsistency() {
-  const issues = [];
-
-  // Check size consistency
-  if (hiddenVideoCache.size !== hiddenVideoTimestamps.size) {
-    issues.push({
-      type: 'size_mismatch',
-      message: `hiddenVideoCache size (${hiddenVideoCache.size}) !== hiddenVideoTimestamps size (${hiddenVideoTimestamps.size})`
-    });
-  }
-
-  // Check that all keys in hiddenVideoCache exist in hiddenVideoTimestamps
-  for (const videoId of hiddenVideoCache.keys()) {
-    if (!hiddenVideoTimestamps.has(videoId)) {
-      issues.push({
-        type: 'missing_timestamp',
-        videoId,
-        message: `Video ${videoId} in cache but missing timestamp`
-      });
-    }
-  }
-
-  // Check that all keys in cacheAccessOrder exist in hiddenVideoCache
-  for (const videoId of cacheAccessOrder.keys()) {
-    if (!hiddenVideoCache.has(videoId) && !hiddenVideoTimestamps.has(videoId)) {
-      issues.push({
-        type: 'orphaned_access_order',
-        videoId,
-        message: `Video ${videoId} in access order but not in cache`
-      });
-    }
-  }
-
-  return {
-    isValid: issues.length === 0,
-    issues,
-    sizes: {
-      cache: hiddenVideoCache.size,
-      timestamps: hiddenVideoTimestamps.size,
-      accessOrder: cacheAccessOrder.size
-    }
-  };
+  return lruCache.validateConsistency();
 }
 
 /**
@@ -229,39 +146,5 @@ export function validateCacheConsistency() {
  * @returns {Object} - Repair result with actions taken
  */
 export function repairCacheConsistency() {
-  const actions = [];
-
-  // Remove orphaned entries from hiddenVideoTimestamps
-  for (const videoId of hiddenVideoTimestamps.keys()) {
-    if (!hiddenVideoCache.has(videoId)) {
-      hiddenVideoTimestamps.delete(videoId);
-      actions.push({ action: 'removed_orphaned_timestamp', videoId });
-    }
-  }
-
-  // Remove orphaned entries from cacheAccessOrder
-  for (const videoId of cacheAccessOrder.keys()) {
-    if (!hiddenVideoCache.has(videoId)) {
-      cacheAccessOrder.delete(videoId);
-      actions.push({ action: 'removed_orphaned_access_order', videoId });
-    }
-  }
-
-  // Add missing timestamps for cached videos
-  for (const videoId of hiddenVideoCache.keys()) {
-    if (!hiddenVideoTimestamps.has(videoId)) {
-      hiddenVideoTimestamps.set(videoId, Date.now());
-      actions.push({ action: 'added_missing_timestamp', videoId });
-    }
-  }
-
-  return {
-    actionsCount: actions.length,
-    actions,
-    finalSizes: {
-      cache: hiddenVideoCache.size,
-      timestamps: hiddenVideoTimestamps.size,
-      accessOrder: cacheAccessOrder.size
-    }
-  };
+  return lruCache.repairConsistency();
 }
