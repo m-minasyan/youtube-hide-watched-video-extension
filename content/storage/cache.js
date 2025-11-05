@@ -103,11 +103,15 @@ export function mergeFetchedRecord(videoId, record) {
 export function getCachedHiddenVideo(videoId) {
   if (!videoId) return null;
   const record = hiddenVideoCache.get(videoId);
-  // Only update access time for cache hits to prevent memory leak
-  // Cache misses should not populate cacheAccessOrder
+
+  // MEMORY LEAK PREVENTION: Only update access time for cache hits
+  // This ensures cacheAccessOrder Map only tracks videos that exist in hiddenVideoCache
+  // Cache misses (when record is undefined) should NOT populate cacheAccessOrder
+  // This prevents orphaned entries in cacheAccessOrder that would never be evicted
   if (record) {
     cacheAccessOrder.set(videoId, Date.now());
   }
+
   return record || null;
 }
 
