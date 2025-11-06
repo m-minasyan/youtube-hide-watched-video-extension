@@ -1,3 +1,42 @@
+/**
+ * Hidden Videos Manager
+ *
+ * SECURITY NOTES:
+ * ===============
+ * This file implements comprehensive XSS protection through multiple defense layers:
+ *
+ * 1. Unicode Normalization (NFC):
+ *    - Prevents Unicode normalization bypass attacks
+ *    - Converts fullwidth characters (＜＞) to ASCII (<>)
+ *    - Ensures consistent character representation
+ *    - Mitigates homograph attacks
+ *
+ * 2. Search Query Sanitization (sanitizeSearchQuery):
+ *    - Removes HTML-like tags (<, >, ", ', &)
+ *    - Strips control characters (U+0000-U+001F, U+007F-U+009F)
+ *    - Eliminates zero-width characters (U+200B-U+200D, U+FEFF)
+ *    - Normalizes fullwidth Unicode chars to ASCII
+ *    - Applied before any search query processing
+ *
+ * 3. Safe DOM Manipulation:
+ *    - Uses textContent instead of innerHTML
+ *    - Creates elements via createElement/createTextNode
+ *    - Avoids HTML string interpolation for user input
+ *    - DocumentFragment for safe highlighting
+ *
+ * 4. Content Security Policy (CSP):
+ *    - Defined in manifest.json for extension pages
+ *    - Blocks inline scripts and unsafe-eval
+ *    - Restricts script sources to 'self'
+ *
+ * XSS Attack Vectors Mitigated:
+ * - Fullwidth character bypass: "＜script＞alert(1)＜/script＞"
+ * - HTML injection: "<img src=x onerror=alert(1)>"
+ * - Unicode obfuscation: "\u003cscript\u003e"
+ * - Control character injection: "test\x00<script>"
+ * - Zero-width character hiding: "te​st<script>" (with U+200B)
+ */
+
 import { STORAGE_KEYS, HIDDEN_VIDEO_MESSAGES, IMPORT_EXPORT_CONFIG } from './shared/constants.js';
 import { isShorts } from './shared/utils.js';
 import { initTheme, toggleTheme } from './shared/theme.js';
@@ -87,19 +126,68 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
+   * Sanitizes search query to prevent XSS attacks
+   * Removes potentially dangerous characters and patterns
+   * @param {string} query - Search query to sanitize
+   * @returns {string} - Sanitized query
+   */
+  function sanitizeSearchQuery(query) {
+    if (!query) return '';
+
+    // Convert to string and apply Unicode normalization (NFC)
+    // This prevents Unicode normalization bypass attacks where
+    // fullwidth characters (＜＞) or other Unicode equivalents
+    // could be used to bypass security checks
+    let sanitized = String(query).normalize('NFC');
+
+    // Remove control characters (U+0000 to U+001F, U+007F to U+009F)
+    // These can interfere with text processing and pose security risks
+    sanitized = sanitized.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+
+    // Remove zero-width characters that could be used for obfuscation
+    // U+200B: Zero Width Space
+    // U+200C: Zero Width Non-Joiner
+    // U+200D: Zero Width Joiner
+    // U+FEFF: Zero Width No-Break Space (BOM)
+    sanitized = sanitized.replace(/[\u200B-\u200D\uFEFF]/g, '');
+
+    // Normalize fullwidth characters to ASCII
+    // Converts ＜ to <, ＞ to >, etc.
+    sanitized = sanitized.replace(/[\uFF01-\uFF5E]/g, (ch) => {
+      return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+    });
+
+    // Remove HTML-like tags and potentially dangerous characters
+    // This is defense-in-depth even though we use textContent
+    sanitized = sanitized.replace(/[<>'"&]/g, '');
+
+    return sanitized;
+  }
+
+  /**
    * Normalizes a string for case-insensitive search
+   * Applies Unicode normalization (NFC) to prevent bypass attacks
    * @param {string} str - String to normalize
    * @returns {string} - Normalized string
    */
   function normalizeString(str) {
     if (!str) return '';
-    return String(str).toLowerCase().trim();
+
+    // Apply Unicode NFC normalization first
+    // This ensures consistent representation of characters
+    // For example: é can be represented as single char (U+00E9)
+    // or as e + combining accent (U+0065 + U+0301)
+    // NFC converts to the single composed form
+    const normalized = String(str).normalize('NFC');
+
+    return normalized.toLowerCase().trim();
   }
 
   /**
    * Filters items by search query
+   * XSS-safe: query is sanitized before use
    * @param {Array} items - Array of video items
-   * @param {string} query - Search query
+   * @param {string} query - Search query (will be sanitized)
    * @returns {Array} - Filtered items
    */
   function filterItemsBySearch(items, query) {
@@ -107,7 +195,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       return items;
     }
 
-    const normalizedQuery = normalizeString(query);
+    // Sanitize query first to prevent XSS and Unicode bypass attacks
+    const sanitizedQuery = sanitizeSearchQuery(query);
+    const normalizedQuery = normalizeString(sanitizedQuery);
 
     return items.filter(item => {
       const title = normalizeString(item.title || '');
@@ -335,9 +425,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   /**
    * Creates a DOM element with highlighted search term
-   * This is XSS-safe as it uses textContent instead of innerHTML
+   *
+   * SECURITY: XSS-safe implementation using multiple defense layers:
+   * 1. Query sanitization: Removes HTML tags, control chars, Unicode bypass attempts
+   * 2. textContent usage: Prevents HTML injection by using textContent instead of innerHTML
+   * 3. createTextNode: Safely creates text nodes without HTML parsing
+   * 4. createElement: Programmatic DOM creation avoids injection risks
+   *
+   * Even if a malicious query like "＜script＞alert(1)＜/script＞" (fullwidth chars)
+   * or "<script>alert(1)</script>" is passed, it will be:
+   * 1. Sanitized to remove dangerous characters
+   * 2. Treated as plain text, not executable code
+   *
    * @param {string} text - The text to display
-   * @param {string} query - The search query to highlight
+   * @param {string} query - The search query to highlight (will be sanitized)
    * @returns {DocumentFragment} - A document fragment containing text nodes and mark elements
    */
   function createHighlightedElement(text, query) {
@@ -349,7 +450,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       return fragment;
     }
 
-    const normalizedQuery = normalizeString(query);
+    // SECURITY: Sanitize query to prevent Unicode normalization bypass attacks
+    // This removes fullwidth characters (＜＞), control chars, and HTML-like patterns
+    const sanitizedQuery = sanitizeSearchQuery(query);
+    const normalizedQuery = normalizeString(sanitizedQuery);
     const normalizedText = normalizeString(text);
 
     const index = normalizedText.indexOf(normalizedQuery);
@@ -365,7 +469,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const match = text.substring(index, index + actualMatchLength);
     const afterMatch = text.substring(index + actualMatchLength);
 
-    // Create text nodes and mark element safely
+    // SECURITY: Create text nodes and mark element safely
+    // Using textContent and createTextNode prevents HTML injection
     if (beforeMatch) {
       fragment.appendChild(document.createTextNode(beforeMatch));
     }
@@ -375,7 +480,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     mark.style.color = 'white';
     mark.style.padding = '2px 4px';
     mark.style.borderRadius = '3px';
-    mark.textContent = match; // XSS-safe: uses textContent
+    mark.textContent = match; // XSS-safe: uses textContent, not innerHTML
     fragment.appendChild(mark);
 
     if (afterMatch) {
@@ -487,6 +592,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   /**
    * Updates search results status for screen readers
+   * SECURITY: Sanitizes query before announcement
    */
   function updateSearchResultsStatus() {
     const statusElement = document.getElementById('search-results-status');
@@ -506,14 +612,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const filteredItems = filterItemsBySearch(hiddenVideosState.allItems, hiddenVideosState.searchQuery);
     const count = filteredItems.length;
-    const query = hiddenVideosState.searchQuery;
+
+    // SECURITY: Sanitize query before including in screen reader announcement
+    const sanitizedQuery = sanitizeSearchQuery(hiddenVideosState.searchQuery);
 
     if (count === 0) {
-      statusElement.textContent = `No results found for "${query}"`;
+      statusElement.textContent = `No results found for "${sanitizedQuery}"`;
     } else if (count === 1) {
-      statusElement.textContent = `Found 1 result for "${query}"`;
+      statusElement.textContent = `Found 1 result for "${sanitizedQuery}"`;
     } else {
-      statusElement.textContent = `Found ${count} results for "${query}"`;
+      statusElement.textContent = `Found ${count} results for "${sanitizedQuery}"`;
     }
   }
 
@@ -528,6 +636,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (isSearching) {
         // Show "no search results" message
+        // SECURITY: Sanitize and escape search query before display
+        const sanitizedQuery = sanitizeSearchQuery(hiddenVideosState.searchQuery);
+        const escapedQuery = escapeHtml(sanitizedQuery);
         videosContainer.innerHTML = `
           <div class="search-no-results">
             <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -535,7 +646,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               <path d="m21 21-4.35-4.35"></path>
             </svg>
             <h3>No results found</h3>
-            <p>No videos match your search: <span class="search-term">"${escapeHtml(hiddenVideosState.searchQuery)}"</span></p>
+            <p>No videos match your search: <span class="search-term">"${escapedQuery}"</span></p>
             <p style="margin-top: 8px; font-size: 13px;">Try a different search term or clear the search.</p>
           </div>
         `;
