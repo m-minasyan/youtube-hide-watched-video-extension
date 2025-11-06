@@ -36,7 +36,8 @@ const CONFIG = {
 
   // Maximum consecutive notifications: limits spam to 3 notifications max
   // After 3 notifications, no more will be shown until backoff resets
-  // Schedule: 15min → 30min → 60min, then silence
+  // Notification times: T+0min, T+15min, T+45min (then silence until 24h stability)
+  // Cooldown intervals: 15min, 30min, 60min (time to wait before next notification)
   MAX_CONSECUTIVE_NOTIFICATIONS: 3,
 
   // Reset threshold: 24 hours without notifications resets backoff
@@ -754,14 +755,14 @@ async function showQuotaNotification(options = {}) {
 
     if (newConsecutiveCount === CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS) {
       // This is the final notification before silence
-      message = `${baseMessage}\n\n⚠️ This is the final storage warning. No more notifications will be shown until the issue is resolved for 24 hours. Please clear old videos in extension settings to prevent data loss.`;
-    } else if (newConsecutiveCount > 1) {
+      message = `${baseMessage}\n\n⚠️ Warning ${newConsecutiveCount}/${CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS}: This is the final storage notification. No more warnings will be shown until storage is stable for 24 hours. Please clear old videos in extension settings to prevent data loss.`;
+    } else {
       // Calculate next notification interval for user info
       const nextCooldown = calculateNotificationCooldown(newConsecutiveCount);
       const nextCooldownMinutes = Math.round(nextCooldown / 60000);
       const remainingNotifications = CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS - newConsecutiveCount;
 
-      message = `${baseMessage}\n\nNote: This is notification ${newConsecutiveCount}/${CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS}. Next notification in ${nextCooldownMinutes} minutes if issue persists (${remainingNotifications} warning${remainingNotifications !== 1 ? 's' : ''} remaining).`;
+      message = `${baseMessage}\n\nWarning ${newConsecutiveCount}/${CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS}: Next notification in ${nextCooldownMinutes} minutes if issue persists (${remainingNotifications} warning${remainingNotifications !== 1 ? 's' : ''} remaining).`;
     }
 
     await chrome.notifications.create({
