@@ -11,6 +11,7 @@
 
 import { logError } from '../shared/errorHandler.js';
 import { debug, error, warn, info } from '../shared/logger.js';
+import { QUOTA_CONFIG } from '../shared/constants.js';
 
 // Fallback storage keys
 const FALLBACK_STORAGE_KEY = 'YTHWV_FALLBACK_STORAGE';
@@ -18,24 +19,9 @@ const QUOTA_EVENTS_KEY = 'YTHWV_QUOTA_EVENTS';
 const LAST_NOTIFICATION_KEY = 'YTHWV_LAST_QUOTA_NOTIFICATION';
 const NOTIFICATION_BACKOFF_KEY = 'YTHWV_NOTIFICATION_BACKOFF';
 
-// Configuration
+// Local Configuration (quotaManager-specific settings)
+// Note: Common quota settings are centralized in QUOTA_CONFIG (shared/constants.js)
 const CONFIG = {
-  // Estimate record size (bytes) - typical video record with metadata
-  ESTIMATED_RECORD_SIZE: 200,
-
-  // Safety margin for cleanup (delete 20% more than estimated need)
-  CLEANUP_SAFETY_MARGIN: 1.2,
-
-  // Minimum records to delete (avoid too frequent cleanups)
-  MIN_CLEANUP_COUNT: 100,
-
-  // Maximum records to delete in one cleanup (prevent excessive deletions)
-  MAX_CLEANUP_COUNT: 5000,
-
-  // Maximum records to store in fallback storage
-  // INCREASED from 1000 to 5000 to prevent data loss during high-volume operations
-  MAX_FALLBACK_RECORDS: 5000,
-
   // Notification cooldown with exponential backoff
   // Base cooldown: 5 minutes (initial notification interval)
   BASE_NOTIFICATION_COOLDOWN_MS: 5 * 60 * 1000,
@@ -48,9 +34,6 @@ const CONFIG = {
 
   // Reset threshold: 24 hours without notifications resets backoff
   NOTIFICATION_BACKOFF_RESET_MS: 24 * 60 * 60 * 1000,
-
-  // Maximum quota events to log
-  MAX_QUOTA_EVENTS: 50,
 
   // Retry delays (exponential backoff in milliseconds)
   RETRY_DELAYS: [5000, 30000, 120000] // 5s, 30s, 2min
@@ -78,11 +61,11 @@ function estimateDataSize(data) {
 
   // For arrays, sum individual record sizes
   if (Array.isArray(data)) {
-    return data.length * CONFIG.ESTIMATED_RECORD_SIZE;
+    return data.length * QUOTA_CONFIG.ESTIMATED_RECORD_SIZE;
   }
 
   // For single record
-  return CONFIG.ESTIMATED_RECORD_SIZE;
+  return QUOTA_CONFIG.ESTIMATED_RECORD_SIZE;
 }
 
 /**
@@ -93,13 +76,13 @@ function estimateDataSize(data) {
 function calculateCleanupCount(estimatedNeededBytes) {
   // Calculate records needed with safety margin
   const recordsNeeded = Math.ceil(
-    (estimatedNeededBytes / CONFIG.ESTIMATED_RECORD_SIZE) * CONFIG.CLEANUP_SAFETY_MARGIN
+    (estimatedNeededBytes / QUOTA_CONFIG.ESTIMATED_RECORD_SIZE) * QUOTA_CONFIG.CLEANUP_SAFETY_MARGIN
   );
 
   // Apply min/max bounds
   return Math.max(
-    CONFIG.MIN_CLEANUP_COUNT,
-    Math.min(CONFIG.MAX_CLEANUP_COUNT, recordsNeeded)
+    QUOTA_CONFIG.MIN_CLEANUP_COUNT,
+    Math.min(QUOTA_CONFIG.MAX_CLEANUP_COUNT, recordsNeeded)
   );
 }
 
@@ -109,7 +92,7 @@ function calculateCleanupCount(estimatedNeededBytes) {
  * @returns {Promise<Object>} - Status and recommended actions
  */
 async function checkFallbackPressure(currentCount) {
-  const utilization = currentCount / CONFIG.MAX_FALLBACK_RECORDS;
+  const utilization = currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS;
 
   // 🟢 NORMAL: < 80% - all is good
   if (utilization < FALLBACK_THRESHOLDS.WARNING) {
@@ -171,14 +154,14 @@ async function handleFallbackWarning(currentCount) {
     // Delete MUCH more records from main DB
     // Goal: free up space for fallback records
     const aggressiveCleanupCount = Math.max(
-      CONFIG.MIN_CLEANUP_COUNT * 5, // Minimum 500 records
-      currentCount * 2               // Or 2x more than in fallback
+      QUOTA_CONFIG.MIN_CLEANUP_COUNT * 5, // Minimum 500 records
+      currentCount * 2                     // Or 2x more than in fallback
     );
 
     logError('QuotaManager', new Error('Fallback WARNING threshold reached'), {
       operation: 'handleFallbackWarning',
       currentCount,
-      utilization: `${(currentCount / CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`,
+      utilization: `${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`,
       cleanupTarget: aggressiveCleanupCount
     });
 
@@ -223,19 +206,19 @@ async function handleFallbackCritical(currentCount) {
     logError('QuotaManager', new Error('Fallback CRITICAL threshold reached'), {
       operation: 'handleFallbackCritical',
       currentCount,
-      utilization: `${(currentCount / CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`
+      utilization: `${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`
     });
 
     // Show critical notification
     await showCriticalNotification({
       title: '🔴 CRITICAL: Storage Almost Full',
-      message: `Fallback storage at ${(currentCount / CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(0)}%. New video tracking is temporarily disabled. Please clear old videos in settings immediately.`
+      message: `Fallback storage at ${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(0)}%. New video tracking is temporarily disabled. Please clear old videos in settings immediately.`
     });
 
     // Last attempt at aggressive cleanup
     const emergencyCleanup = Math.min(
-      CONFIG.MAX_CLEANUP_COUNT, // Maximum 5000
-      currentCount * 3           // Or 3x more than in fallback
+      QUOTA_CONFIG.MAX_CLEANUP_COUNT, // Maximum 5000
+      currentCount * 3                 // Or 3x more than in fallback
     );
 
     const { deleteOldestHiddenVideos } = await import('./indexedDb.js');
@@ -268,7 +251,7 @@ async function handleFallbackEmergency(currentCount) {
     logError('QuotaManager', new Error('Fallback EMERGENCY threshold reached'), {
       operation: 'handleFallbackEmergency',
       currentCount,
-      utilization: `${(currentCount / CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`
+      utilization: `${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`
     });
 
     // Automatic export of fallback data
@@ -297,7 +280,7 @@ async function handleFallbackEmergency(currentCount) {
     // Show notification
     await showCriticalNotification({
       title: '🆘 EMERGENCY: Auto-Export Started',
-      message: `Emergency backup created. Fallback storage at ${(currentCount / CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(0)}%. Save the file and clear old videos immediately.`
+      message: `Emergency backup created. Fallback storage at ${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(0)}%. Save the file and clear old videos immediately.`
     });
 
     await logQuotaEvent({
@@ -397,8 +380,8 @@ async function logQuotaEvent(event) {
     events.push(event);
 
     // Keep only recent events
-    if (events.length > CONFIG.MAX_QUOTA_EVENTS) {
-      events.splice(0, events.length - CONFIG.MAX_QUOTA_EVENTS);
+    if (events.length > QUOTA_CONFIG.MAX_QUOTA_EVENTS) {
+      events.splice(0, events.length - QUOTA_CONFIG.MAX_QUOTA_EVENTS);
     }
 
     await chrome.storage.local.set({ [QUOTA_EVENTS_KEY]: events });
@@ -576,9 +559,9 @@ export async function exportFallbackStorage() {
       exportType: 'fallback_storage',
       exportDate: new Date().toISOString(),
       recordCount: fallbackData.length,
-      maxCapacity: CONFIG.MAX_FALLBACK_RECORDS,
-      utilizationPercent: (fallbackData.length / CONFIG.MAX_FALLBACK_RECORDS) * 100,
-      warning: fallbackData.length >= CONFIG.MAX_FALLBACK_RECORDS * 0.8
+      maxCapacity: QUOTA_CONFIG.MAX_FALLBACK_RECORDS,
+      utilizationPercent: (fallbackData.length / QUOTA_CONFIG.MAX_FALLBACK_RECORDS) * 100,
+      warning: fallbackData.length >= QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 0.8
         ? 'Fallback storage is at 80%+ capacity. Data loss may occur soon.'
         : null,
       records: fallbackData
@@ -617,8 +600,8 @@ export async function getFallbackStats() {
 
     return {
       recordCount: fallbackData.length,
-      maxRecords: CONFIG.MAX_FALLBACK_RECORDS,
-      utilizationPercent: (fallbackData.length / CONFIG.MAX_FALLBACK_RECORDS) * 100
+      maxRecords: QUOTA_CONFIG.MAX_FALLBACK_RECORDS,
+      utilizationPercent: (fallbackData.length / QUOTA_CONFIG.MAX_FALLBACK_RECORDS) * 100
     };
   } catch (error) {
     return { recordCount: 0, maxRecords: 0, utilizationPercent: 0 };

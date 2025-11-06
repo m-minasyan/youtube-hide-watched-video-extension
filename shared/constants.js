@@ -261,7 +261,8 @@ export const QUOTA_CONFIG = {
   MAX_CLEANUP_COUNT: 5000,
 
   // Maximum records to store in fallback storage
-  MAX_FALLBACK_RECORDS: 1000,
+  // INCREASED from 1000 to 5000 to prevent data loss during high-volume operations
+  MAX_FALLBACK_RECORDS: 5000,
 
   // Notification cooldown (5 minutes)
   NOTIFICATION_COOLDOWN_MS: 5 * 60 * 1000,
