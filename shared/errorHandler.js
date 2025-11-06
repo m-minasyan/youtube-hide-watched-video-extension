@@ -80,7 +80,9 @@ export async function retryOperation(
     initialDelay = 100,
     maxDelay = 5000,
     shouldRetry = (error) => classifyError(error) === ErrorType.TRANSIENT,
-    onRetry = null
+    onRetry = null,
+    // Progressive timeout support - allows passing different timeout per attempt
+    getTimeoutForAttempt = null
   } = options;
 
   let lastError;
@@ -88,7 +90,10 @@ export async function retryOperation(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await operation();
+      // If getTimeoutForAttempt is provided, call operation with current attempt number
+      return getTimeoutForAttempt
+        ? await operation(attempt)
+        : await operation();
     } catch (error) {
       lastError = error;
 

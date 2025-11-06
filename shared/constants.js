@@ -217,9 +217,15 @@ export const INDEXEDDB_CONFIG = {
 
   // Timeout settings
   OPERATION_TIMEOUT: 30000, // 30 seconds - timeout for individual operations
-  CURSOR_TIMEOUT: 120000, // 2 minutes - timeout for cursor operations (handles 200k+ records on slow devices)
+  CURSOR_TIMEOUT: 30000, // 30 seconds - initial timeout for cursor operations (optimized for 99% of users)
+  CURSOR_TIMEOUT_RETRY_1: 60000, // 60 seconds - second attempt for slower devices
+  CURSOR_TIMEOUT_RETRY_2: 90000, // 90 seconds - third attempt for edge cases (200k+ records on very slow devices)
   DB_OPEN_TIMEOUT: 30000, // 30 seconds - timeout for opening database (old Android devices need 15-20s)
-  RESET_TIMEOUT: 60000 // 1 minute - timeout for database reset (handles large DB cleanup)
+  RESET_TIMEOUT: 60000, // 1 minute - timeout for database reset (handles large DB cleanup)
+
+  // Progressive timeout retry settings
+  ENABLE_CURSOR_PROGRESSIVE_TIMEOUT: true, // Enable progressive timeout for cursor operations
+  CURSOR_MAX_RETRIES: 2 // Maximum retry attempts for cursor operations (total 3 attempts)
 };
 
 // Feature flags for IndexedDB optimizations
