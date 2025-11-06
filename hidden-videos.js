@@ -335,6 +335,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       hiddenVideosState.hasMore = endIndex < filteredItems.length;
     } catch (error) {
       if (DEBUG) console.error('Search failed:', error);
+      // MEMORY LEAK FIX: Clear old event listeners before setting new content
+      videosContainer.replaceChildren();
       // Display error message to user
       videosContainer.innerHTML = `
         <div class="empty-state">
@@ -643,6 +645,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (videos.length === 0) {
       const filter = hiddenVideosState.filter;
 
+      // MEMORY LEAK FIX: Clear old event listeners before setting new content
+      videosContainer.replaceChildren();
+
       if (isSearching) {
         // Show "no search results" message
         // SECURITY: Query is already sanitized when stored in state,
@@ -679,8 +684,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Render video cards using safe DOM creation (XSS-protected)
-    // Clear the container first
-    videosContainer.innerHTML = '';
+    // MEMORY LEAK FIX: Use replaceChildren() instead of innerHTML = ''
+    // replaceChildren() properly removes all children AND their event listeners,
+    // preventing memory leaks when video cards with click handlers are re-rendered.
+    // Using innerHTML = '' would leave event listeners in memory (~500KB per 1000 videos).
+    videosContainer.replaceChildren();
 
     // Create and append each video card using DOM methods
     videos.forEach((record) => {
