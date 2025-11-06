@@ -151,8 +151,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // U+FEFF: Zero Width No-Break Space (BOM)
     sanitized = sanitized.replace(/[\u200B-\u200D\uFEFF]/g, '');
 
-    // Normalize fullwidth characters to ASCII
-    // Converts ＜ to <, ＞ to >, etc.
+    // Normalize fullwidth ASCII characters (U+FF01-U+FF5E) to standard ASCII
+    // This converts fullwidth versions: ＜ → <, ＞ → >, （ → (, etc.
+    // IMPORTANT: This range does NOT include CJK characters (Japanese/Chinese/Korean):
+    // - Japanese Hiragana: U+3040-U+309F (あいうえお)
+    // - Japanese Katakana: U+30A0-U+30FF (アイウエオ)
+    // - CJK Ideographs: U+4E00-U+9FFF (漢字)
+    // - CJK Corner Brackets: U+300C-U+300D (「」)
+    // So legitimate CJK text is preserved, only fullwidth ASCII is normalized
     sanitized = sanitized.replace(/[\uFF01-\uFF5E]/g, (ch) => {
       return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
     });
@@ -187,7 +193,7 @@ document.addEventListener('DOMContentLoaded', async () => {
    * Filters items by search query
    * XSS-safe: query is sanitized before use
    * @param {Array} items - Array of video items
-   * @param {string} query - Search query (will be sanitized)
+   * @param {string} query - Search query (should already be sanitized in state, but defense-in-depth)
    * @returns {Array} - Filtered items
    */
   function filterItemsBySearch(items, query) {
@@ -195,7 +201,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       return items;
     }
 
-    // Sanitize query first to prevent XSS and Unicode bypass attacks
+    // SECURITY: Defense-in-depth sanitization (query should already be sanitized when stored in state)
+    // This provides an additional layer of protection if the function is called from unexpected code paths
     const sanitizedQuery = sanitizeSearchQuery(query);
     const normalizedQuery = normalizeString(sanitizedQuery);
 
@@ -450,8 +457,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       return fragment;
     }
 
-    // SECURITY: Sanitize query to prevent Unicode normalization bypass attacks
-    // This removes fullwidth characters (＜＞), control chars, and HTML-like patterns
+    // SECURITY: Defense-in-depth sanitization (query should already be sanitized when stored in state)
+    // This provides additional protection against Unicode normalization bypass attacks
+    // Removes fullwidth characters (＜＞), control chars, and HTML-like patterns
     const sanitizedQuery = sanitizeSearchQuery(query);
     const normalizedQuery = normalizeString(sanitizedQuery);
     const normalizedText = normalizeString(text);
@@ -613,15 +621,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const filteredItems = filterItemsBySearch(hiddenVideosState.allItems, hiddenVideosState.searchQuery);
     const count = filteredItems.length;
 
-    // SECURITY: Sanitize query before including in screen reader announcement
-    const sanitizedQuery = sanitizeSearchQuery(hiddenVideosState.searchQuery);
+    // SECURITY: Query is already sanitized when stored in state,
+    // but we use it in textContent which is XSS-safe anyway
+    const query = hiddenVideosState.searchQuery;
 
     if (count === 0) {
-      statusElement.textContent = `No results found for "${sanitizedQuery}"`;
+      statusElement.textContent = `No results found for "${query}"`;
     } else if (count === 1) {
-      statusElement.textContent = `Found 1 result for "${sanitizedQuery}"`;
+      statusElement.textContent = `Found 1 result for "${query}"`;
     } else {
-      statusElement.textContent = `Found ${count} results for "${sanitizedQuery}"`;
+      statusElement.textContent = `Found ${count} results for "${query}"`;
     }
   }
 
@@ -636,9 +645,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (isSearching) {
         // Show "no search results" message
-        // SECURITY: Sanitize and escape search query before display
-        const sanitizedQuery = sanitizeSearchQuery(hiddenVideosState.searchQuery);
-        const escapedQuery = escapeHtml(sanitizedQuery);
+        // SECURITY: Query is already sanitized when stored in state,
+        // but we escape it again for innerHTML defense-in-depth
+        const escapedQuery = escapeHtml(hiddenVideosState.searchQuery);
         videosContainer.innerHTML = `
           <div class="search-no-results">
             <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -727,7 +736,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Debounced search handler
   const handleSearch = debounce(async (query) => {
-    hiddenVideosState.searchQuery = query;
+    // SECURITY: Sanitize query before storing in state
+    // This ensures only safe queries are used throughout the application
+    hiddenVideosState.searchQuery = sanitizeSearchQuery(query);
     hiddenVideosState.currentPage = 1;
     hiddenVideosState.pageCursors = [null];
 
@@ -763,7 +774,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.key === 'Enter') {
       e.preventDefault();
       const query = searchInput.value;
-      hiddenVideosState.searchQuery = query;
+      // SECURITY: Sanitize query before storing in state
+      hiddenVideosState.searchQuery = sanitizeSearchQuery(query);
       hiddenVideosState.currentPage = 1;
       hiddenVideosState.pageCursors = [null];
       loadHiddenVideos();
@@ -1037,6 +1049,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const validationInfo = document.getElementById('import-validation-info');
     const confirmBtn = document.getElementById('confirm-import-btn');
 
+    // SECURITY: Ensure numeric values are actually numbers (defense-in-depth)
+    const validRecordCount = Number(validation.validRecordCount) || 0;
+    const invalidRecordCount = Number(validation.invalidRecordCount) || 0;
+    const currentTotal = Number(validation.currentTotal) || 0;
+    const projectedTotal = Number(validation.projectedTotal) || 0;
+
     // Show validation info
     validationInfo.innerHTML = `
       <div class="validation-success">
@@ -1044,21 +1062,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="stats-preview">
           <div class="stat-item">
             <span class="stat-label">Valid Records:</span>
-            <span class="stat-value">${validation.validRecordCount}</span>
+            <span class="stat-value">${validRecordCount}</span>
           </div>
-          ${validation.invalidRecordCount > 0 ? `
+          ${invalidRecordCount > 0 ? `
           <div class="stat-item warning">
             <span class="stat-label">Invalid Records (will be skipped):</span>
-            <span class="stat-value">${validation.invalidRecordCount}</span>
+            <span class="stat-value">${invalidRecordCount}</span>
           </div>
           ` : ''}
           <div class="stat-item">
             <span class="stat-label">Current Total:</span>
-            <span class="stat-value">${validation.currentTotal}</span>
+            <span class="stat-value">${currentTotal}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">After Import (max):</span>
-            <span class="stat-value">${validation.projectedTotal}</span>
+            <span class="stat-value">${projectedTotal}</span>
           </div>
         </div>
       </div>
