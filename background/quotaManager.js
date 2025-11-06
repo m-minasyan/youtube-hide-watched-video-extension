@@ -56,6 +56,18 @@ const CONFIG = {
   RETRY_DELAYS: [5000, 30000, 120000] // 5s, 30s, 2min
 };
 
+// Multi-tier Fallback Protection Thresholds
+const FALLBACK_THRESHOLDS = {
+  WARNING: 0.80,      // 80% - aggressive cleanup of main DB
+  CRITICAL: 0.90,     // 90% - block new operations + notification
+  EMERGENCY: 0.95,    // 95% - emergency export
+  MAX: 1.0            // 100% - reject all new records
+};
+
+// Protection flags for race conditions and recursion
+let fallbackLock = null;
+let isCleaningUp = false;
+
 /**
  * Estimates the size of data to be stored in bytes
  * @param {Object|Array} data - Data to estimate
@@ -92,6 +104,284 @@ function calculateCleanupCount(estimatedNeededBytes) {
 }
 
 /**
+ * Checks fallback storage pressure level and determines actions
+ * @param {number} currentCount - Current number of records in fallback
+ * @returns {Promise<Object>} - Status and recommended actions
+ */
+async function checkFallbackPressure(currentCount) {
+  const utilization = currentCount / CONFIG.MAX_FALLBACK_RECORDS;
+
+  // 🟢 NORMAL: < 80% - all is good
+  if (utilization < FALLBACK_THRESHOLDS.WARNING) {
+    return {
+      level: 'normal',
+      action: 'none',
+      allowNewRecords: true,
+      utilization
+    };
+  }
+
+  // 🟡 WARNING: 80-90% - aggressive cleanup
+  if (utilization < FALLBACK_THRESHOLDS.CRITICAL) {
+    await handleFallbackWarning(currentCount);
+    return {
+      level: 'warning',
+      action: 'aggressive_cleanup',
+      allowNewRecords: true,
+      utilization
+    };
+  }
+
+  // 🟠 CRITICAL: 90-95% - block new operations
+  if (utilization < FALLBACK_THRESHOLDS.EMERGENCY) {
+    await handleFallbackCritical(currentCount);
+    return {
+      level: 'critical',
+      action: 'block_operations',
+      allowNewRecords: false,
+      utilization
+    };
+  }
+
+  // 🔴 EMERGENCY: 95-100% - emergency export
+  if (utilization < FALLBACK_THRESHOLDS.MAX) {
+    await handleFallbackEmergency(currentCount);
+    return {
+      level: 'emergency',
+      action: 'emergency_export',
+      allowNewRecords: false,
+      utilization
+    };
+  }
+
+  // 🛑 MAX: 100% - reject all
+  return {
+    level: 'max',
+    action: 'reject',
+    allowNewRecords: false,
+    utilization
+  };
+}
+
+/**
+ * 🟡 WARNING (80%): Aggressive cleanup of main DB
+ */
+async function handleFallbackWarning(currentCount) {
+  try {
+    // Delete MUCH more records from main DB
+    // Goal: free up space for fallback records
+    const aggressiveCleanupCount = Math.max(
+      CONFIG.MIN_CLEANUP_COUNT * 5, // Minimum 500 records
+      currentCount * 2               // Or 2x more than in fallback
+    );
+
+    logError('QuotaManager', new Error('Fallback WARNING threshold reached'), {
+      operation: 'handleFallbackWarning',
+      currentCount,
+      utilization: `${(currentCount / CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`,
+      cleanupTarget: aggressiveCleanupCount
+    });
+
+    // Import deleteOldestHiddenVideos dynamically to avoid circular dependency
+    const { deleteOldestHiddenVideos } = await import('./indexedDb.js');
+
+    // Delete old records from main DB with recursion protection
+    if (!isCleaningUp) {
+      await deleteOldestHiddenVideosWithProtection(deleteOldestHiddenVideos, aggressiveCleanupCount);
+    }
+
+    // Try to process fallback immediately
+    const result = await processFallbackStorageAggressively();
+
+    if (result.success && result.processed > 0) {
+      await showQuotaNotification({
+        title: 'Storage Optimization',
+        message: `Freed space for ${result.processed} pending videos. Deleted ${aggressiveCleanupCount} old records.`
+      });
+    }
+
+    await logQuotaEvent({
+      type: 'fallback_warning_handled',
+      currentCount,
+      cleanupCount: aggressiveCleanupCount,
+      processedFromFallback: result.processed
+    });
+
+  } catch (error) {
+    logError('QuotaManager', error, {
+      operation: 'handleFallbackWarning',
+      fatal: true
+    });
+  }
+}
+
+/**
+ * 🟠 CRITICAL (90%): Block operations + notification
+ */
+async function handleFallbackCritical(currentCount) {
+  try {
+    logError('QuotaManager', new Error('Fallback CRITICAL threshold reached'), {
+      operation: 'handleFallbackCritical',
+      currentCount,
+      utilization: `${(currentCount / CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`
+    });
+
+    // Show critical notification
+    await showCriticalNotification({
+      title: '🔴 CRITICAL: Storage Almost Full',
+      message: `Fallback storage at ${(currentCount / CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(0)}%. New video tracking is temporarily disabled. Please clear old videos in settings immediately.`
+    });
+
+    // Last attempt at aggressive cleanup
+    const emergencyCleanup = Math.min(
+      CONFIG.MAX_CLEANUP_COUNT, // Maximum 5000
+      currentCount * 3           // Or 3x more than in fallback
+    );
+
+    const { deleteOldestHiddenVideos } = await import('./indexedDb.js');
+
+    if (!isCleaningUp) {
+      await deleteOldestHiddenVideosWithProtection(deleteOldestHiddenVideos, emergencyCleanup);
+    }
+
+    await processFallbackStorageAggressively();
+
+    await logQuotaEvent({
+      type: 'fallback_critical_handled',
+      currentCount,
+      emergencyCleanup
+    });
+
+  } catch (error) {
+    logError('QuotaManager', error, {
+      operation: 'handleFallbackCritical',
+      fatal: true
+    });
+  }
+}
+
+/**
+ * 🔴 EMERGENCY (95%): Auto-export fallback data
+ */
+async function handleFallbackEmergency(currentCount) {
+  try {
+    logError('QuotaManager', new Error('Fallback EMERGENCY threshold reached'), {
+      operation: 'handleFallbackEmergency',
+      currentCount,
+      utilization: `${(currentCount / CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`
+    });
+
+    // Automatic export of fallback data
+    const exportData = await exportFallbackStorage();
+
+    // Save export via chrome.downloads API
+    const jsonBlob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: 'application/json'
+    });
+    const url = URL.createObjectURL(jsonBlob);
+
+    try {
+      await chrome.downloads.download({
+        url: url,
+        filename: `youtube-hidden-videos-emergency-${Date.now()}.json`,
+        saveAs: true // Ask user to choose location
+      });
+    } catch (downloadError) {
+      // If downloads API fails, log but continue
+      logError('QuotaManager', downloadError, {
+        operation: 'emergency_download',
+        fatal: false
+      });
+    }
+
+    // Show notification
+    await showCriticalNotification({
+      title: '🆘 EMERGENCY: Auto-Export Started',
+      message: `Emergency backup created. Fallback storage at ${(currentCount / CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(0)}%. Save the file and clear old videos immediately.`
+    });
+
+    await logQuotaEvent({
+      type: 'fallback_emergency_export',
+      currentCount,
+      recordsExported: exportData.recordCount
+    });
+
+  } catch (error) {
+    logError('QuotaManager', error, {
+      operation: 'handleFallbackEmergency',
+      fatal: true
+    });
+  }
+}
+
+/**
+ * Aggressively processes fallback storage
+ * Tries to process ALL records, ignoring errors
+ * @returns {Promise<Object>} Result with processed count
+ */
+async function processFallbackStorageAggressively() {
+  const fallbackRecords = await getFromFallbackStorage();
+
+  if (fallbackRecords.length === 0) {
+    return { success: true, processed: 0, remaining: 0 };
+  }
+
+  // Process in small batches for better reliability
+  const AGGRESSIVE_BATCH_SIZE = 50;
+  let processedCount = 0;
+
+  const { upsertHiddenVideos } = await import('./indexedDb.js');
+
+  for (let i = 0; i < fallbackRecords.length; i += AGGRESSIVE_BATCH_SIZE) {
+    const batch = fallbackRecords.slice(i, Math.min(i + AGGRESSIVE_BATCH_SIZE, fallbackRecords.length));
+
+    try {
+      await upsertHiddenVideos(batch);
+      processedCount += batch.length;
+
+      // Remove successfully processed records
+      await removeFromFallbackStorage(batch.length);
+
+      // Give browser time to breathe
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+    } catch (error) {
+      // Ignore errors, continue processing
+      logError('QuotaManager', error, {
+        operation: 'processFallbackStorageAggressively',
+        batchIndex: i,
+        continuing: true
+      });
+    }
+  }
+
+  const remaining = fallbackRecords.length - processedCount;
+
+  return {
+    success: processedCount > 0,
+    processed: processedCount,
+    remaining
+  };
+}
+
+/**
+ * Wrapper for deleteOldestHiddenVideos with recursion protection
+ */
+async function deleteOldestHiddenVideosWithProtection(deleteFunction, count) {
+  if (isCleaningUp) {
+    warn('QuotaManager', 'Cleanup already in progress, skipping');
+    return;
+  }
+
+  isCleaningUp = true;
+  try {
+    await deleteFunction(count);
+  } finally {
+    isCleaningUp = false;
+  }
+}
+
+/**
  * Logs a quota event for monitoring and debugging
  * @param {Object} event - Event details
  */
@@ -119,7 +409,7 @@ async function logQuotaEvent(event) {
 }
 
 /**
- * Saves failed operation data to fallback storage
+ * Saves failed operation data to fallback storage with pressure checking
  * @param {Array} records - Records that failed to save
  * @returns {Promise<Object>} Result with success status and message
  */
@@ -128,64 +418,79 @@ async function saveToFallbackStorage(records) {
     return { success: true, message: 'No records to save' };
   }
 
-  try {
-    const result = await chrome.storage.local.get(FALLBACK_STORAGE_KEY);
-    const fallbackData = result[FALLBACK_STORAGE_KEY] || [];
+  // 🔒 Race condition protection - wait for any pending operation
+  if (fallbackLock) {
+    await fallbackLock;
+  }
 
-    // Add new records
-    const newRecords = Array.isArray(records) ? records : [records];
-    fallbackData.push(...newRecords);
+  // Create new lock promise
+  fallbackLock = (async () => {
+    try {
+      const result = await chrome.storage.local.get(FALLBACK_STORAGE_KEY);
+      const fallbackData = result[FALLBACK_STORAGE_KEY] || [];
 
-    // CRITICAL: Limit fallback storage size to prevent unbounded memory growth
-    if (fallbackData.length > CONFIG.MAX_FALLBACK_RECORDS) {
-      const removed = fallbackData.splice(0, fallbackData.length - CONFIG.MAX_FALLBACK_RECORDS);
+      // 🎯 Check pressure BEFORE adding records
+      const newRecords = Array.isArray(records) ? records : [records];
+      const projectedCount = fallbackData.length + newRecords.length;
+      const pressureCheck = await checkFallbackPressure(projectedCount);
 
-      // Log data loss
+      // 🛑 Reject if fallback is too full
+      if (!pressureCheck.allowNewRecords) {
+        await logQuotaEvent({
+          type: 'fallback_rejected',
+          currentCount: fallbackData.length,
+          attemptedToAdd: newRecords.length,
+          reason: pressureCheck.level
+        });
+
+        return {
+          success: false,
+          message: `Fallback storage full (${pressureCheck.level}). Cannot save new records.`,
+          rejected: true,
+          level: pressureCheck.level,
+          currentCount: fallbackData.length
+        };
+      }
+
+      // ✅ Add records
+      fallbackData.push(...newRecords);
+
+      await chrome.storage.local.set({ [FALLBACK_STORAGE_KEY]: fallbackData });
+
       await logQuotaEvent({
-        type: 'data_loss',
-        recordsLost: removed.length,
-        reason: 'fallback_storage_full'
+        type: 'fallback_save',
+        recordsSaved: newRecords.length,
+        totalInFallback: fallbackData.length,
+        pressureLevel: pressureCheck.level
       });
 
-      logError('QuotaManager', new Error(`Lost ${removed.length} records - fallback storage full`), {
-        recordsLost: removed.length,
-        totalInFallback: fallbackData.length
+      return {
+        success: true,
+        message: `Saved ${newRecords.length} records to fallback storage`,
+        recordsSaved: newRecords.length,
+        totalInFallback: fallbackData.length,
+        pressureLevel: pressureCheck.level
+      };
+
+    } catch (error) {
+      logError('QuotaManager', error, {
+        operation: 'saveToFallbackStorage',
+        recordCount: records.length,
+        fatal: true
       });
 
-      // CRITICAL NOTIFICATION: Show immediate warning to user about data loss
-      // Bypass cooldown for critical data loss events
-      await showCriticalNotification({
-        title: '⚠️ CRITICAL: Data Loss Detected',
-        message: `Lost ${removed.length} video records due to storage overflow. Please export your fallback data immediately and clear old videos in settings.`
-      });
+      return {
+        success: false,
+        message: 'Failed to save to fallback storage',
+        error: error.message
+      };
     }
+  })();
 
-    await chrome.storage.local.set({ [FALLBACK_STORAGE_KEY]: fallbackData });
-
-    await logQuotaEvent({
-      type: 'fallback_save',
-      recordsSaved: newRecords.length,
-      totalInFallback: fallbackData.length
-    });
-
-    return {
-      success: true,
-      message: `Saved ${newRecords.length} records to fallback storage`,
-      recordsSaved: newRecords.length,
-      totalInFallback: fallbackData.length
-    };
-  } catch (error) {
-    logError('QuotaManager', error, {
-      operation: 'saveToFallbackStorage',
-      recordCount: records.length,
-      fatal: true
-    });
-
-    return {
-      success: false,
-      message: 'Failed to save to fallback storage',
-      error: error.message
-    };
+  try {
+    return await fallbackLock;
+  } finally {
+    fallbackLock = null;
   }
 }
 
@@ -498,7 +803,7 @@ async function showCriticalNotification(options = {}) {
 }
 
 /**
- * Main quota exceeded handler
+ * Main quota exceeded handler with multi-tier fallback protection
  * @param {Error} error - The quota exceeded error
  * @param {Function} cleanupFunction - Function to delete old records (deleteOldestHiddenVideos)
  * @param {Object} operationContext - Context about the failed operation
@@ -530,8 +835,29 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
     });
 
     // Save data to fallback storage first (critical - before cleanup)
+    // This now includes pressure checking
     const fallbackResult = await saveToFallbackStorage(data);
 
+    // 🛑 If fallback REJECTED the records - DO NOT delete data
+    if (!fallbackResult.success && fallbackResult.rejected) {
+      // Data NOT saved, DO NOT perform cleanup
+      await showCriticalNotification({
+        title: '🛑 Storage Full - Operation Blocked',
+        message: `Cannot save ${Array.isArray(data) ? data.length : 1} videos. Storage is critically full (${fallbackResult.level}). Clear old videos in settings immediately.`
+      });
+
+      return {
+        success: false,
+        cleanupPerformed: false,
+        fallbackSaved: false,
+        rejected: true,
+        level: fallbackResult.level,
+        error: 'Fallback storage full - operation rejected',
+        recommendation: 'critical_cleanup_required'
+      };
+    }
+
+    // If fallback failed for other reasons (not rejection)
     if (!fallbackResult.success) {
       // Critical: couldn't even save to fallback storage
       await showQuotaNotification({
@@ -543,20 +869,30 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
         success: false,
         cleanupPerformed: false,
         fallbackSaved: false,
-        error: 'Failed to save to fallback storage'
+        error: 'Failed to save to fallback storage',
+        recommendation: 'manual_intervention_required'
       };
     }
 
-    // Perform cleanup
+    // Perform cleanup with recursion protection
     try {
-      await cleanupFunction(cleanupCount);
+      // Use protection wrapper for cleanup
+      if (!isCleaningUp) {
+        isCleaningUp = true;
+        try {
+          await cleanupFunction(cleanupCount);
+        } finally {
+          isCleaningUp = false;
+        }
+      }
 
       const cleanupTime = Date.now() - startTime;
 
       await logQuotaEvent({
         type: 'cleanup_success',
         recordsDeleted: cleanupCount,
-        cleanupTimeMs: cleanupTime
+        cleanupTimeMs: cleanupTime,
+        fallbackPressureLevel: fallbackResult.pressureLevel
       });
 
       // Show notification to user (with cooldown)
@@ -570,6 +906,7 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
         recordsDeleted: cleanupCount,
         fallbackSaved: true,
         fallbackRecords: fallbackResult.recordsSaved,
+        pressureLevel: fallbackResult.pressureLevel,
         recommendation: 'retry_operation'
       };
     } catch (cleanupError) {
@@ -596,6 +933,7 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
         cleanupPerformed: false,
         fallbackSaved: true,
         fallbackRecords: fallbackResult.recordsSaved,
+        pressureLevel: fallbackResult.pressureLevel,
         error: 'Cleanup failed',
         recommendation: 'manual_cleanup_required'
       };
@@ -610,7 +948,8 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
       success: false,
       cleanupPerformed: false,
       fallbackSaved: false,
-      error: error.message
+      error: error.message,
+      recommendation: 'system_error'
     };
   }
 }
