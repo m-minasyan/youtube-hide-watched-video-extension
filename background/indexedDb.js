@@ -11,6 +11,7 @@ const STATE_INDEX = 'byState';
 const STATE_UPDATED_AT_INDEX = 'byStateUpdatedAt';
 
 let dbPromise = null;
+let resolvedDb = null; // Resolved database instance for synchronous access
 let dbResetInProgress = false;
 let dbResetPromise = null;
 
@@ -55,6 +56,7 @@ function openDb() {
   shutdownRequested = false;
   activeOperations = 0;
   pendingCloseCallback = null;
+  resolvedDb = null;
 
   dbPromise = retryOperation(
     () => withTimeout(
@@ -82,9 +84,11 @@ function openDb() {
 
         request.onsuccess = () => {
           const db = request.result;
+          resolvedDb = db; // Store resolved instance for synchronous access
           db.onversionchange = () => {
             db.close();
             dbPromise = null;
+            resolvedDb = null;
           };
           db.onerror = (event) => {
             logError('IndexedDB', event.target.error, { operation: 'db.onerror' });
@@ -118,6 +122,7 @@ function openDb() {
   ).catch((error) => {
     logError('IndexedDB', error, { operation: 'openDb', fatal: true });
     dbPromise = null;
+    resolvedDb = null;
     throw error;
   });
 
@@ -138,6 +143,7 @@ export async function closeDb() {
       logError('IndexedDB', error, { operation: 'closeDb', phase: 'close' });
     } finally {
       dbPromise = null;
+      resolvedDb = null;
       // Clear the cache when closing the database
       clearBackgroundCache();
     }
@@ -165,7 +171,7 @@ export function closeDbSync() {
   // Set shutdown flag to prevent new operations
   shutdownRequested = true;
 
-  if (!dbPromise) {
+  if (!dbPromise && !resolvedDb) {
     // No database connection to close
     clearBackgroundCache();
     return;
@@ -182,44 +188,29 @@ export function closeDbSync() {
     return;
   }
 
-  // No active operations - safe to close immediately
-  // Check if dbPromise is already resolved (synchronous access)
-  if (dbPromise && typeof dbPromise.then === 'function') {
-    // Try to close synchronously if the promise is already resolved
-    // We use a non-awaited promise to avoid blocking
-    dbPromise
-      .then(db => {
-        try {
-          db.close();
-          logError('IndexedDB', new Error('Database closed successfully'), {
-            operation: 'closeDbSync',
-            success: true
-          });
-        } catch (error) {
-          logError('IndexedDB', error, {
-            operation: 'closeDbSync',
-            phase: 'close',
-            nonBlocking: true
-          });
-        }
-      })
-      .catch(error => {
-        logError('IndexedDB', error, {
-          operation: 'closeDbSync',
-          phase: 'resolve',
-          nonBlocking: true
-        });
-      })
-      .finally(() => {
-        dbPromise = null;
-        clearBackgroundCache();
+  // No active operations - close immediately and SYNCHRONOUSLY
+  // Use the resolved database instance for synchronous closing
+  // This prevents race condition where Chrome kills Service Worker before async .then() executes
+  if (resolvedDb) {
+    try {
+      resolvedDb.close();
+      logError('IndexedDB', new Error('Database closed synchronously'), {
+        operation: 'closeDbSync',
+        success: true,
+        synchronous: true
       });
+    } catch (error) {
+      logError('IndexedDB', error, {
+        operation: 'closeDbSync',
+        phase: 'close',
+        synchronous: true
+      });
+    }
   }
 
   // Clear state immediately (synchronously)
-  // The actual db.close() will happen asynchronously if dbPromise is pending
-  // but we reset our state to prevent new operations
   dbPromise = null;
+  resolvedDb = null;
   clearBackgroundCache();
 }
 
@@ -442,15 +433,18 @@ async function withStore(mode, handler, operationContext = null) {
           dbPromise.then(db => {
             db.close();
             dbPromise = null;
+            resolvedDb = null;
             clearBackgroundCache();
           }).catch(() => {
             // Database may already be closed or in error state
             dbPromise = null;
+            resolvedDb = null;
             clearBackgroundCache();
           });
         } catch (error) {
           // Ignore errors during shutdown cleanup
           dbPromise = null;
+          resolvedDb = null;
           clearBackgroundCache();
         }
       }
@@ -874,6 +868,7 @@ async function attemptDatabaseReset() {
           logError('IndexedDB', closeError, { operation: 'reset', phase: 'close' });
         }
         dbPromise = null;
+        resolvedDb = null;
       }
 
       // Delete and recreate database
@@ -1035,6 +1030,7 @@ export function getShutdownState() {
     shutdownRequested,
     activeOperations,
     hasPendingCallback: !!pendingCloseCallback,
-    hasDbConnection: !!dbPromise
+    hasDbConnection: !!dbPromise,
+    hasResolvedDb: !!resolvedDb
   };
 }
