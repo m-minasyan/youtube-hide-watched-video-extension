@@ -18,19 +18,26 @@ const FALLBACK_STORAGE_KEY = 'YTHWV_FALLBACK_STORAGE';
 const QUOTA_EVENTS_KEY = 'YTHWV_QUOTA_EVENTS';
 const LAST_NOTIFICATION_KEY = 'YTHWV_LAST_QUOTA_NOTIFICATION';
 const NOTIFICATION_BACKOFF_KEY = 'YTHWV_NOTIFICATION_BACKOFF';
+const NOTIFICATION_DISABLED_KEY = 'YTHWV_QUOTA_NOTIFICATIONS_DISABLED';
 
 // Local Configuration (quotaManager-specific settings)
 // Note: Common quota settings are centralized in QUOTA_CONFIG (shared/constants.js)
 const CONFIG = {
   // Notification cooldown with exponential backoff
-  // Base cooldown: 5 minutes (initial notification interval)
-  BASE_NOTIFICATION_COOLDOWN_MS: 5 * 60 * 1000,
+  // Base cooldown: 15 minutes (initial notification interval)
+  // Increased from 5 minutes to reduce notification spam
+  BASE_NOTIFICATION_COOLDOWN_MS: 15 * 60 * 1000,
 
   // Maximum cooldown: 2 hours (prevents indefinite silence)
   MAX_NOTIFICATION_COOLDOWN_MS: 2 * 60 * 60 * 1000,
 
   // Backoff multiplier: doubles cooldown with each consecutive notification
   NOTIFICATION_BACKOFF_MULTIPLIER: 2,
+
+  // Maximum consecutive notifications: limits spam to 3 notifications max
+  // After 3 notifications, no more will be shown until backoff resets
+  // Schedule: 15min → 30min → 60min, then silence
+  MAX_CONSECUTIVE_NOTIFICATIONS: 3,
 
   // Reset threshold: 24 hours without notifications resets backoff
   NOTIFICATION_BACKOFF_RESET_MS: 24 * 60 * 60 * 1000,
@@ -685,6 +692,16 @@ async function maybeResetNotificationBackoff(lastNotificationTime) {
  */
 async function showQuotaNotification(options = {}) {
   try {
+    // Check if notifications are disabled by user
+    const disabledResult = await chrome.storage.local.get(NOTIFICATION_DISABLED_KEY);
+    if (disabledResult[NOTIFICATION_DISABLED_KEY] === true) {
+      await logQuotaEvent({
+        type: 'notification_suppressed',
+        reason: 'disabled_by_user'
+      });
+      return;
+    }
+
     // Get current backoff state
     const { consecutiveCount, lastNotificationTime } = await getNotificationBackoff();
     const now = Date.now();
@@ -692,10 +709,23 @@ async function showQuotaNotification(options = {}) {
     // Check if backoff should be reset (stable for 24h)
     const wasReset = await maybeResetNotificationBackoff(lastNotificationTime);
 
+    // Calculate effective consecutive count after potential reset
+    const effectiveCount = wasReset ? 0 : consecutiveCount;
+
+    // Check if we've reached the maximum notification limit
+    if (effectiveCount >= CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS) {
+      await logQuotaEvent({
+        type: 'notification_suppressed',
+        reason: 'max_consecutive_limit_reached',
+        consecutiveCount: effectiveCount,
+        maxLimit: CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS,
+        willResetAfter24Hours: true
+      });
+      return;
+    }
+
     // Calculate current cooldown with exponential backoff
-    const currentCooldown = calculateNotificationCooldown(
-      wasReset ? 0 : consecutiveCount
-    );
+    const currentCooldown = calculateNotificationCooldown(effectiveCount);
 
     // Check if we're still in cooldown period
     if (lastNotificationTime > 0 && now - lastNotificationTime < currentCooldown) {
@@ -703,7 +733,7 @@ async function showQuotaNotification(options = {}) {
       await logQuotaEvent({
         type: 'notification_suppressed',
         reason: 'exponential_backoff_cooldown',
-        consecutiveCount: wasReset ? 0 : consecutiveCount,
+        consecutiveCount: effectiveCount,
         currentCooldownMinutes: Math.round(currentCooldown / 60000),
         timeUntilNextNotificationMinutes: Math.round((currentCooldown - (now - lastNotificationTime)) / 60000)
       });
@@ -711,22 +741,28 @@ async function showQuotaNotification(options = {}) {
     }
 
     // Update notification state
-    const newConsecutiveCount = (wasReset ? 0 : consecutiveCount) + 1;
+    const newConsecutiveCount = effectiveCount + 1;
     await updateNotificationBackoff(newConsecutiveCount);
     await chrome.storage.local.set({ [LAST_NOTIFICATION_KEY]: now });
-
-    // Calculate next notification interval for user info
-    const nextCooldown = calculateNotificationCooldown(newConsecutiveCount);
-    const nextCooldownMinutes = Math.round(nextCooldown / 60000);
 
     // Create notification
     const title = options.title || 'YouTube Hide Watched Videos - Storage Warning';
     const baseMessage = options.message || 'Storage quota exceeded. Some video data has been moved to temporary storage and will be retried automatically.';
 
-    // Add backoff info if this is a repeat notification
-    const message = newConsecutiveCount > 1
-      ? `${baseMessage}\n\nNote: This is notification #${newConsecutiveCount}. Next notification in ${nextCooldownMinutes} minutes if issue persists.`
-      : baseMessage;
+    // Build message with appropriate context
+    let message = baseMessage;
+
+    if (newConsecutiveCount === CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS) {
+      // This is the final notification before silence
+      message = `${baseMessage}\n\n⚠️ This is the final storage warning. No more notifications will be shown until the issue is resolved for 24 hours. Please clear old videos in extension settings to prevent data loss.`;
+    } else if (newConsecutiveCount > 1) {
+      // Calculate next notification interval for user info
+      const nextCooldown = calculateNotificationCooldown(newConsecutiveCount);
+      const nextCooldownMinutes = Math.round(nextCooldown / 60000);
+      const remainingNotifications = CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS - newConsecutiveCount;
+
+      message = `${baseMessage}\n\nNote: This is notification ${newConsecutiveCount}/${CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS}. Next notification in ${nextCooldownMinutes} minutes if issue persists (${remainingNotifications} warning${remainingNotifications !== 1 ? 's' : ''} remaining).`;
+    }
 
     await chrome.notifications.create({
       type: 'basic',
@@ -742,7 +778,7 @@ async function showQuotaNotification(options = {}) {
       message,
       consecutiveCount: newConsecutiveCount,
       currentCooldownMinutes: Math.round(currentCooldown / 60000),
-      nextCooldownMinutes
+      isFinalNotification: newConsecutiveCount === CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS
     });
   } catch (error) {
     logError('QuotaManager', error, {
@@ -987,9 +1023,10 @@ export async function getNotificationBackoffStats() {
       timeSinceLastNotificationMinutes: Math.round(timeSinceLastNotification / 60000),
       willResetIn24Hours: timeSinceLastNotification > 0 && timeSinceLastNotification < CONFIG.NOTIFICATION_BACKOFF_RESET_MS,
       timeUntilResetHours: Math.max(0, Math.round((CONFIG.NOTIFICATION_BACKOFF_RESET_MS - timeSinceLastNotification) / 3600000)),
-      backoffSchedule: [0, 1, 2, 3, 4, 5].map(count => ({
-        notificationNumber: count + 1,
-        cooldownMinutes: Math.round(calculateNotificationCooldown(count) / 60000)
+      maxConsecutiveNotifications: CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS,
+      backoffSchedule: Array.from({ length: CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS }, (_, i) => ({
+        notificationNumber: i + 1,
+        cooldownMinutes: Math.round(calculateNotificationCooldown(i) / 60000)
       }))
     };
   } catch (error) {
@@ -1002,12 +1039,13 @@ export async function getNotificationBackoffStats() {
       consecutiveCount: 0,
       lastNotificationTime: 0,
       lastNotificationDate: null,
-      currentCooldownMinutes: 5,
+      currentCooldownMinutes: 15,
       timeUntilNextNotificationMinutes: 0,
       timeSinceLastNotificationMinutes: 0,
       willResetIn24Hours: false,
       timeUntilResetHours: 0,
-      backoffSchedule: []
+      backoffSchedule: [],
+      maxConsecutiveNotifications: CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS
     };
   }
 }
@@ -1102,10 +1140,55 @@ export async function getQuotaStats() {
       fallback: { recordCount: 0, maxRecords: 0, utilizationPercent: 0 },
       notificationBackoff: {
         consecutiveCount: 0,
-        currentCooldownMinutes: 5,
+        currentCooldownMinutes: 15,
         backoffSchedule: []
       },
       lastEvent: null
     };
+  }
+}
+
+/**
+ * Sets whether quota notifications are enabled or disabled
+ * @param {boolean} enabled - Whether notifications should be enabled
+ * @returns {Promise<void>}
+ */
+export async function setQuotaNotificationsEnabled(enabled) {
+  try {
+    await chrome.storage.local.set({
+      [NOTIFICATION_DISABLED_KEY]: !enabled
+    });
+
+    await logQuotaEvent({
+      type: 'notification_preferences_changed',
+      enabled,
+      changedAt: Date.now()
+    });
+
+    info('QuotaManager', `Quota notifications ${enabled ? 'enabled' : 'disabled'}`);
+  } catch (error) {
+    logError('QuotaManager', error, {
+      operation: 'setQuotaNotificationsEnabled',
+      fatal: false
+    });
+  }
+}
+
+/**
+ * Gets whether quota notifications are currently enabled
+ * @returns {Promise<boolean>} Whether notifications are enabled
+ */
+export async function getQuotaNotificationsEnabled() {
+  try {
+    const result = await chrome.storage.local.get(NOTIFICATION_DISABLED_KEY);
+    // If the key doesn't exist, notifications are enabled by default
+    return result[NOTIFICATION_DISABLED_KEY] !== true;
+  } catch (error) {
+    logError('QuotaManager', error, {
+      operation: 'getQuotaNotificationsEnabled',
+      fatal: false
+    });
+    // Default to enabled on error
+    return true;
   }
 }
