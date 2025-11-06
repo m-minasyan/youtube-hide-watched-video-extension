@@ -48,6 +48,56 @@ function withTimeout(promise, timeoutMs, operationName = 'Operation') {
   ]);
 }
 
+/**
+ * Wraps a cursor operation with progressive timeout and retry mechanism
+ * Progressive timeout: 30s -> 60s -> 90s (optimizes for 99% users while handling edge cases)
+ * @param {Function} cursorOperationFactory - Factory function that creates cursor operation (receives attempt number)
+ * @param {string} operationName - Name of the operation for error messages
+ * @returns {Promise} - Promise that resolves with cursor operation result
+ */
+function withProgressiveCursorTimeout(cursorOperationFactory, operationName = 'Cursor operation') {
+  // Feature flag check - if disabled, use original behavior with single timeout
+  if (!INDEXEDDB_CONFIG.ENABLE_CURSOR_PROGRESSIVE_TIMEOUT) {
+    return cursorOperationFactory(1);
+  }
+
+  // Progressive timeout values for each attempt
+  const getTimeoutForAttempt = (attempt) => {
+    switch (attempt) {
+      case 1: return INDEXEDDB_CONFIG.CURSOR_TIMEOUT; // 30s - covers 99% of cases
+      case 2: return INDEXEDDB_CONFIG.CURSOR_TIMEOUT_RETRY_1; // 60s - handles slower devices
+      case 3: return INDEXEDDB_CONFIG.CURSOR_TIMEOUT_RETRY_2; // 90s - edge cases (200k+ records)
+      default: return INDEXEDDB_CONFIG.CURSOR_TIMEOUT;
+    }
+  };
+
+  return retryOperation(
+    async (attempt) => {
+      const timeout = getTimeoutForAttempt(attempt);
+      const operation = cursorOperationFactory(attempt);
+      return withTimeout(operation, timeout, `${operationName} (attempt ${attempt})`);
+    },
+    {
+      maxAttempts: INDEXEDDB_CONFIG.CURSOR_MAX_RETRIES + 1, // +1 for initial attempt
+      initialDelay: 100,
+      maxDelay: 1000,
+      shouldRetry: (error) => {
+        const errorType = classifyError(error);
+        // Retry on timeout or transient errors
+        return errorType === ErrorType.TIMEOUT || errorType === ErrorType.TRANSIENT;
+      },
+      onRetry: (attempt, error) => {
+        logError('IndexedDB', error, {
+          operation: operationName,
+          attempt,
+          message: 'Cursor operation timeout, retrying with increased timeout'
+        });
+      },
+      getTimeoutForAttempt: true // Signal that operation receives attempt number
+    }
+  );
+}
+
 function openDb() {
   if (dbPromise) return dbPromise;
 
@@ -559,8 +609,8 @@ async function getHiddenVideosByIdsCursor(ids) {
   const idSet = new Set(ids);
   const result = {};
 
-  await withStore('readonly', (store) => withTimeout(
-    new Promise((resolve, reject) => {
+  await withStore('readonly', (store) => withProgressiveCursorTimeout(
+    () => new Promise((resolve, reject) => {
       const request = store.openCursor();
 
       request.onsuccess = (event) => {
@@ -581,7 +631,6 @@ async function getHiddenVideosByIdsCursor(ids) {
 
       request.onerror = () => reject(request.error);
     }),
-    INDEXEDDB_CONFIG.CURSOR_TIMEOUT,
     'Cursor scan for video IDs'
   ));
 
@@ -624,8 +673,8 @@ export async function getHiddenVideosPage(options = {}) {
   const { state = null, cursor = null, limit = 100 } = options;
   const pageSize = Math.max(1, Math.min(limit, 500));
   const limitPlusOne = pageSize + 1;
-  return withStore('readonly', (store) => withTimeout(
-    new Promise((resolve, reject) => {
+  return withStore('readonly', (store) => withProgressiveCursorTimeout(
+    () => new Promise((resolve, reject) => {
       const items = [];
       let hasMore = false;
       let nextCursor = null;
@@ -688,7 +737,6 @@ export async function getHiddenVideosPage(options = {}) {
         fail(request.error);
       };
     }),
-    INDEXEDDB_CONFIG.CURSOR_TIMEOUT,
     'Pagination cursor'
   ));
 }
@@ -735,8 +783,8 @@ async function getHiddenVideosStatsCount() {
  * @returns {Promise<Object>} - Stats object with total, dimmed, hidden counts
  */
 async function getHiddenVideosStatsCursor() {
-  return withStore('readonly', (store) => withTimeout(
-    new Promise((resolve, reject) => {
+  return withStore('readonly', (store) => withProgressiveCursorTimeout(
+    () => new Promise((resolve, reject) => {
       const counts = { total: 0, dimmed: 0, hidden: 0 };
       const request = store.openCursor();
 
@@ -756,7 +804,6 @@ async function getHiddenVideosStatsCursor() {
 
       request.onerror = () => reject(request.error);
     }),
-    INDEXEDDB_CONFIG.CURSOR_TIMEOUT,
     'Stats cursor scan'
   ));
 }
@@ -793,8 +840,8 @@ export async function deleteOldestHiddenVideos(count) {
   const target = Math.min(Math.floor(count), 1000000);
   const deletedIds = [];
 
-  await withStore('readwrite', (store) => withTimeout(
-    new Promise((resolve, reject) => {
+  await withStore('readwrite', (store) => withProgressiveCursorTimeout(
+    () => new Promise((resolve, reject) => {
       const index = store.index(UPDATED_AT_INDEX);
       let removed = 0;
       let resolved = false;
@@ -826,7 +873,6 @@ export async function deleteOldestHiddenVideos(count) {
         reject(request.error);
       };
     }),
-    INDEXEDDB_CONFIG.CURSOR_TIMEOUT,
     'Delete oldest videos cursor'
   ));
 
