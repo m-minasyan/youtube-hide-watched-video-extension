@@ -2,18 +2,16 @@
  * Content script cache layer
  * Provides timestamp-based caching with LRU eviction and pending request tracking
  *
- * REFACTORED: Now uses UnifiedCacheManager for consistency with background script
+ * REFACTORED: Now uses simplified UnifiedCacheManager with 3-Map architecture
  */
 
 import { UnifiedCacheManager } from '../../shared/cache/UnifiedCacheManager.js';
 
 const MAX_CACHE_SIZE = 1000;
 
-// Initialize unified cache manager in 3-Map timestamp mode (content script mode)
+// Initialize unified cache manager (3-Map architecture with pending request tracking)
 const cacheManager = new UnifiedCacheManager({
   maxSize: MAX_CACHE_SIZE,
-  cacheTTL: null, // No TTL, use timestamp-based merging instead
-  separateTimestamps: true, // 3-Map mode: separate timestamps Map
   trackPendingRequests: true // Track pending requests to prevent duplicates
 });
 

@@ -1,24 +1,21 @@
 /**
  * Integration tests for UnifiedCacheManager
- * Verifies consistency between background (2-Map) and content (3-Map) cache modes
+ * Verifies unified 3-Map cache architecture with LRU eviction
  */
 
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { UnifiedCacheManager } from '../shared/cache/UnifiedCacheManager.js';
 
-describe('UnifiedCacheManager - Background Mode (2-Map, TTL-based)', () => {
+describe('UnifiedCacheManager - Core Functionality', () => {
   let cache;
 
   beforeEach(() => {
     cache = new UnifiedCacheManager({
-      maxSize: 5000,
-      cacheTTL: 30000,
-      separateTimestamps: false,
-      trackPendingRequests: false
+      maxSize: 5000
     });
   });
 
-  it('should store and retrieve records in 2-Map mode', () => {
+  it('should store and retrieve records', () => {
     const record = { videoId: 'vid1', state: 'hidden', title: 'Test Video' };
     cache.set('vid1', record);
 
@@ -26,28 +23,9 @@ describe('UnifiedCacheManager - Background Mode (2-Map, TTL-based)', () => {
     expect(retrieved).toEqual(record);
   });
 
-  it('should expire records after TTL', (done) => {
-    const cache = new UnifiedCacheManager({
-      maxSize: 100,
-      cacheTTL: 100, // 100ms TTL for testing
-      separateTimestamps: false
-    });
-
-    const record = { videoId: 'vid1', state: 'hidden' };
-    cache.set('vid1', record);
-
-    setTimeout(() => {
-      const retrieved = cache.get('vid1');
-      expect(retrieved).toBeUndefined();
-      done();
-    }, 150);
-  });
-
   it('should evict LRU entries when exceeding maxSize', () => {
     const smallCache = new UnifiedCacheManager({
-      maxSize: 3,
-      cacheTTL: 30000,
-      separateTimestamps: false
+      maxSize: 3
     });
 
     smallCache.set('vid1', { videoId: 'vid1' });
@@ -63,9 +41,7 @@ describe('UnifiedCacheManager - Background Mode (2-Map, TTL-based)', () => {
 
   it('should maintain consistency after eviction', () => {
     const smallCache = new UnifiedCacheManager({
-      maxSize: 2,
-      cacheTTL: 30000,
-      separateTimestamps: false
+      maxSize: 2
     });
 
     for (let i = 0; i < 10; i++) {
@@ -93,19 +69,17 @@ describe('UnifiedCacheManager - Background Mode (2-Map, TTL-based)', () => {
   });
 });
 
-describe('UnifiedCacheManager - Content Mode (3-Map, timestamp-based)', () => {
+describe('UnifiedCacheManager - Timestamp-based Merging', () => {
   let cache;
 
   beforeEach(() => {
     cache = new UnifiedCacheManager({
       maxSize: 1000,
-      cacheTTL: null,
-      separateTimestamps: true,
       trackPendingRequests: true
     });
   });
 
-  it('should store and retrieve records in 3-Map mode', () => {
+  it('should store and retrieve records with timestamps', () => {
     const record = { videoId: 'vid1', state: 'hidden', updatedAt: 1000 };
     cache.set('vid1', record);
 
@@ -170,7 +144,6 @@ describe('UnifiedCacheManager - Content Mode (3-Map, timestamp-based)', () => {
   it('should evict from all three Maps consistently', () => {
     const smallCache = new UnifiedCacheManager({
       maxSize: 2,
-      separateTimestamps: true,
       trackPendingRequests: true
     });
 
@@ -187,8 +160,7 @@ describe('UnifiedCacheManager - Content Mode (3-Map, timestamp-based)', () => {
 describe('UnifiedCacheManager - Consistency Validation and Repair', () => {
   it('should validate consistency correctly', () => {
     const cache = new UnifiedCacheManager({
-      maxSize: 100,
-      separateTimestamps: true
+      maxSize: 100
     });
 
     cache.set('vid1', { videoId: 'vid1', updatedAt: 1000 });
@@ -201,8 +173,7 @@ describe('UnifiedCacheManager - Consistency Validation and Repair', () => {
 
   it('should detect inconsistencies', () => {
     const cache = new UnifiedCacheManager({
-      maxSize: 100,
-      separateTimestamps: true
+      maxSize: 100
     });
 
     // Manually create inconsistency by accessing internal Maps
@@ -216,8 +187,7 @@ describe('UnifiedCacheManager - Consistency Validation and Repair', () => {
 
   it('should repair inconsistencies', () => {
     const cache = new UnifiedCacheManager({
-      maxSize: 100,
-      separateTimestamps: true
+      maxSize: 100
     });
 
     // Create inconsistency
@@ -233,11 +203,9 @@ describe('UnifiedCacheManager - Consistency Validation and Repair', () => {
 });
 
 describe('UnifiedCacheManager - Stats and Monitoring', () => {
-  it('should return correct stats for 2-Map mode', () => {
+  it('should return correct stats', () => {
     const cache = new UnifiedCacheManager({
-      maxSize: 5000,
-      cacheTTL: 30000,
-      separateTimestamps: false
+      maxSize: 5000
     });
 
     cache.set('vid1', { videoId: 'vid1' });
@@ -246,14 +214,13 @@ describe('UnifiedCacheManager - Stats and Monitoring', () => {
     const stats = cache.getStats();
     expect(stats.size).toBe(2);
     expect(stats.maxSize).toBe(5000);
-    expect(stats.ttl).toBe(30000);
-    expect(stats.mode).toBe('2-Map');
+    expect(stats.timestampsSize).toBe(2);
+    expect(stats.accessOrderSize).toBe(2);
   });
 
-  it('should return correct stats for 3-Map mode', () => {
+  it('should return correct stats with pending requests', () => {
     const cache = new UnifiedCacheManager({
       maxSize: 1000,
-      separateTimestamps: true,
       trackPendingRequests: true
     });
 
@@ -263,15 +230,13 @@ describe('UnifiedCacheManager - Stats and Monitoring', () => {
     const stats = cache.getStats();
     expect(stats.size).toBe(1);
     expect(stats.maxSize).toBe(1000);
-    expect(stats.mode).toBe('3-Map');
     expect(stats.timestampsSize).toBe(1);
     expect(stats.pendingRequestsSize).toBe(1);
   });
 
   it('should calculate memory usage', () => {
     const cache = new UnifiedCacheManager({
-      maxSize: 100,
-      separateTimestamps: false
+      maxSize: 100
     });
 
     cache.set('vid1', { videoId: 'vid1', title: 'Test Video', state: 'hidden' });

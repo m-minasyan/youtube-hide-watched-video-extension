@@ -2,90 +2,65 @@
 
 ## Overview
 
-The `UnifiedCacheManager` is a shared caching layer that eliminates cache inconsistency between background and content scripts by providing a single, configurable implementation that supports both use cases.
+The `UnifiedCacheManager` is a simplified, unified caching layer that provides consistent behavior across background and content scripts with a single 3-Map architecture.
 
 ## Problem Solved
 
-### Before Unification
+### Before Simplification
 
-**Background Cache (`background/indexedDbCache.js`):**
-- 2 Map structures: `backgroundCache`, `cacheAccessOrder`
-- TTL-based eviction (30 seconds)
-- MAX_SIZE: 5000
-- Duplicate eviction logic
+**Multiple Cache Modes:**
+- Background: 2-Map mode (cache + accessOrder) with TTL
+- Content: 3-Map mode (cache + timestamps + accessOrder)
+- Inconsistent behavior between modes
+- TTL complexity not effectively used
+- 523 lines of complex code
 
-**Content Cache (`content/storage/cache.js`):**
-- 3 Map structures: `hiddenVideoCache`, `hiddenVideoTimestamps`, `cacheAccessOrder`
-- Timestamp-based merging
-- MAX_SIZE: 1000
-- Duplicate eviction logic
-- Additional pending request tracking
+### After Simplification
 
-### Risks Eliminated
-
-1. **Different Eviction Logic**: Each cache had its own LRU implementation with potential inconsistencies
-2. **Different Synchronization**: Maps could get out of sync differently in each implementation
-3. **Duplicate Code**: Same logic maintained in two places
-4. **Different Failure Points**: Each implementation could fail in different ways
+**Single 3-Map Architecture:**
+- Unified structure for all use cases
+- Timestamp-based freshness (no TTL complexity)
+- Consistent behavior everywhere
+- Reduced to ~390 lines
+- Simpler maintenance and testing
 
 ## Architecture
 
-### Configuration Modes
+### Unified 3-Map Structure
 
-#### 2-Map Mode (Background Script)
+All cache instances use the same internal structure:
+
 ```javascript
 const cache = new UnifiedCacheManager({
-  maxSize: 5000,
-  cacheTTL: 30000,          // 30 seconds
-  separateTimestamps: false, // Store {record, timestamp} together
-  trackPendingRequests: false
-});
-```
-
-**Internal Structure:**
-- `cache`: Map(videoId → {record, timestamp})
-- `cacheAccessOrder`: Map(videoId → lastAccessTime)
-
-**Behavior:**
-- TTL-based expiration
-- Automatic cleanup on get() for expired entries
-- LRU eviction when exceeding maxSize
-
-#### 3-Map Mode (Content Script)
-```javascript
-const cache = new UnifiedCacheManager({
-  maxSize: 1000,
-  cacheTTL: null,           // No TTL, use timestamp merging
-  separateTimestamps: true, // Separate timestamps Map
-  trackPendingRequests: true
+  maxSize: 5000,  // Maximum cache entries
+  trackPendingRequests: false  // Optional: track pending promises
 });
 ```
 
 **Internal Structure:**
 - `cache`: Map(videoId → record)
 - `timestamps`: Map(videoId → timestamp)
-- `cacheAccessOrder`: Map(videoId → lastAccessTime)
-- `pendingRequests`: Map(videoId → Promise)
+- `accessOrder`: Map(videoId → lastAccessTime)
+- `pendingRequests`: Map(videoId → Promise) *(optional)*
 
 **Behavior:**
-- Timestamp-based merging via `mergeFetchedRecord()`
-- No TTL expiration
-- Pending request deduplication
+- Timestamp-based record freshness
 - LRU eviction when exceeding maxSize
+- Atomic operations across all Maps
+- Built-in consistency validation and repair
 
 ## Key Features
 
 ### 1. Unified LRU Eviction
 
-Single implementation used by both modes:
+Single implementation for all use cases:
 - Prevents concurrent eviction with `isEvicting` flag
 - Batch deletion for atomic operations
-- Automatic consistency validation after eviction
+- Maintains consistency across all three Maps
 
 ```javascript
 evictLRUEntries() {
-  if (this.cache.size <= this.maxSize) return;
-  if (this.isEvicting) return;
+  if (this.cache.size <= this.maxSize || this.isEvicting) return;
 
   try {
     this.isEvicting = true;
@@ -99,7 +74,7 @@ evictLRUEntries() {
 
 ### 2. Consistency Validation & Repair
 
-Both modes benefit from built-in consistency checks:
+Built-in consistency checks for all cache instances:
 
 ```javascript
 // Validate consistency
@@ -111,7 +86,7 @@ const repair = cache.repairConsistency();
 // { actionsCount: N, actions: [...], finalSizes: {...} }
 ```
 
-### 3. Timestamp-Based Merging (Content Mode)
+### 3. Timestamp-Based Merging
 
 Prevents overwriting newer data with older data:
 
@@ -120,7 +95,7 @@ cache.mergeFetchedRecord(videoId, fetchedRecord);
 // Only updates if fetchedRecord.updatedAt > cached.timestamp
 ```
 
-### 4. Pending Request Tracking (Content Mode)
+### 4. Pending Request Tracking (Optional)
 
 Prevents duplicate background requests:
 
@@ -138,33 +113,33 @@ promise.finally(() => cache.deletePendingRequest(videoId));
 
 ### Core Methods
 
-| Method | Description | All Modes |
-|--------|-------------|-----------|
-| `get(videoId)` | Retrieves cached record, handles TTL | ✅ |
-| `set(videoId, record)` | Stores record with timestamp | ✅ |
-| `has(videoId)` | Checks if video is cached | ✅ |
-| `invalidate(videoId)` | Removes specific record | ✅ |
-| `clear()` | Clears all caches | ✅ |
+| Method | Description |
+|--------|-------------|
+| `get(videoId)` | Retrieves cached record |
+| `set(videoId, record)` | Stores record with timestamp |
+| `has(videoId)` | Checks if video is cached |
+| `invalidate(videoId)` | Removes specific record |
+| `clear()` | Clears all caches |
 
-### Content-Specific Methods
+### Advanced Methods
 
-| Method | Description | 3-Map Mode |
-|--------|-------------|------------|
-| `applyUpdate(videoId, record)` | Unconditional update (local changes) | ✅ |
-| `mergeFetchedRecord(videoId, record)` | Timestamp-based merge (remote fetches) | ✅ |
-| `hasPendingRequest(videoId)` | Check for pending request | ✅ |
-| `setPendingRequest(videoId, promise)` | Track pending request | ✅ |
-| `deletePendingRequest(videoId)` | Remove pending request | ✅ |
-| `clearPendingRequests()` | Clear all pending requests | ✅ |
+| Method | Description |
+|--------|-------------|
+| `applyUpdate(videoId, record)` | Unconditional update (local changes) |
+| `mergeFetchedRecord(videoId, record)` | Timestamp-based merge (remote fetches) |
+| `hasPendingRequest(videoId)` | Check for pending request |
+| `setPendingRequest(videoId, promise)` | Track pending request |
+| `deletePendingRequest(videoId)` | Remove pending request |
+| `clearPendingRequests()` | Clear all pending requests |
 
 ### Monitoring Methods
 
-| Method | Description | All Modes |
-|--------|-------------|-----------|
-| `getStats()` | Cache statistics (size, mode, etc.) | ✅ |
-| `getMemoryUsage()` | Estimated memory usage in bytes | ✅ |
-| `validateConsistency()` | Check Map structure consistency | ✅ |
-| `repairConsistency()` | Fix Map structure inconsistencies | ✅ |
+| Method | Description |
+|--------|-------------|
+| `getStats()` | Cache statistics (size, maxSize, etc.) |
+| `getMemoryUsage()` | Estimated memory usage in bytes |
+| `validateConsistency()` | Check Map structure consistency |
+| `repairConsistency()` | Fix Map structure inconsistencies |
 
 ## Usage Examples
 
@@ -175,9 +150,7 @@ promise.finally(() => cache.deletePendingRequest(videoId));
 import { UnifiedCacheManager } from '../shared/cache/UnifiedCacheManager.js';
 
 const cacheManager = new UnifiedCacheManager({
-  maxSize: 5000,
-  cacheTTL: 30000,
-  separateTimestamps: false
+  maxSize: 5000
 });
 
 export function getCachedRecord(videoId) {
@@ -197,9 +170,7 @@ import { UnifiedCacheManager } from '../../shared/cache/UnifiedCacheManager.js';
 
 const cacheManager = new UnifiedCacheManager({
   maxSize: 1000,
-  cacheTTL: null,
-  separateTimestamps: true,
-  trackPendingRequests: true
+  trackPendingRequests: true  // Enable pending request tracking
 });
 
 export function applyCacheUpdate(videoId, record) {
@@ -215,26 +186,26 @@ export function mergeFetchedRecord(videoId, record) {
 
 ### Memory Leak Prevention
 
-- **Before**: Orphaned entries in `cacheAccessOrder` could accumulate
+- **Before**: Orphaned entries could accumulate in accessOrder Map
 - **After**: Atomic deletion ensures all Maps stay synchronized
 
 ### Consistency Guarantees
 
-- **Before**: Each cache could fail differently, leading to inconsistent state
-- **After**: Single eviction logic with built-in validation
+- **Before**: Different modes could fail differently
+- **After**: Single implementation with built-in validation
 
-### Code Deduplication
+### Code Simplification
 
-- **Before**: ~200 lines duplicated between background and content
-- **After**: ~450 lines in shared module, ~70 lines per adapter
+- **Before**: 523 lines with dual-mode complexity
+- **After**: ~390 lines with single unified architecture
+- **Result**: 25% reduction in complexity
 
-### Testing Coverage
+### Removed Complexity
 
-- Comprehensive test suite covering both modes
-- Consistency validation and repair tested
-- TTL expiration tested
-- Timestamp merging tested
-- Pending request tracking tested
+- No TTL logic (timestamp-based freshness instead)
+- No mode switching (separateTimestamps parameter removed)
+- No conditional logic for different cache structures
+- Simpler testing and maintenance
 
 ## Migration Guide
 
@@ -244,14 +215,19 @@ Both `background/indexedDbCache.js` and `content/storage/cache.js` maintain thei
 
 ### Configuration Changes
 
-If you need to adjust cache parameters, modify the initialization in the respective modules:
+The simplified API no longer requires `cacheTTL` or `separateTimestamps`:
 
 ```javascript
-// Adjust background cache size
-const cacheManager = new UnifiedCacheManager({
-  maxSize: 10000, // Increased from 5000
-  cacheTTL: 60000, // Increased from 30000
-  separateTimestamps: false
+// Old API (no longer supported)
+const cache = new UnifiedCacheManager({
+  maxSize: 5000,
+  cacheTTL: 30000,           // REMOVED
+  separateTimestamps: false  // REMOVED
+});
+
+// New simplified API
+const cache = new UnifiedCacheManager({
+  maxSize: 5000  // Only required parameter
 });
 ```
 
@@ -260,31 +236,31 @@ const cacheManager = new UnifiedCacheManager({
 Run the comprehensive test suite:
 
 ```bash
+# Test unified cache manager
+npm test -- tests/unifiedCacheManager.test.js
+
 # Test content cache
 npm test -- tests/content/storage/cache.test.js
 
-# Test LRU eviction
-npm test -- tests/cacheLRU.test.js
-
-# Test unified cache manager (both modes)
-npm test -- tests/unifiedCacheManager.test.js
+# Test background cache
+npm test -- tests/background/indexedDbCache.test.js
 ```
 
 ## Future Enhancements
 
 Potential improvements:
 
-1. **Configurable Eviction Strategy**: Support LFU (Least Frequently Used) in addition to LRU
+1. **Configurable Eviction Strategy**: Support LFU (Least Frequently Used)
 2. **Cache Warming**: Pre-populate cache on extension startup
 3. **Metrics Export**: Export cache hit/miss rates for monitoring
 4. **Automatic Repair**: Trigger `repairConsistency()` on detected issues
-5. **Size-Based Eviction**: Evict based on memory usage, not just entry count
+5. **Size-Based Eviction**: Evict based on memory usage, not entry count
 
 ## References
 
-- Original Issue: Cache Inconsistency between Background and Content (#7)
+- Simplification PR: Unified Cache Manager Simplification
 - Related Files:
-  - `shared/cache/UnifiedCacheManager.js` - Core implementation
+  - `shared/cache/UnifiedCacheManager.js` - Core implementation (~390 lines)
   - `background/indexedDbCache.js` - Background adapter
   - `content/storage/cache.js` - Content adapter
   - `tests/unifiedCacheManager.test.js` - Comprehensive tests
