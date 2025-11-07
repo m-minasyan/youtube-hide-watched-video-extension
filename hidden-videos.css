@@ -34,7 +34,10 @@ body {
   background: var(--bg-primary);
   color: var(--text-primary);
   min-height: 100vh;
+  /* Symmetric padding - equal on both left and right sides */
   padding: 20px;
+  /* Ensure scrollbar doesn't affect content width */
+  overflow-y: auto;
 }
 
 .container {
@@ -580,6 +583,9 @@ header {
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  /* Add symmetric padding for scrollbar - 8px on both sides */
+  padding-left: 8px;
+  padding-right: 8px;
 }
 
 .modal-header {
@@ -804,4 +810,39 @@ header {
 
 .btn-secondary:hover {
   background: var(--bg-primary);
+}
+
+/* Scrollbar styles - only show when hovering/scrolling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: var(--accent-color) var(--bg-secondary);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+}
+
+*:hover::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--accent-color);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-gradient);
 }
