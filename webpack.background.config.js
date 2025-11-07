@@ -14,7 +14,7 @@ module.exports = (env, argv) => {
       clean: false
     },
     mode: isProduction ? 'production' : 'development',
-    devtool: isProduction ? 'source-map' : 'inline-source-map',
+    devtool: isProduction ? false : 'inline-source-map',
     externals: {
       chrome: 'chrome'
     },
