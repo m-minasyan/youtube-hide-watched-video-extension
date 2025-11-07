@@ -202,7 +202,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function normalizeString(str) {
     if (!str) return '';
 
-    // FIXED P1-4: Wrap Unicode normalization in try-catch
+    // FIXED P1-3: Wrap Unicode normalization in try-catch with sanitization fallback
     try {
       // Apply Unicode NFC normalization first
       // This ensures consistent representation of characters
@@ -213,8 +213,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       return normalized.toLowerCase().trim();
     } catch (error) {
       console.error('[Unicode] Normalization failed:', error);
-      // Safe fallback: lowercase without normalization
-      return String(str).toLowerCase().trim();
+      // FIXED P1-3: Safe fallback with additional XSS protection
+      // Remove potentially dangerous characters before processing
+      const sanitized = String(str).replace(/[<>'"&]/g, '');
+      return sanitized.toLowerCase().trim();
     }
   }
 

@@ -75,17 +75,9 @@ export class StreamingJSONParser {
       // We still need to parse all at once, but at least reading was chunked
       const data = JSON.parse(buffer);
 
-      // SECURITY: Early validation of metadata count as defense-in-depth
-      // Note: This validates metadata consistency, not actual memory safety
-      // The real protection is file size limit (line 29) and records.length check (line 134 in StreamingRecordParser)
-      // This check prevents processing files with obviously incorrect metadata
-      if (data.count && typeof data.count === 'number' && data.count > IMPORT_EXPORT_CONFIG.MAX_IMPORT_RECORDS) {
-        throw new Error(
-          `File metadata indicates ${data.count.toLocaleString()} records, ` +
-          `exceeding maximum of ${IMPORT_EXPORT_CONFIG.MAX_IMPORT_RECORDS.toLocaleString()}. ` +
-          `This file appears to be too large to import safely.`
-        );
-      }
+      // FIXED P2-1/P2-9: Removed redundant metadata validation
+      // Metadata can be forged, so we only validate actual records.length
+      // This is done in StreamingRecordParser.parseAndProcessRecords() (line 148)
 
       this.onProgress({
         stage: 'parsed',
@@ -98,10 +90,17 @@ export class StreamingJSONParser {
     } catch (error) {
       this.onError(error);
       // Preserve original error stack trace
-      // Note: error.cause is supported in Chrome 93+/Firefox 91+
-      // In older browsers, this property is simply ignored (no error thrown)
+      // FIXED P2-3: Check error.cause support (Chrome 93+/Firefox 91+)
+      // Use fallback property for older browsers
       const wrappedError = new Error(`Failed to parse JSON: ${error.message}`);
-      wrappedError.cause = error; // Safe to set unconditionally
+
+      if ('cause' in Error.prototype || typeof wrappedError.cause !== 'undefined') {
+        wrappedError.cause = error;
+      } else {
+        // Fallback for browsers without error.cause support
+        wrappedError.originalError = error;
+      }
+
       throw wrappedError;
     }
   }
@@ -144,7 +143,16 @@ export class StreamingRecordParser {
         throw new Error('Invalid import format: missing records array');
       }
 
-      // Step 2.1: Validate records array size to prevent OOM
+      // FIXED P2-1/P2-9: Warn if metadata doesn't match actual records
+      if (data.count && typeof data.count === 'number' && data.count !== data.records.length) {
+        console.warn(
+          `[StreamingParser] Metadata mismatch: count=${data.count} vs actual=${data.records.length}. ` +
+          `Using actual length for validation.`
+        );
+      }
+
+      // Step 2.1: Validate ACTUAL records array size to prevent OOM
+      // This is the only reliable protection - metadata can be forged
       if (data.records.length > IMPORT_EXPORT_CONFIG.MAX_IMPORT_RECORDS) {
         throw new Error(
           `Too many records: ${data.records.length.toLocaleString()} ` +

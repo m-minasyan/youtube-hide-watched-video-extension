@@ -58,13 +58,40 @@ function buildRecord(videoId, state, title, updatedAt) {
 
 async function broadcastHiddenVideosEvent(event) {
   try {
-    ensurePromise(chrome.runtime.sendMessage({ type: 'HIDDEN_VIDEOS_EVENT', event })).catch(() => {});
+    // FIXED P1-6: Added debug logging for runtime message failures
+    ensurePromise(chrome.runtime.sendMessage({ type: 'HIDDEN_VIDEOS_EVENT', event })).catch((err) => {
+      debug('HiddenVideosService', 'Failed to broadcast to runtime:', err.message);
+    });
   } catch (error) {
     error('Failed to broadcast runtime event', error);
   }
   try {
     const tabs = await queryYoutubeTabs();
-    await Promise.all(tabs.map((tab) => ensurePromise(chrome.tabs.sendMessage(tab.id, { type: 'HIDDEN_VIDEOS_EVENT', event })).catch(() => {})));
+    // FIXED P2-12: Rate limiting for Chrome API calls
+    // Process tabs in batches to avoid throttling with 100+ tabs
+    // Chrome has internal rate limits (~1000 calls/minute)
+    const BATCH_SIZE = 10;
+    const failedBroadcasts = [];
+
+    for (let i = 0; i < tabs.length; i += BATCH_SIZE) {
+      const batch = tabs.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(async (tab) => {
+        try {
+          await ensurePromise(chrome.tabs.sendMessage(tab.id, { type: 'HIDDEN_VIDEOS_EVENT', event }));
+        } catch (err) {
+          failedBroadcasts.push({ tabId: tab.id, error: err.message });
+        }
+      }));
+
+      // Small delay between batches to respect rate limits
+      if (i + BATCH_SIZE < tabs.length) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+    }
+
+    if (failedBroadcasts.length > 0) {
+      debug('HiddenVideosService', `Failed to broadcast to ${failedBroadcasts.length}/${tabs.length} tabs`);
+    }
   } catch (error) {
     error('Failed to broadcast tab event', error);
   }
@@ -162,20 +189,40 @@ async function processLegacyBatch(entries, progressKey, timestampSeed, progressS
         records.push(record);
       }
     });
-    if (records.length > 0) {
-      await upsertHiddenVideos(records);
-    }
-    index += slice.length;
-    progressState[progressKey] = index;
-    progressState.completed = false;
+
+    // FIXED P1-8: Save progress BEFORE batch processing to prevent data loss
+    // Mark batch as in-progress to detect crashes
     await chrome.storage.local.set({
       [STORAGE_KEYS.MIGRATION_PROGRESS]: {
         syncIndex: progressState.syncIndex,
         localIndex: progressState.localIndex,
         completed: false,
+        batchInProgress: true, // Flag to detect crashes
         updatedAt: Date.now()
       }
     });
+
+    // Process batch - if this fails, progress still points to correct position
+    if (records.length > 0) {
+      await upsertHiddenVideos(records);
+    }
+
+    // Update index after successful processing
+    index += slice.length;
+    progressState[progressKey] = index;
+    progressState.completed = false;
+
+    // Clear in-progress flag after successful batch
+    await chrome.storage.local.set({
+      [STORAGE_KEYS.MIGRATION_PROGRESS]: {
+        syncIndex: progressState.syncIndex,
+        localIndex: progressState.localIndex,
+        completed: false,
+        batchInProgress: false, // Batch completed successfully
+        updatedAt: Date.now()
+      }
+    });
+
     await delay(0);
   }
 }

@@ -41,8 +41,10 @@ export async function fetchHiddenVideoStates(videoIds) {
     if (hasPendingRequest(videoId)) {
       waiters.push(getPendingRequest(videoId).then((record) => {
         result[videoId] = record;
-      }).catch(() => {
+      }).catch((err) => {
+        // FIXED P1-6: Log pending request failures for diagnostics
         // If pending request fails, we'll try to fetch again
+        debug('ContentMessaging', `Pending request failed for ${videoId}:`, err.message);
         missing.push(videoId);
       }));
       return;
@@ -85,7 +87,11 @@ export async function fetchHiddenVideoStates(videoIds) {
     missing.forEach((videoId) => {
       const promise = fetchPromise
         .then(() => getCachedHiddenVideo(videoId))
-        .catch(() => null);
+        .catch((err) => {
+          // FIXED P1-6: Log fetch failures (already logged above, returning null)
+          debug('ContentMessaging', `Fetch failed for ${videoId}, returning null`);
+          return null;
+        });
       setPendingRequest(videoId, promise);
       waiters.push(promise.then((record) => {
         result[videoId] = record;

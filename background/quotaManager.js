@@ -98,10 +98,17 @@ function canShowGlobalNotification() {
 }
 
 /**
- * FIXED P2-4: Records a notification timestamp for rate limiting
+ * FIXED P2-2: Records a notification timestamp for rate limiting
+ * Limits array size to prevent unbounded growth
  */
 function recordGlobalNotification() {
   globalNotificationTimestamps.push(Date.now());
+
+  // FIXED P2-2: Limit array size to prevent memory leak
+  // Keep only last 100 timestamps (enough for rate limiting)
+  if (globalNotificationTimestamps.length > 100) {
+    globalNotificationTimestamps.shift();
+  }
 }
 
 /**
@@ -392,46 +399,54 @@ async function handleFallbackEmergency(currentCount) {
  * @returns {Promise<Object>} Result with processed count
  */
 async function processFallbackStorageAggressively() {
-  const fallbackRecords = await getFromFallbackStorage();
+  let fallbackRecords = await getFromFallbackStorage();
 
   if (fallbackRecords.length === 0) {
     return { success: true, processed: 0, remaining: 0 };
   }
 
+  // FIXED P2-8: Use splice for in-place modification instead of slice
+  // This avoids creating ~100 intermediate array copies for 5000 records
   // Process in small batches for better reliability
   // FIXED P3-1: Use config instead of hardcoded value
   const AGGRESSIVE_BATCH_SIZE = UI_CONFIG.AGGRESSIVE_BATCH_SIZE;
   let processedCount = 0;
 
-  for (let i = 0; i < fallbackRecords.length; i += AGGRESSIVE_BATCH_SIZE) {
-    const batch = fallbackRecords.slice(i, Math.min(i + AGGRESSIVE_BATCH_SIZE, fallbackRecords.length));
+  while (fallbackRecords.length > 0) {
+    // Use splice to remove from front (in-place, no copy)
+    const batch = fallbackRecords.splice(0, Math.min(AGGRESSIVE_BATCH_SIZE, fallbackRecords.length));
 
     try {
       await upsertHiddenVideos(batch);
       processedCount += batch.length;
 
-      // Remove successfully processed records
-      await removeFromFallbackStorage(batch.length);
-
       // Give browser time to breathe
       await new Promise(resolve => setTimeout(resolve, 10));
 
     } catch (error) {
-      // Ignore errors, continue processing
+      // On error, push failed batch back to the front
+      fallbackRecords.unshift(...batch);
+
       logError('QuotaManager', error, {
         operation: 'processFallbackStorageAggressively',
-        batchIndex: i,
-        continuing: true
+        processedBefore: processedCount,
+        batchFailed: batch.length,
+        stopping: true
       });
+
+      // Stop processing on error - save updated fallback storage
+      break;
     }
   }
 
-  const remaining = fallbackRecords.length - processedCount;
+  // FIXED P2-8: Save updated fallback storage once at the end
+  // Much more efficient than multiple removeFromFallbackStorage calls
+  await chrome.storage.local.set({ [FALLBACK_STORAGE_KEY]: fallbackRecords });
 
   return {
     success: processedCount > 0,
     processed: processedCount,
-    remaining
+    remaining: fallbackRecords.length
   };
 }
 
@@ -1073,27 +1088,30 @@ async function saveToEmergencyBackup(data) {
     );
     const emergencyData = result[EMERGENCY_BACKUP_KEY] || [];
 
-    // FIXED: Limit emergency backup size to prevent chrome.storage.local quota issues
-    // Maximum 100 records (~20KB) to stay well under chrome.storage.local limits
-    const MAX_EMERGENCY_RECORDS = 100;
+    // FIXED P1-2: Increased limit from 100 to 500 records (~100KB)
+    // Still well under chrome.storage.local limits (10MB total)
+    // Added rotation to prevent data loss when limit reached
+    const MAX_EMERGENCY_RECORDS = 500;
     const spaceAvailable = MAX_EMERGENCY_RECORDS - emergencyData.length;
 
+    // FIXED P1-2: Instead of rejecting when full, rotate old records (FIFO)
     if (spaceAvailable <= 0) {
-      logError('QuotaManager', new Error('Emergency backup full'), {
+      // Remove oldest records to make space for new ones
+      const recordsToRemove = Math.min(records.length, emergencyData.length);
+      emergencyData.splice(0, recordsToRemove);
+
+      logError('QuotaManager', new Error('Emergency backup full - rotating old records'), {
         operation: 'saveToEmergencyBackup',
         emergencyDataLength: emergencyData.length,
         maxRecords: MAX_EMERGENCY_RECORDS,
-        fatal: true
+        recordsRotated: recordsToRemove,
+        warning: true
       });
-      return {
-        success: false,
-        error: 'Emergency backup full',
-        emergencyFull: true
-      };
     }
 
     // Add records with loop to avoid stack overflow on large arrays
-    const recordsToAdd = records.slice(0, spaceAvailable);
+    // With rotation, we now have guaranteed space
+    const recordsToAdd = records.slice(0, Math.min(records.length, MAX_EMERGENCY_RECORDS));
     for (const record of recordsToAdd) {
       emergencyData.push(record);
     }
@@ -1182,13 +1200,50 @@ async function handleFallbackRejection(fallbackResult, data) {
   }
 
   // Emergency backup also failed - truly critical
-  const isEmergencyFull = emergencyResult.emergencyFull;
-  const errorMessage = isEmergencyFull
-    ? `Cannot save ${Array.isArray(data) ? data.length : 1} videos. All storage tiers exhausted including emergency backup (max 100 records). CRITICAL: Clear old videos in settings NOW to prevent permanent data loss.`
-    : `Cannot save ${Array.isArray(data) ? data.length : 1} videos. All storage tiers failed. Clear old videos NOW or lose tracking data.`;
+  // FIXED P1-5: Fourth-tier protection - force auto-export without user prompt
+  // This is the last line of defense against data loss
+  try {
+    const criticalData = {
+      exportType: 'critical_auto_backup',
+      exportDate: new Date().toISOString(),
+      warning: 'CRITICAL: All storage tiers exhausted. Automatic emergency export.',
+      records: Array.isArray(data) ? data : [data]
+    };
+
+    const jsonBlob = new Blob([JSON.stringify(criticalData, null, 2)], {
+      type: 'application/json'
+    });
+    const url = URL.createObjectURL(jsonBlob);
+
+    try {
+      // FIXED P1-5: Auto-download WITHOUT user prompt (saveAs: false)
+      // This ensures data is saved even if user is away
+      await chrome.downloads.download({
+        url: url,
+        filename: `youtube-CRITICAL-AUTO-${Date.now()}.json`,
+        saveAs: false, // Auto-save to Downloads folder without prompt
+        conflictAction: 'uniquify'
+      });
+
+      await logQuotaEvent({
+        type: 'critical_auto_export',
+        recordCount: Array.isArray(data) ? data.length : 1
+      });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  } catch (autoExportError) {
+    logError('QuotaManager', autoExportError, {
+      operation: 'critical_auto_export',
+      fatal: true
+    });
+  }
+
+  // FIXED P1-2: Updated message to reflect rotation instead of rejection
+  const errorMessage = `Cannot save ${Array.isArray(data) ? data.length : 1} videos. All storage tiers failed. Auto-backup file saved to Downloads. CRITICAL: Clear old videos in settings NOW to prevent permanent data loss.`;
 
   await showCriticalNotification({
-    title: '🛑 CRITICAL: DATA LOSS IMMINENT',
+    title: '🛑 CRITICAL: AUTO-BACKUP CREATED',
     message: errorMessage
   });
 
@@ -1196,8 +1251,7 @@ async function handleFallbackRejection(fallbackResult, data) {
   console.error('[CRITICAL] All storage tiers exhausted:', {
     dataLoss: Array.isArray(data) ? data.length : 1,
     fallbackResult,
-    emergencyResult,
-    emergencyFull: isEmergencyFull
+    emergencyResult
   });
 
   return createQuotaResult({

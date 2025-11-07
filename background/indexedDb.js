@@ -95,31 +95,35 @@ function withProgressiveCursorTimeout(cursorOperationFactory, operationName = 'C
    * @returns {number} - Timeout in milliseconds
    */
   const getTimeoutForAttempt = (attempt) => {
-    // Validate attempt number
+    // FIXED P2-4: Improved validation with clamping
+    // Validate attempt number and clamp to valid range
     if (!Number.isFinite(attempt) || attempt < 1) {
       logError('IndexedDB', new Error(`Invalid attempt number: ${attempt}`), {
         operation: 'getTimeoutForAttempt',
         attempt,
-        usingDefaultTimeout: true
+        clampedTo: 1
       });
-      return INDEXEDDB_CONFIG.CURSOR_TIMEOUT;
+      attempt = 1; // Clamp to minimum
     }
 
-    switch (attempt) {
+    // Clamp to valid range [1, 3]
+    const safeAttempt = Math.max(1, Math.min(3, Math.floor(attempt)));
+
+    if (safeAttempt !== attempt) {
+      logError('IndexedDB', new Error(`Attempt number ${attempt} clamped to ${safeAttempt}`), {
+        operation: 'getTimeoutForAttempt',
+        originalAttempt: attempt,
+        clampedAttempt: safeAttempt
+      });
+    }
+
+    switch (safeAttempt) {
       case 1: return INDEXEDDB_CONFIG.CURSOR_TIMEOUT; // 30s - covers 99% of cases
       case 2: return INDEXEDDB_CONFIG.CURSOR_TIMEOUT_RETRY_1; // 60s - handles slower devices
       case 3: return INDEXEDDB_CONFIG.CURSOR_TIMEOUT_RETRY_2; // 90s - edge cases (200k+ records)
       default:
-        // Unexpected: attempt > 3 (max expected is 3 with CURSOR_MAX_RETRIES=2)
-        // This could happen if CURSOR_MAX_RETRIES config is increased
-        // Use maximum timeout for safety instead of minimum
-        logError('IndexedDB', new Error(`Unexpected attempt number: ${attempt}, expected 1-3`), {
-          operation: 'getTimeoutForAttempt',
-          attempt,
-          maxExpectedAttempts: INDEXEDDB_CONFIG.CURSOR_MAX_RETRIES + 1,
-          usingMaxTimeout: true
-        });
-        return INDEXEDDB_CONFIG.CURSOR_TIMEOUT_RETRY_2; // Use maximum timeout for attempts beyond expected range
+        // Should never reach here due to clamping, but safety fallback
+        return INDEXEDDB_CONFIG.CURSOR_TIMEOUT_RETRY_2;
     }
   };
 
@@ -289,6 +293,29 @@ export function closeDbSync() {
       activeOperations,
       shutdownRequested: true
     });
+
+    // FIXED P1-4: Set timeout for force-close after grace period
+    // This prevents database from staying open indefinitely
+    // 100ms grace period allows operations to complete naturally
+    setTimeout(() => {
+      if (resolvedDb && shutdownRequested) {
+        try {
+          resolvedDb.close();
+          logError('IndexedDB', new Error('Database force-closed after timeout'), {
+            operation: 'closeDbSync',
+            forceClose: true,
+            activeOperationsAtForce: activeOperations
+          });
+        } catch (error) {
+          // Ignore errors during force close
+        } finally {
+          dbPromise = null;
+          resolvedDb = null;
+          clearBackgroundCache();
+        }
+      }
+    }, 100); // 100ms grace period
+
     return;
   }
 
@@ -481,10 +508,10 @@ async function withStore(mode, handler, operationContext = null) {
       // If cleanup was successful, retry the operation
       if (quotaResult.success && quotaResult.cleanupPerformed) {
         try {
-          // FIXED P2-7: Simplified retry validation - config always has valid value
-          // QUOTA_CONFIG.MAX_RETRY_ATTEMPTS is always defined in constants.js (value: 3)
-          // Removed unnecessary Math.max/Math.min/nullish coalescing checks
-          const maxRetries = QUOTA_CONFIG.MAX_RETRY_ATTEMPTS;
+          // FIXED P2-7: Added defensive validation for config value
+          // Even though QUOTA_CONFIG.MAX_RETRY_ATTEMPTS is defined in constants.js,
+          // clamp to sane range [1,10] to prevent infinite loops or zero retries
+          const maxRetries = Math.max(1, Math.min(10, QUOTA_CONFIG.MAX_RETRY_ATTEMPTS || 3));
           let lastError = error;
 
           for (let attempt = 1; attempt <= maxRetries; attempt++) {

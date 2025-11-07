@@ -302,6 +302,17 @@ export const UI_CONFIG = {
   AGGRESSIVE_BATCH_SIZE: 50 // Used in aggressive cleanup mode
 };
 
+// FIXED P3-12: Delay constants (previously hardcoded)
+// Documented delays with rationale for better maintainability
+export const DELAYS = {
+  YIELD_TO_UI: 0,           // setTimeout(0) - Yield control to UI thread
+  BATCH_PAUSE: 10,          // Small pause between batch operations
+  FOCUS_DELAY: 100,         // Delay before focusing element after render
+  DEBOUNCE_SHORT: 100,      // Short debounce for frequent operations
+  DEBOUNCE_MEDIUM: 250,     // Medium debounce for DOM mutations
+  RATE_LIMIT_BATCH: 10      // Delay between batches for API rate limiting
+};
+
 // Quota Management Configuration
 export const QUOTA_CONFIG = {
   // Estimate record size (bytes) - typical video record with metadata

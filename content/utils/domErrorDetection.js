@@ -5,14 +5,33 @@ import { error, warn } from '../../shared/logger.js';
 // Track notification timestamps to prevent spam
 const lastNotifications = new Map();
 
+// FIXED P1-7: Track interval ID for cleanup
+let healthCheckInterval = null;
+
 /**
  * Setup periodic DOM health monitoring
  */
 export function setupDOMHealthMonitoring() {
+  // FIXED P1-7: Only start if not already running
+  if (healthCheckInterval) {
+    return;
+  }
+
   // Check selector health periodically
-  setInterval(() => {
+  healthCheckInterval = setInterval(() => {
     performHealthCheck();
   }, SELECTOR_HEALTH_CONFIG.HEALTH_CHECK_INTERVAL);
+}
+
+/**
+ * FIXED P1-7: Stop DOM health monitoring to prevent memory leaks
+ * Should be called on navigation/cleanup
+ */
+export function stopDOMHealthMonitoring() {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+    healthCheckInterval = null;
+  }
 }
 
 /**
