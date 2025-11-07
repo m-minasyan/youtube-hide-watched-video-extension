@@ -61,13 +61,38 @@ function withProgressiveCursorTimeout(cursorOperationFactory, operationName = 'C
     return cursorOperationFactory(1);
   }
 
-  // Progressive timeout values for each attempt
+  /**
+   * Gets progressive timeout value for cursor operations based on attempt number
+   * Expected range: 1-3 attempts (configured via CURSOR_MAX_RETRIES)
+   * @param {number} attempt - The current attempt number (1-indexed)
+   * @returns {number} - Timeout in milliseconds
+   */
   const getTimeoutForAttempt = (attempt) => {
+    // Validate attempt number
+    if (!Number.isFinite(attempt) || attempt < 1) {
+      logError('IndexedDB', new Error(`Invalid attempt number: ${attempt}`), {
+        operation: 'getTimeoutForAttempt',
+        attempt,
+        usingDefaultTimeout: true
+      });
+      return INDEXEDDB_CONFIG.CURSOR_TIMEOUT;
+    }
+
     switch (attempt) {
       case 1: return INDEXEDDB_CONFIG.CURSOR_TIMEOUT; // 30s - covers 99% of cases
       case 2: return INDEXEDDB_CONFIG.CURSOR_TIMEOUT_RETRY_1; // 60s - handles slower devices
       case 3: return INDEXEDDB_CONFIG.CURSOR_TIMEOUT_RETRY_2; // 90s - edge cases (200k+ records)
-      default: return INDEXEDDB_CONFIG.CURSOR_TIMEOUT;
+      default:
+        // Unexpected: attempt > 3 (max expected is 3 with CURSOR_MAX_RETRIES=2)
+        // This could happen if CURSOR_MAX_RETRIES config is increased
+        // Use maximum timeout for safety instead of minimum
+        logError('IndexedDB', new Error(`Unexpected attempt number: ${attempt}, expected 1-3`), {
+          operation: 'getTimeoutForAttempt',
+          attempt,
+          maxExpectedAttempts: INDEXEDDB_CONFIG.CURSOR_MAX_RETRIES + 1,
+          usingMaxTimeout: true
+        });
+        return INDEXEDDB_CONFIG.CURSOR_TIMEOUT_RETRY_2; // Use maximum timeout for attempts beyond expected range
     }
   };
 
