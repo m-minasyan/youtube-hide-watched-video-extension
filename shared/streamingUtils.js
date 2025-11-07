@@ -23,6 +23,17 @@ export class StreamingJSONParser {
    */
   async parse() {
     try {
+      // Step 0: Validate file size BEFORE parsing to prevent DoS/OOM attacks
+      // Check file size before reading any content to avoid loading malicious files
+      const maxFileSize = IMPORT_EXPORT_CONFIG.MAX_IMPORT_SIZE_MB * 1024 * 1024; // Convert MB to bytes
+      if (this.file.size > maxFileSize) {
+        throw new Error(
+          `File too large: ${formatBytes(this.file.size)} ` +
+          `(max: ${formatBytes(maxFileSize)}). ` +
+          `Large files could cause memory issues.`
+        );
+      }
+
       const stream = this.file.stream();
       const reader = stream.getReader();
       const decoder = new TextDecoder('utf-8');
