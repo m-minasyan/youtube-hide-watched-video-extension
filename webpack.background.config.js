@@ -31,16 +31,14 @@ module.exports = (env, argv) => {
         new TerserPlugin({
           terserOptions: {
             compress: {
-              // Remove all console.* calls in production
-              drop_console: isProduction,
               // Remove debugger statements in production
               drop_debugger: isProduction,
-              // Additional optimizations for production
+              // Remove only non-critical console methods in production
+              // Keep console.error and console.warn for production debugging
               pure_funcs: isProduction ? [
                 'console.log',
                 'console.info',
-                'console.debug',
-                'console.warn'
+                'console.debug'
               ] : []
             },
             format: {
