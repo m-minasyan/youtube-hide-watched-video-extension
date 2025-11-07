@@ -1,3 +1,5 @@
+import { logError } from './errorHandler.js';
+
 // Storage Keys
 export const STORAGE_KEYS = {
   THRESHOLD: 'YTHWV_THRESHOLD',
@@ -174,13 +176,21 @@ export const INTERSECTION_OBSERVER_CONFIG = (function() {
   // Format: 1-4 values, each being a number followed by 'px' or '%', separated by spaces
   const rootMarginPattern = /^(-?\d+(?:\.\d+)?(px|%)(\s+-?\d+(?:\.\d+)?(px|%)){0,3})$/;
   if (typeof config.ROOT_MARGIN !== 'string' || !rootMarginPattern.test(config.ROOT_MARGIN.trim())) {
-    console.error('[YT-HWV] Invalid ROOT_MARGIN format, using default "100px"');
+    logError('IntersectionObserverConfig', new Error('Invalid ROOT_MARGIN format'), {
+      value: config.ROOT_MARGIN,
+      default: '100px',
+      message: 'Invalid ROOT_MARGIN format, using default "100px"'
+    });
     config.ROOT_MARGIN = '100px';
   }
 
   // Validate configuration values
   if (!Array.isArray(config.THRESHOLD) || config.THRESHOLD.length === 0) {
-    console.error('[YT-HWV] Invalid THRESHOLD config, using defaults');
+    logError('IntersectionObserverConfig', new Error('Invalid THRESHOLD config'), {
+      value: config.THRESHOLD,
+      default: [0, 0.25, 0.5],
+      message: 'Invalid THRESHOLD config, using defaults'
+    });
     config.THRESHOLD = [0, 0.25, 0.5];
   }
 
@@ -190,12 +200,20 @@ export const INTERSECTION_OBSERVER_CONFIG = (function() {
   if (typeof config.VISIBILITY_THRESHOLD !== 'number' ||
       config.VISIBILITY_THRESHOLD < 0 ||
       config.VISIBILITY_THRESHOLD > 1) {
-    console.error('[YT-HWV] Invalid VISIBILITY_THRESHOLD config, using default 0.25');
+    logError('IntersectionObserverConfig', new Error('Invalid VISIBILITY_THRESHOLD config'), {
+      value: config.VISIBILITY_THRESHOLD,
+      default: 0.25,
+      message: 'Invalid VISIBILITY_THRESHOLD config, using default 0.25'
+    });
     config.VISIBILITY_THRESHOLD = 0.25;
   }
 
   if (typeof config.BATCH_DELAY !== 'number' || config.BATCH_DELAY < 0) {
-    console.error('[YT-HWV] Invalid BATCH_DELAY config, using default 100ms');
+    logError('IntersectionObserverConfig', new Error('Invalid BATCH_DELAY config'), {
+      value: config.BATCH_DELAY,
+      default: 100,
+      message: 'Invalid BATCH_DELAY config, using default 100ms'
+    });
     config.BATCH_DELAY = 100;
   }
 
