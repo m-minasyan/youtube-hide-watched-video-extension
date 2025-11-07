@@ -10,6 +10,30 @@ export function ensurePromise(value) {
 }
 
 /**
+ * Wraps a chrome.storage operation with a timeout to prevent indefinite hanging
+ * @param {Promise} promise - The chrome.storage promise to wrap
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {string} operationName - Name of the operation for error messages
+ * @returns {Promise} - Promise that rejects if timeout is exceeded
+ */
+export function withStorageTimeout(promise, timeoutMs, operationName = 'Storage operation') {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      const timeoutId = setTimeout(() => {
+        const error = new Error(`${operationName} timeout after ${timeoutMs}ms`);
+        error.name = 'StorageTimeoutError';
+        error.timeout = true;
+        reject(error);
+      }, timeoutMs);
+
+      // Clean up timeout if promise resolves first
+      promise.finally(() => clearTimeout(timeoutId));
+    })
+  ]);
+}
+
+/**
  * Determines if a video ID belongs to a YouTube Short.
  * Shorts have video IDs shorter than 15 characters.
  */

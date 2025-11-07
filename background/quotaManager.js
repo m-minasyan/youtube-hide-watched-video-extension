@@ -11,7 +11,8 @@
 
 import { logError } from '../shared/errorHandler.js';
 import { debug, error, warn, info } from '../shared/logger.js';
-import { QUOTA_CONFIG } from '../shared/constants.js';
+import { QUOTA_CONFIG, ERROR_CONFIG } from '../shared/constants.js';
+import { withStorageTimeout } from '../shared/utils.js';
 
 // Fallback storage keys
 const FALLBACK_STORAGE_KEY = 'YTHWV_FALLBACK_STORAGE';
@@ -378,7 +379,11 @@ async function deleteOldestHiddenVideosWithProtection(deleteFunction, count) {
  */
 async function logQuotaEvent(event) {
   try {
-    const result = await chrome.storage.local.get(QUOTA_EVENTS_KEY);
+    const result = await withStorageTimeout(
+      chrome.storage.local.get(QUOTA_EVENTS_KEY),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.get(QUOTA_EVENTS_KEY)'
+    );
     const events = result[QUOTA_EVENTS_KEY] || [];
 
     // Add timestamp
@@ -392,7 +397,11 @@ async function logQuotaEvent(event) {
       events.splice(0, events.length - QUOTA_CONFIG.MAX_QUOTA_EVENTS);
     }
 
-    await chrome.storage.local.set({ [QUOTA_EVENTS_KEY]: events });
+    await withStorageTimeout(
+      chrome.storage.local.set({ [QUOTA_EVENTS_KEY]: events }),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.set(QUOTA_EVENTS_KEY)'
+    );
   } catch (error) {
     // Silently fail - don't want logging to cause more errors
     console.error('Failed to log quota event:', error);
@@ -417,7 +426,11 @@ async function saveToFallbackStorage(records) {
   // Create new lock promise
   fallbackLock = (async () => {
     try {
-      const result = await chrome.storage.local.get(FALLBACK_STORAGE_KEY);
+      const result = await withStorageTimeout(
+        chrome.storage.local.get(FALLBACK_STORAGE_KEY),
+        ERROR_CONFIG.STORAGE_TIMEOUT,
+        'chrome.storage.local.get(FALLBACK_STORAGE_KEY)'
+      );
       const fallbackData = result[FALLBACK_STORAGE_KEY] || [];
 
       // 🎯 Check pressure BEFORE adding records
@@ -446,7 +459,11 @@ async function saveToFallbackStorage(records) {
       // ✅ Add records
       fallbackData.push(...newRecords);
 
-      await chrome.storage.local.set({ [FALLBACK_STORAGE_KEY]: fallbackData });
+      await withStorageTimeout(
+        chrome.storage.local.set({ [FALLBACK_STORAGE_KEY]: fallbackData }),
+        ERROR_CONFIG.STORAGE_TIMEOUT,
+        'chrome.storage.local.set(FALLBACK_STORAGE_KEY)'
+      );
 
       await logQuotaEvent({
         type: 'fallback_save',
@@ -492,7 +509,11 @@ async function saveToFallbackStorage(records) {
  */
 export async function getFromFallbackStorage(limit = null) {
   try {
-    const result = await chrome.storage.local.get(FALLBACK_STORAGE_KEY);
+    const result = await withStorageTimeout(
+      chrome.storage.local.get(FALLBACK_STORAGE_KEY),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.get(FALLBACK_STORAGE_KEY)'
+    );
     const fallbackData = result[FALLBACK_STORAGE_KEY] || [];
 
     if (limit && limit > 0) {
@@ -515,12 +536,20 @@ export async function getFromFallbackStorage(limit = null) {
  */
 export async function removeFromFallbackStorage(count) {
   try {
-    const result = await chrome.storage.local.get(FALLBACK_STORAGE_KEY);
+    const result = await withStorageTimeout(
+      chrome.storage.local.get(FALLBACK_STORAGE_KEY),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.get(FALLBACK_STORAGE_KEY)'
+    );
     const fallbackData = result[FALLBACK_STORAGE_KEY] || [];
 
     fallbackData.splice(0, count);
 
-    await chrome.storage.local.set({ [FALLBACK_STORAGE_KEY]: fallbackData });
+    await withStorageTimeout(
+      chrome.storage.local.set({ [FALLBACK_STORAGE_KEY]: fallbackData }),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.set(FALLBACK_STORAGE_KEY)'
+    );
 
     await logQuotaEvent({
       type: 'fallback_clear',
@@ -540,7 +569,11 @@ export async function removeFromFallbackStorage(count) {
  */
 export async function clearFallbackStorage() {
   try {
-    await chrome.storage.local.remove(FALLBACK_STORAGE_KEY);
+    await withStorageTimeout(
+      chrome.storage.local.remove(FALLBACK_STORAGE_KEY),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.remove(FALLBACK_STORAGE_KEY)'
+    );
 
     await logQuotaEvent({
       type: 'fallback_clear_all'
@@ -560,7 +593,11 @@ export async function clearFallbackStorage() {
  */
 export async function exportFallbackStorage() {
   try {
-    const result = await chrome.storage.local.get(FALLBACK_STORAGE_KEY);
+    const result = await withStorageTimeout(
+      chrome.storage.local.get(FALLBACK_STORAGE_KEY),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.get(FALLBACK_STORAGE_KEY)'
+    );
     const fallbackData = result[FALLBACK_STORAGE_KEY] || [];
 
     const exportData = {
@@ -603,7 +640,11 @@ export async function exportFallbackStorage() {
  */
 export async function getFallbackStats() {
   try {
-    const result = await chrome.storage.local.get(FALLBACK_STORAGE_KEY);
+    const result = await withStorageTimeout(
+      chrome.storage.local.get(FALLBACK_STORAGE_KEY),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.get(FALLBACK_STORAGE_KEY)'
+    );
     const fallbackData = result[FALLBACK_STORAGE_KEY] || [];
 
     return {
@@ -622,7 +663,11 @@ export async function getFallbackStats() {
  */
 async function getNotificationBackoff() {
   try {
-    const result = await chrome.storage.local.get([NOTIFICATION_BACKOFF_KEY, LAST_NOTIFICATION_KEY]);
+    const result = await withStorageTimeout(
+      chrome.storage.local.get([NOTIFICATION_BACKOFF_KEY, LAST_NOTIFICATION_KEY]),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.get([NOTIFICATION_BACKOFF_KEY, LAST_NOTIFICATION_KEY])'
+    );
     const backoffData = result[NOTIFICATION_BACKOFF_KEY] || { consecutiveCount: 0 };
     const lastNotificationTime = result[LAST_NOTIFICATION_KEY] || 0;
 
@@ -641,9 +686,13 @@ async function getNotificationBackoff() {
  */
 async function updateNotificationBackoff(consecutiveCount) {
   try {
-    await chrome.storage.local.set({
-      [NOTIFICATION_BACKOFF_KEY]: { consecutiveCount, updatedAt: Date.now() }
-    });
+    await withStorageTimeout(
+      chrome.storage.local.set({
+        [NOTIFICATION_BACKOFF_KEY]: { consecutiveCount, updatedAt: Date.now() }
+      }),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.set(NOTIFICATION_BACKOFF_KEY)'
+    );
   } catch (error) {
     console.error('Failed to update notification backoff:', error);
   }
@@ -694,7 +743,11 @@ async function maybeResetNotificationBackoff(lastNotificationTime) {
 async function showQuotaNotification(options = {}) {
   try {
     // Check if notifications are disabled by user
-    const disabledResult = await chrome.storage.local.get(NOTIFICATION_DISABLED_KEY);
+    const disabledResult = await withStorageTimeout(
+      chrome.storage.local.get(NOTIFICATION_DISABLED_KEY),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.get(NOTIFICATION_DISABLED_KEY)'
+    );
     if (disabledResult[NOTIFICATION_DISABLED_KEY] === true) {
       await logQuotaEvent({
         type: 'notification_suppressed',
@@ -744,7 +797,11 @@ async function showQuotaNotification(options = {}) {
     // Update notification state
     const newConsecutiveCount = effectiveCount + 1;
     await updateNotificationBackoff(newConsecutiveCount);
-    await chrome.storage.local.set({ [LAST_NOTIFICATION_KEY]: now });
+    await withStorageTimeout(
+      chrome.storage.local.set({ [LAST_NOTIFICATION_KEY]: now }),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.set(LAST_NOTIFICATION_KEY)'
+    );
 
     // Create notification
     const title = options.title || 'YouTube Hide Watched Videos - Storage Warning';
@@ -980,7 +1037,11 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
  */
 export async function getQuotaEvents() {
   try {
-    const result = await chrome.storage.local.get(QUOTA_EVENTS_KEY);
+    const result = await withStorageTimeout(
+      chrome.storage.local.get(QUOTA_EVENTS_KEY),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.get(QUOTA_EVENTS_KEY)'
+    );
     return result[QUOTA_EVENTS_KEY] || [];
   } catch (error) {
     return [];
@@ -992,7 +1053,11 @@ export async function getQuotaEvents() {
  */
 export async function clearQuotaEvents() {
   try {
-    await chrome.storage.local.remove(QUOTA_EVENTS_KEY);
+    await withStorageTimeout(
+      chrome.storage.local.remove(QUOTA_EVENTS_KEY),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.remove(QUOTA_EVENTS_KEY)'
+    );
   } catch (error) {
     logError('QuotaManager', error, {
       operation: 'clearQuotaEvents',
@@ -1156,9 +1221,13 @@ export async function getQuotaStats() {
  */
 export async function setQuotaNotificationsEnabled(enabled) {
   try {
-    await chrome.storage.local.set({
-      [NOTIFICATION_DISABLED_KEY]: !enabled
-    });
+    await withStorageTimeout(
+      chrome.storage.local.set({
+        [NOTIFICATION_DISABLED_KEY]: !enabled
+      }),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.set(NOTIFICATION_DISABLED_KEY)'
+    );
 
     await logQuotaEvent({
       type: 'notification_preferences_changed',
@@ -1181,7 +1250,11 @@ export async function setQuotaNotificationsEnabled(enabled) {
  */
 export async function getQuotaNotificationsEnabled() {
   try {
-    const result = await chrome.storage.local.get(NOTIFICATION_DISABLED_KEY);
+    const result = await withStorageTimeout(
+      chrome.storage.local.get(NOTIFICATION_DISABLED_KEY),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.get(NOTIFICATION_DISABLED_KEY)'
+    );
     // If the key doesn't exist, notifications are enabled by default
     return result[NOTIFICATION_DISABLED_KEY] !== true;
   } catch (error) {

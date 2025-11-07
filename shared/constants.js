@@ -112,7 +112,8 @@ export const ERROR_CONFIG = {
   INITIAL_RETRY_DELAY: 100,
   MAX_RETRY_DELAY: 5000,
   MESSAGE_TIMEOUT: 5000,
-  MAX_ERROR_LOG_SIZE: 100
+  MAX_ERROR_LOG_SIZE: 100,
+  STORAGE_TIMEOUT: 10000 // 10 seconds - timeout for chrome.storage operations
 };
 
 // Background service worker configuration
