@@ -404,7 +404,11 @@ async function logQuotaEvent(event) {
     );
   } catch (error) {
     // Silently fail - don't want logging to cause more errors
-    console.error('Failed to log quota event:', error);
+    logError('QuotaManager', error, {
+      operation: 'logQuotaEvent',
+      eventType: type,
+      message: 'Failed to log quota event'
+    });
   }
 }
 
@@ -694,7 +698,11 @@ async function updateNotificationBackoff(consecutiveCount) {
       'chrome.storage.local.set(NOTIFICATION_BACKOFF_KEY)'
     );
   } catch (error) {
-    console.error('Failed to update notification backoff:', error);
+    logError('QuotaManager', error, {
+      operation: 'updateNotificationBackoff',
+      consecutiveCount,
+      message: 'Failed to update notification backoff'
+    });
   }
 }
 

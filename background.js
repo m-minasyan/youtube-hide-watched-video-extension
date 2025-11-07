@@ -4,6 +4,7 @@ import { STORAGE_KEYS, DEFAULT_SETTINGS, SERVICE_WORKER_CONFIG } from './shared/
 import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 import { processFallbackStorage } from './background/indexedDb.js';
 import { getFallbackStats } from './background/quotaManager.js';
+import { logError } from './shared/errorHandler.js';
 
 // CRITICAL: Register message listener IMMEDIATELY at top level (synchronously)
 // This must happen before any async operations to avoid race conditions where
@@ -81,7 +82,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   } else if (alarm.name === FALLBACK_PROCESSING_ALARM) {
     // Process fallback storage
     processFallbackStorageIfNeeded().catch((error) => {
-      console.error('Failed to process fallback storage:', error);
+      logError('Background', error, {
+        operation: 'processFallbackStorage',
+        alarm: FALLBACK_PROCESSING_ALARM,
+        message: 'Failed to process fallback storage'
+      });
     });
   }
 });
@@ -105,7 +110,10 @@ async function processFallbackStorageIfNeeded() {
       }
     }
   } catch (error) {
-    console.error('Error in processFallbackStorageIfNeeded:', error);
+    logError('Background', error, {
+      operation: 'processFallbackStorageIfNeeded',
+      message: 'Error in processFallbackStorageIfNeeded'
+    });
   }
 }
 
@@ -120,7 +128,11 @@ async function ensureDefaultSettings(details) {
 
 chrome.runtime.onInstalled.addListener((details) => {
   ensureDefaultSettings(details).catch((error) => {
-    console.error('Failed to set default settings', error);
+    logError('Background', error, {
+      operation: 'ensureDefaultSettings',
+      reason: details.reason,
+      message: 'Failed to set default settings'
+    });
   });
 });
 
@@ -137,7 +149,11 @@ chrome.runtime.onStartup.addListener(() => {
       ]);
     })
     .catch((error) => {
-      console.error('Failed to initialize hidden videos service on startup', error);
+      logError('Background', error, {
+        operation: 'initializeHiddenVideos',
+        trigger: 'onStartup',
+        message: 'Failed to initialize hidden videos service on startup'
+      });
       // Stop alarms if initialization fails
       stopKeepAlive();
       stopFallbackProcessing();
@@ -163,7 +179,11 @@ initializeHiddenVideos()
     ]);
   })
   .catch((error) => {
-    console.error('Failed to initialize hidden videos service', error);
+    logError('Background', error, {
+      operation: 'initializeHiddenVideos',
+      trigger: 'extensionLoad',
+      message: 'Failed to initialize hidden videos service'
+    });
     // Stop alarms if they were running from previous session
     stopKeepAlive();
     stopFallbackProcessing();
