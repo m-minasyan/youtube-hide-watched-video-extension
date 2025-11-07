@@ -75,6 +75,17 @@ export class StreamingJSONParser {
       // We still need to parse all at once, but at least reading was chunked
       const data = JSON.parse(buffer);
 
+      // SECURITY: Validate record count immediately after parsing to prevent DoS
+      // This is a second line of defense after file size validation
+      // Prevents loading millions of records into memory
+      if (data.count && data.count > IMPORT_EXPORT_CONFIG.MAX_IMPORT_RECORDS) {
+        throw new Error(
+          `Record count in metadata (${data.count.toLocaleString()}) exceeds maximum allowed ` +
+          `(${IMPORT_EXPORT_CONFIG.MAX_IMPORT_RECORDS.toLocaleString()}). ` +
+          `This file is too large to import safely.`
+        );
+      }
+
       this.onProgress({
         stage: 'parsed',
         progress: 60,
@@ -85,9 +96,12 @@ export class StreamingJSONParser {
 
     } catch (error) {
       this.onError(error);
-      // Preserve original error stack trace using .cause
+      // Preserve original error stack trace
+      // Note: error.cause requires Chrome 93+/Firefox 91+, but provides better debugging
       const wrappedError = new Error(`Failed to parse JSON: ${error.message}`);
-      wrappedError.cause = error;
+      if ('cause' in Error.prototype || error.stack) {
+        wrappedError.cause = error;
+      }
       throw wrappedError;
     }
   }

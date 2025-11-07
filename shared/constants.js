@@ -147,7 +147,9 @@ export const SELECTOR_STRINGS = {
 // In development: true, In production: false
 // For webpack builds: __DEV__ is defined by DefinePlugin
 // For direct browser loads (popup.js): check if process exists before accessing
-export const DEBUG = typeof __DEV__ !== 'undefined' ? __DEV__ :
+// FIXED P2-5: Explicit boolean conversion to prevent truthy strings
+// Previously __DEV__ as string "false" would be truthy
+export const DEBUG = typeof __DEV__ !== 'undefined' ? Boolean(__DEV__) :
   (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production') || false;
 
 // DOM Cache Configuration
@@ -241,6 +243,10 @@ export const INDEXEDDB_CONFIG = {
 
   // Broadcast
   BROADCAST_DEBOUNCE: 100,
+
+  // Concurrency control
+  // FIXED P3-6: Moved MAX_ACTIVE_OPERATIONS from hardcoded constant to config
+  MAX_ACTIVE_OPERATIONS: 1000, // Maximum concurrent IndexedDB operations to prevent resource exhaustion
 
   // Timeout settings
   OPERATION_TIMEOUT: 30000, // 30 seconds - timeout for individual operations

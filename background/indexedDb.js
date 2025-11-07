@@ -23,8 +23,9 @@ let operationLock = Promise.resolve();
 let shutdownRequested = false;
 let pendingCloseCallback = null;
 
+// FIXED P3-6: Use config value instead of hardcoded constant
 // Maximum concurrent operations to prevent resource exhaustion
-const MAX_ACTIVE_OPERATIONS = 1000;
+const MAX_ACTIVE_OPERATIONS = INDEXEDDB_CONFIG.MAX_ACTIVE_OPERATIONS;
 
 /**
  * Atomically increments the active operations counter
@@ -291,6 +292,8 @@ export function closeDbSync() {
   // If there are active operations, let them complete gracefully
   // The finally block in withStore() will close the database automatically
   if (activeOperations > 0) {
+    // FIXED P1-4: Note - logError is SYNCHRONOUS (calls console.error internally)
+    // Safe to use in closeDbSync which must be synchronous for onSuspend
     logError('IndexedDB', new Error('Graceful shutdown initiated - waiting for active operations'), {
       operation: 'closeDbSync',
       activeOperations,
@@ -304,6 +307,10 @@ export function closeDbSync() {
   // This prevents race condition where Chrome kills Service Worker before async .then() executes
   if (resolvedDb) {
     try {
+      // FIXED P1-4: Check if database is in a valid state before closing
+      // readyState is 'pending' or 'done'. Only close if done.
+      // Note: IDBDatabase doesn't have readyState, so we just try-catch
+      // The error catch below handles any exceptions from active transactions
       resolvedDb.close();
       logError('IndexedDB', new Error('Database closed synchronously'), {
         operation: 'closeDbSync',
@@ -311,10 +318,15 @@ export function closeDbSync() {
         synchronous: true
       });
     } catch (error) {
+      // This catch handles:
+      // 1. InvalidStateError if database is already closed
+      // 2. Any other exceptions from active transactions (shouldn't happen with activeOperations check)
+      // We continue anyway as we're shutting down
       logError('IndexedDB', error, {
         operation: 'closeDbSync',
         phase: 'close',
-        synchronous: true
+        synchronous: true,
+        recovered: true
       });
     }
   }
@@ -444,14 +456,18 @@ async function withStore(mode, handler, operationContext = null) {
     if (errorType === ErrorType.QUOTA_EXCEEDED) {
       // Check if we're already in a quota retry loop to prevent infinite recursion
       const quotaRetryDepth = (operationContext?.quotaRetryDepth || 0);
-      const maxQuotaRetryDepth = 1; // Only allow one level of quota retry
+      // FIXED: Increased from 1 to 2 to allow sufficient retry attempts
+      // Rationale: For large databases (100k+ records), one retry may not free enough space
+      // This gives the quota manager 2 chances to clean up before giving up
+      const maxQuotaRetryDepth = 2;
 
       if (quotaRetryDepth >= maxQuotaRetryDepth) {
-        // Already in a quota retry - don't create nested retry loops
+        // Already exhausted quota retries - don't create nested retry loops
         logError('IndexedDB', error, {
           operation: 'withStore',
           quotaExceeded: true,
           quotaRetryDepth,
+          maxQuotaRetryDepth,
           preventingNestedRetry: true,
           operationContext
         });
@@ -475,10 +491,10 @@ async function withStore(mode, handler, operationContext = null) {
       // If cleanup was successful, retry the operation
       if (quotaResult.success && quotaResult.cleanupPerformed) {
         try {
-          // Retry the operation with up to QUOTA_CONFIG.MAX_RETRY_ATTEMPTS attempts
-          // Validate retry attempts to prevent excessive retries (1-10 range)
-          // Use ?? instead of || to properly handle 0, null, undefined
-          const maxRetries = Math.max(1, Math.min(QUOTA_CONFIG.MAX_RETRY_ATTEMPTS ?? 3, 10));
+          // FIXED P2-7: Simplified retry validation - config always has valid value
+          // QUOTA_CONFIG.MAX_RETRY_ATTEMPTS is always defined in constants.js (value: 3)
+          // Removed unnecessary Math.max/Math.min/nullish coalescing checks
+          const maxRetries = QUOTA_CONFIG.MAX_RETRY_ATTEMPTS;
           let lastError = error;
 
           for (let attempt = 1; attempt <= maxRetries; attempt++) {

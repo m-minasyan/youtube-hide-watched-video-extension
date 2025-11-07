@@ -218,11 +218,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const normalizedQuery = normalizeString(sanitizedQuery);
 
     return items.filter(item => {
-      // SECURITY: Sanitize both title and videoId for defense-in-depth
-      // Even though these values come from YouTube, sanitization provides
-      // an additional security layer against potential injection attacks
-      const title = normalizeString(sanitizeSearchQuery(item.title || ''));
-      const videoId = normalizeString(sanitizeSearchQuery(item.videoId || ''));
+      // FIXED P2-6: Removed redundant sanitization of title and videoId
+      // These values come from trusted source (IndexedDB), not user input
+      // Only the search query (from user) needs sanitization
+      // This eliminates 2000+ unnecessary regex operations for 1000 results
+      const title = normalizeString(item.title || '');
+      const videoId = normalizeString(item.videoId || '');
 
       // Search in title and videoId
       return title.includes(normalizedQuery) || videoId.includes(normalizedQuery);
@@ -907,7 +908,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       await refreshStats();
       await loadHiddenVideos();
     }
-  , { signal });
+  }, { signal }); // FIXED P3-1: moved comma to previous line for standard style
 
   // Export/Import functionality
   const exportBtn = document.getElementById('export-btn');
@@ -1057,12 +1058,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       exportBtn.disabled = false;
       exportBtn.textContent = 'Export List';
     }
-  , { signal });
+  }, { signal }); // FIXED P3-1
 
   // Import button handler
   importBtn.addEventListener('click', () => {
     fileInput.click();
-  , { signal });
+  }, { signal }); // FIXED P3-1
 
   // File input change handler
   fileInput.addEventListener('change', async (e) => {
@@ -1129,7 +1130,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Reset file input
       fileInput.value = '';
     }
-  , { signal });
+  }, { signal }); // FIXED P3-1
 
   // Focus trap helper for modal accessibility
   function trapFocus(modal) {
@@ -1268,7 +1269,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     btn.classList.add('active');
     activeStrategyButton = btn;
     importState.selectedStrategy = btn.dataset.strategy;
-  , { signal });
+  }, { signal }); // FIXED P3-1
 
   // Confirm import button
   confirmImportBtn.addEventListener('click', async () => {
@@ -1421,7 +1422,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       cancelImportBtn.disabled = false;
       closeImportModalBtn.disabled = false;
     }
-  , { signal });
+  }, { signal }); // FIXED P3-1
 
   // Modal close handlers
   function closeImportModal() {
@@ -1466,7 +1467,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.target.id === 'import-modal') {
       closeImportModal();
     }
-  , { signal });
+  }, { signal }); // FIXED P3-1
 
   /**
    * Comprehensive cleanup function for page unload
