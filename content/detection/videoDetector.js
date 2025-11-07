@@ -1,6 +1,6 @@
 import { SELECTOR_CHAINS, CACHE_CONFIG } from '../../shared/constants.js';
 import { getThreshold } from '../storage/settings.js';
-import { logDebug } from '../utils/logger.js';
+import { logDebug } from '../../shared/logger.js';
 import { extractVideoIdFromHref } from '../utils/dom.js';
 import { cachedDocumentQueryWithFallback, cachedQuerySelectorWithFallback } from '../utils/domCache.js';
 

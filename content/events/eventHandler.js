@@ -1,4 +1,4 @@
-import { logDebug, error } from '../utils/logger.js';
+import { logDebug, error } from '../../shared/logger.js';
 import { CSS_CLASSES, INTERSECTION_OBSERVER_CONFIG } from '../utils/constants.js';
 import { applyCacheUpdate, clearCache } from '../storage/cache.js';
 import { loadSettings } from '../storage/settings.js';

@@ -2,7 +2,7 @@ import { debounce } from '../utils/debounce.js';
 import { clearAllCaches, logCacheStats } from '../utils/domCache.js';
 import { DEBUG } from '../utils/constants.js';
 import { reconnectIntersectionObserver } from './intersectionObserver.js';
-import { debug } from '../utils/logger.js';
+import { debug } from '../../shared/logger.js';
 
 export function setupUrlObserver(applyHiding) {
   const debouncedApplyHiding = debounce(applyHiding, 100);

@@ -1,6 +1,6 @@
 import { checkCriticalSelectorsHealth, getSelectorHealth } from './domSelectorHealth.js';
 import { SELECTOR_HEALTH_CONFIG } from '../../shared/constants.js';
-import { error, warn } from './logger.js';
+import { error, warn } from '../../shared/logger.js';
 
 // Track notification timestamps to prevent spam
 const lastNotifications = new Map();
