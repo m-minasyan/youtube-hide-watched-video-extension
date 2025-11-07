@@ -170,6 +170,14 @@ export const INTERSECTION_OBSERVER_CONFIG = (function() {
     ENABLE_LAZY_PROCESSING: true
   };
 
+  // Validate ROOT_MARGIN format (must be valid CSS margin: '10px', '10%', '10px 20px', etc.)
+  // Format: 1-4 values, each being a number followed by 'px' or '%', separated by spaces
+  const rootMarginPattern = /^(-?\d+(?:\.\d+)?(px|%)(\s+-?\d+(?:\.\d+)?(px|%)){0,3})$/;
+  if (typeof config.ROOT_MARGIN !== 'string' || !rootMarginPattern.test(config.ROOT_MARGIN.trim())) {
+    console.error('[YT-HWV] Invalid ROOT_MARGIN format, using default "100px"');
+    config.ROOT_MARGIN = '100px';
+  }
+
   // Validate configuration values
   if (!Array.isArray(config.THRESHOLD) || config.THRESHOLD.length === 0) {
     console.error('[YT-HWV] Invalid THRESHOLD config, using defaults');
