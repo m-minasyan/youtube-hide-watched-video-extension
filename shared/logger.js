@@ -1,7 +1,12 @@
 /**
  * @fileoverview Shared debug logging utility with build-time stripping for production
  *
- * This module provides logging functions that are automatically removed in production builds.
+ * This module provides logging functions with different behaviors in production:
+ * - error(): ALWAYS logged (critical for debugging production issues)
+ * - warn(): ALWAYS logged (important for production monitoring)
+ * - debug(): Only in DEBUG mode (removed in production)
+ * - info(): Only in DEBUG mode (removed in production)
+ *
  * The DEBUG flag is imported from constants.js which is set at build time by webpack DefinePlugin.
  *
  * Usage:
@@ -11,8 +16,8 @@
  *
  * In production builds:
  * - DEBUG is replaced with false by webpack DefinePlugin
- * - Dead code elimination removes all if (DEBUG) blocks
- * - Terser's drop_console removes any remaining console statements
+ * - Dead code elimination removes debug/info if (DEBUG) blocks
+ * - error() and warn() remain active for production debugging
  */
 
 import { DEBUG } from './constants.js';
@@ -28,23 +33,25 @@ export function debug(...args) {
 }
 
 /**
- * Log error information (removed in production)
+ * Log error information (ALWAYS logged, even in production)
+ * Critical errors must be logged to debug production issues
  * @param {...any} args - Arguments to log
  */
 export function error(...args) {
-  if (DEBUG) {
-    console.error(...args);
-  }
+  // ALWAYS log errors, even in production
+  // This is critical for debugging user-reported issues
+  console.error(...args);
 }
 
 /**
- * Log warning information (removed in production)
+ * Log warning information (ALWAYS logged, even in production)
+ * Warnings are important for production monitoring
  * @param {...any} args - Arguments to log
  */
 export function warn(...args) {
-  if (DEBUG) {
-    console.warn(...args);
-  }
+  // ALWAYS log warnings, even in production
+  // Warnings help identify potential issues before they become errors
+  console.warn(...args);
 }
 
 /**
