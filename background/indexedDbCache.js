@@ -1,21 +1,17 @@
 /**
  * Background cache layer for IndexedDB operations
- * Provides TTL-based caching with LRU eviction to reduce IndexedDB reads
+ * Provides timestamp-based caching with LRU eviction to reduce IndexedDB reads
  *
- * REFACTORED: Now uses UnifiedCacheManager for consistency with content script
+ * REFACTORED: Now uses simplified UnifiedCacheManager with 3-Map architecture
  */
 
 import { UnifiedCacheManager } from '../shared/cache/UnifiedCacheManager.js';
 
-const CACHE_TTL = 30000; // 30 seconds
 const MAX_CACHE_SIZE = 5000; // Maximum number of entries in background cache
 
-// Initialize unified cache manager in 2-Map TTL mode (background script mode)
+// Initialize unified cache manager (3-Map architecture)
 const cacheManager = new UnifiedCacheManager({
-  maxSize: MAX_CACHE_SIZE,
-  cacheTTL: CACHE_TTL,
-  separateTimestamps: false, // 2-Map mode: {record, timestamp} stored together
-  trackPendingRequests: false // Not needed in background script
+  maxSize: MAX_CACHE_SIZE
 });
 
 /**

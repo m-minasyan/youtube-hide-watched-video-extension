@@ -3,28 +3,22 @@ import { error } from '../logger.js';
 /**
  * Unified Cache Manager
  *
- * Provides a unified caching layer that supports both TTL-based and timestamp-based caching
- * with LRU eviction, consistency validation, and repair mechanisms.
+ * Simplified caching layer with LRU eviction, consistency validation, and repair mechanisms.
+ * Uses a 3-Map architecture for optimal performance and clarity.
  *
- * This module addresses cache inconsistency between background and content scripts by:
- * - Unifying cache architecture (supports both 2-Map and 3-Map modes)
- * - Providing single source of truth for eviction logic
- * - Ensuring consistent validation and repair across all cache instances
- * - Preventing memory leaks and orphaned entries
- *
- * @example
- * // Background script usage (TTL-based, 2-Map mode)
- * const cache = new UnifiedCacheManager({
- *   maxSize: 5000,
- *   cacheTTL: 30000,
- *   separateTimestamps: false
- * });
+ * Architecture:
+ * - cache: Map<videoId, record> - Stores actual video records
+ * - timestamps: Map<videoId, timestamp> - Stores update timestamps for record freshness
+ * - accessOrder: Map<videoId, accessTime> - Tracks access times for LRU eviction
  *
  * @example
- * // Content script usage (timestamp-based, 3-Map mode)
+ * // Background script usage
+ * const cache = new UnifiedCacheManager({ maxSize: 5000 });
+ *
+ * @example
+ * // Content script usage with pending requests
  * const cache = new UnifiedCacheManager({
  *   maxSize: 1000,
- *   separateTimestamps: true,
  *   trackPendingRequests: true
  * });
  */
@@ -33,23 +27,19 @@ export class UnifiedCacheManager {
    * Creates a new cache manager instance
    * @param {Object} config - Configuration options
    * @param {number} config.maxSize - Maximum number of cache entries
-   * @param {number} [config.cacheTTL] - TTL in milliseconds (optional, for TTL-based caching)
-   * @param {boolean} [config.separateTimestamps=false] - Use separate timestamps Map (3-Map mode)
    * @param {boolean} [config.trackPendingRequests=false] - Track pending requests
    */
   constructor(config = {}) {
     this.maxSize = config.maxSize || 1000;
-    this.cacheTTL = config.cacheTTL || null; // null = no TTL
-    this.separateTimestamps = config.separateTimestamps || false;
     this.trackPendingRequests = config.trackPendingRequests || false;
 
-    // Core cache Maps
-    this.cache = new Map(); // videoId -> record (or {record, timestamp} in 2-Map mode)
-    this.cacheAccessOrder = new Map(); // videoId -> lastAccessTime for LRU
+    // 3-Map architecture
+    this.cache = new Map(); // videoId -> record
+    this.timestamps = new Map(); // videoId -> timestamp
+    this.accessOrder = new Map(); // videoId -> lastAccessTime
 
-    // Optional Maps based on configuration
-    this.timestamps = this.separateTimestamps ? new Map() : null; // videoId -> timestamp (3-Map mode)
-    this.pendingRequests = this.trackPendingRequests ? new Map() : null; // videoId -> Promise
+    // Optional pending requests tracking
+    this.pendingRequests = this.trackPendingRequests ? new Map() : null;
 
     // Concurrency control
     this.isEvicting = false;
@@ -57,56 +47,31 @@ export class UnifiedCacheManager {
 
   /**
    * Evicts least recently used entries when cache exceeds maxSize
-   * Uses synchronization to prevent race conditions and ensure cache consistency
    */
   evictLRUEntries() {
-    // Early exit if cache is within limits
-    if (this.cache.size <= this.maxSize) return;
-
-    // Prevent concurrent eviction operations
-    if (this.isEvicting) return;
+    if (this.cache.size <= this.maxSize || this.isEvicting) return;
 
     try {
       this.isEvicting = true;
 
-      // Re-check size after acquiring lock (might have changed)
+      // Re-check size after acquiring lock
       if (this.cache.size <= this.maxSize) return;
 
-      // Create snapshot of entries to evict (oldest first)
-      const entries = Array.from(this.cacheAccessOrder.entries())
-        .sort((a, b) => a[1] - b[1]); // Sort by access time (oldest first)
+      // Sort by access time (oldest first)
+      const entries = Array.from(this.accessOrder.entries())
+        .sort((a, b) => a[1] - b[1]);
 
       const numToEvict = this.cache.size - this.maxSize;
-      const toEvict = entries.slice(0, numToEvict);
+      const videoIdsToEvict = entries.slice(0, numToEvict).map(([id]) => id);
 
-      // Batch delete: collect IDs first, then delete atomically
-      // This minimizes the window for inconsistency
-      const videoIdsToEvict = toEvict.map(([videoId]) => videoId);
-
-      // Delete from all Maps in a single pass to maintain consistency
+      // Delete from all Maps atomically
       videoIdsToEvict.forEach((videoId) => {
         this.cache.delete(videoId);
-        this.cacheAccessOrder.delete(videoId);
-        if (this.timestamps) {
-          this.timestamps.delete(videoId);
-        }
+        this.timestamps.delete(videoId);
+        this.accessOrder.delete(videoId);
       });
-
-      // Validate consistency after eviction
-      this._validateSizeConsistency();
     } finally {
-      // Always release lock, even if error occurs
       this.isEvicting = false;
-    }
-  }
-
-  /**
-   * Internal validation of size consistency between Maps
-   */
-  _validateSizeConsistency() {
-    if (this.separateTimestamps && this.cache.size !== this.timestamps.size) {
-      error('[UnifiedCacheManager] Inconsistency detected: cache size', this.cache.size,
-            'vs timestamps size', this.timestamps.size);
     }
   }
 
@@ -125,46 +90,18 @@ export class UnifiedCacheManager {
   /**
    * Gets a cached record
    * @param {string} videoId - Video identifier
-   * @returns {Object|null|undefined} - Cached record, null for deleted, undefined for not cached/expired
+   * @returns {Object|null|undefined} - Cached record, null for deleted, undefined for not cached
    */
   get(videoId) {
     if (!videoId) return null;
 
-    const entry = this.cache.get(videoId);
-    if (!entry) return undefined; // Not cached
+    const record = this.cache.get(videoId);
+    if (record === undefined) return undefined;
 
-    let record;
-    let timestamp;
+    // Update access time for LRU
+    this.accessOrder.set(videoId, Date.now());
 
-    // Extract record and timestamp based on mode
-    if (this.separateTimestamps) {
-      // 3-Map mode: record stored directly, timestamp in separate Map
-      record = entry;
-      timestamp = this.timestamps.get(videoId);
-    } else {
-      // 2-Map mode: record and timestamp stored together
-      record = entry.record;
-      timestamp = entry.timestamp;
-    }
-
-    // Check TTL if enabled
-    if (this.cacheTTL !== null && timestamp) {
-      if (Date.now() - timestamp > this.cacheTTL) {
-        // Expired - clean up from ALL Maps
-        this.cache.delete(videoId);
-        this.cacheAccessOrder.delete(videoId);
-        if (this.timestamps) {
-          this.timestamps.delete(videoId);
-        }
-        return undefined; // Expired
-      }
-    }
-
-    // Update access time for LRU tracking ONLY for valid (non-expired) entries
-    // This prevents memory leak by ensuring cacheAccessOrder only tracks active cached items
-    this.cacheAccessOrder.set(videoId, Date.now());
-
-    return record; // Can be null for deleted records or an object
+    return record;
   }
 
   /**
@@ -178,25 +115,15 @@ export class UnifiedCacheManager {
     const now = Date.now();
     const recordTimestamp = this._getRecordTimestamp(record);
 
-    if (this.separateTimestamps) {
-      // 3-Map mode: store record and timestamp separately
-      this.cache.set(videoId, record);
-      this.timestamps.set(videoId, recordTimestamp === -1 ? now : recordTimestamp);
-    } else {
-      // 2-Map mode: store record and timestamp together
-      this.cache.set(videoId, {
-        record,
-        timestamp: now
-      });
-    }
+    this.cache.set(videoId, record);
+    this.timestamps.set(videoId, recordTimestamp === -1 ? now : recordTimestamp);
+    this.accessOrder.set(videoId, now);
 
-    this.cacheAccessOrder.set(videoId, now);
-    this.evictLRUEntries(); // Evict old entries if cache is too large
+    this.evictLRUEntries();
   }
 
   /**
-   * Applies a cache update (for content script use case)
-   * Updates cache unconditionally without timestamp comparison
+   * Applies a cache update unconditionally (for local modifications)
    * @param {string} videoId - Video identifier
    * @param {Object|null} record - Record to cache
    */
@@ -205,22 +132,16 @@ export class UnifiedCacheManager {
 
     if (record) {
       this.set(videoId, record);
-      return;
-    }
-
-    // Record is null/undefined - mark as deleted
-    if (this.separateTimestamps) {
-      this.cache.delete(videoId);
-      this.timestamps.set(videoId, Date.now()); // Keep timestamp to track deletion
-      this.cacheAccessOrder.delete(videoId);
     } else {
+      // Mark as deleted - keep timestamp to track deletion
       this.cache.delete(videoId);
-      this.cacheAccessOrder.delete(videoId);
+      this.timestamps.set(videoId, Date.now());
+      this.accessOrder.delete(videoId);
     }
   }
 
   /**
-   * Merges a fetched record with existing cache (for content script use case)
+   * Merges a fetched record with existing cache
    * Only updates if incoming record is newer than cached record
    * @param {string} videoId - Video identifier
    * @param {Object|null} record - Fetched record
@@ -231,12 +152,12 @@ export class UnifiedCacheManager {
     const incomingTimestamp = this._getRecordTimestamp(record);
 
     // Check if we have an existing timestamp
-    if (this.separateTimestamps && this.timestamps.has(videoId)) {
+    if (this.timestamps.has(videoId)) {
       const currentTimestamp = this.timestamps.get(videoId);
       if (incomingTimestamp <= currentTimestamp) {
         // Update access time even if not updating record
-        this.cacheAccessOrder.set(videoId, Date.now());
-        return; // Don't update, current is newer or same
+        this.accessOrder.set(videoId, Date.now());
+        return;
       }
     }
 
@@ -245,10 +166,8 @@ export class UnifiedCacheManager {
       this.set(videoId, record);
     } else {
       this.cache.delete(videoId);
-      this.cacheAccessOrder.delete(videoId);
-      if (this.timestamps) {
-        this.timestamps.delete(videoId);
-      }
+      this.timestamps.delete(videoId);
+      this.accessOrder.delete(videoId);
     }
   }
 
@@ -260,10 +179,8 @@ export class UnifiedCacheManager {
     if (!videoId) return;
 
     this.cache.delete(videoId);
-    this.cacheAccessOrder.delete(videoId);
-    if (this.timestamps) {
-      this.timestamps.delete(videoId);
-    }
+    this.timestamps.delete(videoId);
+    this.accessOrder.delete(videoId);
   }
 
   /**
@@ -279,44 +196,27 @@ export class UnifiedCacheManager {
    * Clears all cached records
    */
   clear() {
-    // Reset eviction flag to prevent deadlock
     this.isEvicting = false;
-
     this.cache.clear();
-    this.cacheAccessOrder.clear();
-    if (this.timestamps) {
-      this.timestamps.clear();
-    }
+    this.timestamps.clear();
+    this.accessOrder.clear();
     if (this.pendingRequests) {
       this.pendingRequests.clear();
     }
   }
 
   /**
-   * Gets cache statistics for monitoring
+   * Gets cache statistics
    * @returns {Object} - Cache stats
    */
   getStats() {
-    const stats = {
+    return {
       size: this.cache.size,
       maxSize: this.maxSize,
-      mode: this.separateTimestamps ? '3-Map' : '2-Map',
-      accessOrderSize: this.cacheAccessOrder.size
+      timestampsSize: this.timestamps.size,
+      accessOrderSize: this.accessOrder.size,
+      pendingRequestsSize: this.pendingRequests ? this.pendingRequests.size : 0
     };
-
-    if (this.cacheTTL !== null) {
-      stats.ttl = this.cacheTTL;
-    }
-
-    if (this.timestamps) {
-      stats.timestampsSize = this.timestamps.size;
-    }
-
-    if (this.pendingRequests) {
-      stats.pendingRequestsSize = this.pendingRequests.size;
-    }
-
-    return stats;
   }
 
   /**
@@ -325,14 +225,13 @@ export class UnifiedCacheManager {
    */
   getMemoryUsage() {
     let estimatedSize = 0;
-    this.cache.forEach((entry, videoId) => {
+    this.cache.forEach((record, videoId) => {
       // Estimate: videoId (11 chars * 2 bytes)
       estimatedSize += videoId.length * 2;
 
-      const record = this.separateTimestamps ? entry : entry.record;
       if (record) {
         estimatedSize += (record.title?.length || 0) * 2;
-        estimatedSize += 32; // Approximate overhead for state + updatedAt + object structure
+        estimatedSize += 32; // Overhead for state + updatedAt + object structure
       }
     });
     return estimatedSize;
@@ -345,64 +244,44 @@ export class UnifiedCacheManager {
   validateConsistency() {
     const issues = [];
 
-    // Check size consistency for 3-Map mode
-    if (this.separateTimestamps && this.cache.size !== this.timestamps.size) {
+    // Check size consistency
+    if (this.cache.size !== this.timestamps.size) {
       issues.push({
         type: 'size_mismatch',
         message: `cache size (${this.cache.size}) !== timestamps size (${this.timestamps.size})`
       });
     }
 
-    // Check that all keys in cache exist in timestamps (3-Map mode)
-    if (this.separateTimestamps) {
-      for (const videoId of this.cache.keys()) {
-        if (!this.timestamps.has(videoId)) {
-          issues.push({
-            type: 'missing_timestamp',
-            videoId,
-            message: `Video ${videoId} in cache but missing timestamp`
-          });
-        }
+    // Check that all cache keys have timestamps
+    for (const videoId of this.cache.keys()) {
+      if (!this.timestamps.has(videoId)) {
+        issues.push({
+          type: 'missing_timestamp',
+          videoId,
+          message: `Video ${videoId} in cache but missing timestamp`
+        });
       }
     }
 
-    // Check that all keys in cacheAccessOrder exist in cache
-    for (const videoId of this.cacheAccessOrder.keys()) {
-      if (!this.cache.has(videoId)) {
-        // Special case: in 3-Map mode, deleted videos might have timestamp but no cache entry
-        if (!this.separateTimestamps || !this.timestamps.has(videoId)) {
-          issues.push({
-            type: 'orphaned_access_order',
-            videoId,
-            message: `Video ${videoId} in access order but not in cache`
-          });
-        }
+    // Check for orphaned access order entries
+    for (const videoId of this.accessOrder.keys()) {
+      if (!this.cache.has(videoId) && !this.timestamps.has(videoId)) {
+        issues.push({
+          type: 'orphaned_access_order',
+          videoId,
+          message: `Video ${videoId} in access order but not in cache or timestamps`
+        });
       }
-    }
-
-    // Check for orphaned timestamps (3-Map mode)
-    if (this.separateTimestamps) {
-      for (const videoId of this.timestamps.keys()) {
-        if (!this.cache.has(videoId) && this.cacheAccessOrder.has(videoId)) {
-          // This is actually valid for deleted records with timestamps
-          // Only flag if access order exists without cache
-        }
-      }
-    }
-
-    const sizes = {
-      cache: this.cache.size,
-      accessOrder: this.cacheAccessOrder.size
-    };
-
-    if (this.timestamps) {
-      sizes.timestamps = this.timestamps.size;
     }
 
     return {
       isValid: issues.length === 0,
       issues,
-      sizes
+      sizes: {
+        cache: this.cache.size,
+        timestamps: this.timestamps.size,
+        accessOrder: this.accessOrder.size
+      }
     };
   }
 
@@ -413,64 +292,51 @@ export class UnifiedCacheManager {
   repairConsistency() {
     const actions = [];
 
-    // Remove orphaned entries from cacheAccessOrder
-    for (const videoId of this.cacheAccessOrder.keys()) {
-      if (!this.cache.has(videoId)) {
-        // In 3-Map mode, check if it's a deleted record with timestamp
-        if (this.separateTimestamps && this.timestamps.has(videoId)) {
-          // Keep access order for deleted records
-          continue;
-        }
-        this.cacheAccessOrder.delete(videoId);
+    // Remove orphaned access order entries
+    for (const videoId of this.accessOrder.keys()) {
+      if (!this.cache.has(videoId) && !this.timestamps.has(videoId)) {
+        this.accessOrder.delete(videoId);
         actions.push({ action: 'removed_orphaned_access_order', videoId });
       }
     }
 
-    // Remove orphaned entries from timestamps (3-Map mode)
-    if (this.separateTimestamps) {
-      for (const videoId of this.timestamps.keys()) {
-        if (!this.cache.has(videoId) && !this.cacheAccessOrder.has(videoId)) {
-          // Timestamp without cache or access order - orphaned
-          this.timestamps.delete(videoId);
-          actions.push({ action: 'removed_orphaned_timestamp', videoId });
-        }
+    // Remove orphaned timestamps
+    for (const videoId of this.timestamps.keys()) {
+      if (!this.cache.has(videoId) && !this.accessOrder.has(videoId)) {
+        this.timestamps.delete(videoId);
+        actions.push({ action: 'removed_orphaned_timestamp', videoId });
       }
+    }
 
-      // Add missing timestamps for cached videos
-      for (const videoId of this.cache.keys()) {
-        if (!this.timestamps.has(videoId)) {
-          this.timestamps.set(videoId, Date.now());
-          actions.push({ action: 'added_missing_timestamp', videoId });
-        }
+    // Add missing timestamps for cached videos
+    for (const videoId of this.cache.keys()) {
+      if (!this.timestamps.has(videoId)) {
+        this.timestamps.set(videoId, Date.now());
+        actions.push({ action: 'added_missing_timestamp', videoId });
       }
     }
 
     // Add missing access order for cached videos
     for (const videoId of this.cache.keys()) {
-      if (!this.cacheAccessOrder.has(videoId)) {
-        this.cacheAccessOrder.set(videoId, Date.now());
+      if (!this.accessOrder.has(videoId)) {
+        this.accessOrder.set(videoId, Date.now());
         actions.push({ action: 'added_missing_access_order', videoId });
       }
-    }
-
-    const finalSizes = {
-      cache: this.cache.size,
-      accessOrder: this.cacheAccessOrder.size
-    };
-
-    if (this.timestamps) {
-      finalSizes.timestamps = this.timestamps.size;
     }
 
     return {
       actionsCount: actions.length,
       actions,
-      finalSizes
+      finalSizes: {
+        cache: this.cache.size,
+        timestamps: this.timestamps.size,
+        accessOrder: this.accessOrder.size
+      }
     };
   }
 
   // ============================================================================
-  // Pending Requests Management (for content script)
+  // Pending Requests Management
   // ============================================================================
 
   /**
