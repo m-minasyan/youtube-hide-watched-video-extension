@@ -244,12 +244,16 @@ export const IMPORT_EXPORT_CONFIG = {
   FORMAT_VERSION: 1,
   MAX_IMPORT_SIZE_MB: 50,
   MAX_IMPORT_RECORDS: 200000,
-  IMPORT_BATCH_SIZE: 500,
+  IMPORT_BATCH_SIZE: 1000,        // Increased from 500 for better performance
+  EXPORT_CHUNK_SIZE: 1000,        // Records per chunk for export
+  STREAMING_READ_CHUNK_SIZE: 1024 * 1024, // 1MB chunks for file reading
   CONFLICT_STRATEGIES: {
     SKIP: 'skip',           // Skip existing records
     OVERWRITE: 'overwrite', // Overwrite with imported data
     MERGE: 'merge'          // Keep newer timestamp
-  }
+  },
+  // Progress update throttling (ms) to avoid UI updates too frequently
+  PROGRESS_UPDATE_THROTTLE: 100
 };
 
 // Quota Management Configuration
