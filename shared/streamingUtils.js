@@ -3,6 +3,8 @@
  * Prevents UI freeze and memory issues by processing data in chunks
  */
 
+import { IMPORT_EXPORT_CONFIG } from './constants.js';
+
 /**
  * Streaming JSON parser for large files
  * Reads and parses JSON incrementally to avoid loading entire file into memory
@@ -112,6 +114,14 @@ export class StreamingRecordParser {
       // Step 2: Validate structure
       if (!data.records || !Array.isArray(data.records)) {
         throw new Error('Invalid import format: missing records array');
+      }
+
+      // Step 2.1: Validate records array size to prevent OOM
+      if (data.records.length > IMPORT_EXPORT_CONFIG.MAX_IMPORT_RECORDS) {
+        throw new Error(
+          `Too many records: ${data.records.length.toLocaleString()} ` +
+          `(max: ${IMPORT_EXPORT_CONFIG.MAX_IMPORT_RECORDS.toLocaleString()})`
+        );
       }
 
       const records = data.records;
