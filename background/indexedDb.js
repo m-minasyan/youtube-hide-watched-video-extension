@@ -17,44 +17,34 @@ let dbResetInProgress = false;
 let dbResetPromise = null;
 
 // Active operations tracking for graceful shutdown
-// Use atomic operations via Promise chain to prevent race conditions
+// FIXED P1-3: Simplified to synchronous operations for Service Worker safety
+// Synchronous operations ensure cleanup completes before SW termination
 let activeOperations = 0;
-let operationLock = Promise.resolve();
 let shutdownRequested = false;
 let pendingCloseCallback = null;
 
-// FIXED P3-6: Use config value instead of hardcoded constant
+// FIXED P3-1: Use config value instead of hardcoded constant
 // Maximum concurrent operations to prevent resource exhaustion
 const MAX_ACTIVE_OPERATIONS = INDEXEDDB_CONFIG.MAX_ACTIVE_OPERATIONS;
 
 /**
- * Atomically increments the active operations counter
- * @returns {Promise<number>} - New operation count
+ * FIXED P1-3: Synchronously increments the active operations counter
+ * Must be synchronous to prevent Service Worker termination race conditions
+ * @returns {number} - New operation count
  */
 function incrementOperations() {
-  return operationLock = operationLock.then(() => {
-    activeOperations++;
-    return activeOperations;
-  }).catch(() => {
-    // Lock chain should never reject, but handle defensively
-    activeOperations++;
-    return activeOperations;
-  });
+  activeOperations++;
+  return activeOperations;
 }
 
 /**
- * Atomically decrements the active operations counter
- * @returns {Promise<number>} - New operation count
+ * FIXED P1-3: Synchronously decrements the active operations counter
+ * Must be synchronous to ensure cleanup completes before SW termination
+ * @returns {number} - New operation count
  */
 function decrementOperations() {
-  return operationLock = operationLock.then(() => {
-    activeOperations = Math.max(0, activeOperations - 1);
-    return activeOperations;
-  }).catch(() => {
-    // Lock chain should never reject, but handle defensively
-    activeOperations = Math.max(0, activeOperations - 1);
-    return activeOperations;
-  });
+  activeOperations = Math.max(0, activeOperations - 1);
+  return activeOperations;
 }
 
 // Fallback storage processing lock to prevent race conditions
@@ -351,8 +341,8 @@ async function withStore(mode, handler, operationContext = null) {
   }
 
   // Track active operations for graceful shutdown
-  // Use atomic increment to prevent race conditions
-  await incrementOperations();
+  // FIXED P1-3: Synchronous increment for SW safety
+  incrementOperations();
 
   try {
     // Check if shutdown has been requested
@@ -564,8 +554,9 @@ async function withStore(mode, handler, operationContext = null) {
     logError('IndexedDB', error, { operation: 'withStore', mode, fatal: true });
     throw error;
   } finally {
-    // Decrement active operations counter atomically
-    const currentOps = await decrementOperations();
+    // FIXED P1-3: Synchronous decrement prevents SW termination race
+    // Must complete before Chrome can terminate Service Worker
+    const currentOps = decrementOperations();
 
     // If shutdown was requested and no operations are active, close the database
     if (shutdownRequested && currentOps === 0) {

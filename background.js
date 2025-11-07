@@ -14,8 +14,8 @@ import { logError } from './shared/errorHandler.js';
 ensureMessageListenerRegistered();
 
 let hiddenVideosInitializationPromise = null;
+let fullInitializationPromise = null; // FIXED P1-1: Promise-based approach prevents race condition
 let keepAliveStarted = false; // Prevents duplicate keep-alive alarm creation
-let fullInitializationStarted = false; // Prevents duplicate full initialization
 const KEEP_ALIVE_ALARM = 'keep-alive';
 const FALLBACK_PROCESSING_ALARM = 'process-fallback-storage';
 
@@ -31,42 +31,43 @@ async function initializeHiddenVideos() {
 
 /**
  * Performs full initialization including alarms
- * Uses flag to prevent duplicate initialization from onStartup and top-level code
+ * FIXED P1-1: Uses Promise-based approach to prevent race conditions during rapid SW restarts
+ * Returns the same promise if initialization is already in progress
  */
 async function performFullInitialization(trigger = 'unknown') {
-  if (fullInitializationStarted) {
-    return; // Already initialized or in progress
+  // If initialization is already in progress, return the same promise
+  if (fullInitializationPromise) {
+    return fullInitializationPromise;
   }
 
-  fullInitializationStarted = true;
+  // Create new initialization promise
+  fullInitializationPromise = (async () => {
+    try {
+      await initializeHiddenVideos();
+      await Promise.all([
+        startKeepAlive().catch((error) => {
+          console.error('Failed to start keep-alive alarm:', error);
+        }),
+        startFallbackProcessing().catch((error) => {
+          console.error('Failed to start fallback processing alarm:', error);
+        })
+      ]);
+    } catch (error) {
+      logError('Background', error, {
+        operation: 'performFullInitialization',
+        trigger,
+        message: 'Failed to perform full initialization'
+      });
+      // Stop alarms if initialization fails
+      stopKeepAlive();
+      stopFallbackProcessing();
+      // Clear promise to allow retry
+      fullInitializationPromise = null;
+      throw error;
+    }
+  })();
 
-  try {
-    await initializeHiddenVideos();
-    await Promise.all([
-      startKeepAlive().catch((error) => {
-        console.error('Failed to start keep-alive alarm:', error);
-      }),
-      startFallbackProcessing().catch((error) => {
-        console.error('Failed to start fallback processing alarm:', error);
-      })
-    ]);
-
-    // FIXED P1-3: Reset flag after successful initialization
-    // This allows re-initialization after Service Worker restart/suspend
-    // The flag prevents concurrent initialization, not repeated initialization
-    fullInitializationStarted = false;
-  } catch (error) {
-    logError('Background', error, {
-      operation: 'performFullInitialization',
-      trigger,
-      message: 'Failed to perform full initialization'
-    });
-    // Stop alarms if initialization fails
-    stopKeepAlive();
-    stopFallbackProcessing();
-    // Reset flag to allow retry
-    fullInitializationStarted = false;
-  }
+  return fullInitializationPromise;
 }
 
 // Keep service worker alive during active usage using chrome.alarms API

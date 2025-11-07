@@ -37,7 +37,8 @@
  * - Zero-width character hiding: "te​st<script>" (with U+200B)
  */
 
-import { STORAGE_KEYS, HIDDEN_VIDEO_MESSAGES, IMPORT_EXPORT_CONFIG } from './shared/constants.js';
+// FIXED P3-1: Import UI_CONFIG for previously hardcoded constants
+import { STORAGE_KEYS, HIDDEN_VIDEO_MESSAGES, IMPORT_EXPORT_CONFIG, UI_CONFIG } from './shared/constants.js';
 import { isShorts } from './shared/utils.js';
 import { initTheme, toggleTheme } from './shared/theme.js';
 import { sendHiddenVideosMessage } from './shared/messaging.js';
@@ -49,10 +50,8 @@ import {
   formatSpeed,
   calculateETA
 } from './shared/streamingUtils.js';
-
-// Debug flag for development logging
-// Set to false before production release
-const DEBUG = false;
+// FIXED P3-4: Import logger instead of using console.log directly
+import { debug, error as logError, warn } from './shared/logger.js';
 
 /**
  * Debounce function to limit the rate of function calls
@@ -77,7 +76,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const dimmedCount = document.getElementById('dimmed-count');
   const hiddenCount = document.getElementById('hidden-count');
 
-  const videosPerPage = 12;
+  // FIXED P3-1: Use config instead of hardcoded value
+  const videosPerPage = UI_CONFIG.VIDEOS_PER_PAGE;
 
   // AbortController for managing all event listeners
   // This allows us to remove all listeners at once during cleanup
@@ -99,8 +99,9 @@ document.addEventListener('DOMContentLoaded', async () => {
    * Desktop: 1000 items (~500KB) for better search coverage
    * @returns {number} - Maximum items to load for search
    */
+  // FIXED P3-1: Use config instead of hardcoded values
   function getMaxSearchItems() {
-    return isMobileDevice() ? 500 : 1000;
+    return isMobileDevice() ? UI_CONFIG.MAX_SEARCH_ITEMS_MOBILE : UI_CONFIG.MAX_SEARCH_ITEMS_DESKTOP;
   }
 
   const hiddenVideosState = {
@@ -127,7 +128,8 @@ document.addEventListener('DOMContentLoaded', async () => {
    */
   function clearSearchMemory(clearQuery = true) {
     if (hiddenVideosState.allItems.length > 0) {
-      console.log('[Memory] Clearing search memory:', hiddenVideosState.allItems.length, 'items');
+      // FIXED P3-4: Use logger instead of console.log
+      debug('[Memory] Clearing search memory:', hiddenVideosState.allItems.length, 'items');
     }
     hiddenVideosState.allItems = [];
     if (clearQuery) {
@@ -139,17 +141,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   /**
    * Sanitizes search query to prevent XSS attacks
    * Removes potentially dangerous characters and patterns
+   * FIXED P1-4: Added try-catch for Unicode normalization errors
    * @param {string} query - Search query to sanitize
    * @returns {string} - Sanitized query
    */
   function sanitizeSearchQuery(query) {
     if (!query) return '';
 
-    // Convert to string and apply Unicode normalization (NFC)
-    // This prevents Unicode normalization bypass attacks where
-    // fullwidth characters (＜＞) or other Unicode equivalents
-    // could be used to bypass security checks
-    let sanitized = String(query).normalize('NFC');
+    // FIXED P1-4: Wrap Unicode normalization in try-catch to handle malformed input
+    let sanitized;
+    try {
+      // Convert to string and apply Unicode normalization (NFC)
+      // This prevents Unicode normalization bypass attacks where
+      // fullwidth characters (＜＞) or other Unicode equivalents
+      // could be used to bypass security checks
+      sanitized = String(query).normalize('NFC');
+    } catch (error) {
+      console.error('[XSS Protection] Unicode normalization failed:', error);
+      // Safe fallback: return empty string to prevent malformed input processing
+      return '';
+    }
 
     // Remove control characters (U+0000 to U+001F, U+007F to U+009F)
     // These can interfere with text processing and pose security risks
@@ -184,20 +195,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   /**
    * Normalizes a string for case-insensitive search
    * Applies Unicode normalization (NFC) to prevent bypass attacks
+   * FIXED P1-4: Added try-catch for Unicode normalization errors
    * @param {string} str - String to normalize
    * @returns {string} - Normalized string
    */
   function normalizeString(str) {
     if (!str) return '';
 
-    // Apply Unicode NFC normalization first
-    // This ensures consistent representation of characters
-    // For example: é can be represented as single char (U+00E9)
-    // or as e + combining accent (U+0065 + U+0301)
-    // NFC converts to the single composed form
-    const normalized = String(str).normalize('NFC');
-
-    return normalized.toLowerCase().trim();
+    // FIXED P1-4: Wrap Unicode normalization in try-catch
+    try {
+      // Apply Unicode NFC normalization first
+      // This ensures consistent representation of characters
+      // For example: é can be represented as single char (U+00E9)
+      // or as e + combining accent (U+0065 + U+0301)
+      // NFC converts to the single composed form
+      const normalized = String(str).normalize('NFC');
+      return normalized.toLowerCase().trim();
+    } catch (error) {
+      console.error('[Unicode] Normalization failed:', error);
+      // Safe fallback: lowercase without normalization
+      return String(str).toLowerCase().trim();
+    }
   }
 
   /**
@@ -295,7 +313,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       // or filter by state (dimmed/hidden) to narrow results.
       const maxItems = getMaxSearchItems();
       const isMobile = isMobileDevice();
-      console.log(`[Memory] Loading search items (max: ${maxItems}, mobile: ${isMobile})`);
+      // FIXED P3-4: Use logger instead of console.log
+      debug(`[Memory] Loading search items (max: ${maxItems}, mobile: ${isMobile})`);
 
       while (hasMore && allItems.length < maxItems) {
         const result = await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.GET_PAGE, {
@@ -305,7 +324,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         if (result?.items) {
-          allItems = allItems.concat(result.items);
+          // FIXED P2-6: Use push(...) instead of concat for better performance
+          // Avoids creating intermediate array copies on each iteration
+          allItems.push(...result.items);
         }
 
         hasMore = Boolean(result?.hasMore);
@@ -321,12 +342,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Log memory usage for monitoring
       const estimatedMemoryKB = Math.round((allItems.length * 500) / 1024);
-      console.log(`[Memory] Loaded ${allItems.length} items (~${estimatedMemoryKB}KB) for search`);
+      // FIXED P3-4: Use logger instead of console.log/warn
+      debug(`[Memory] Loaded ${allItems.length} items (~${estimatedMemoryKB}KB) for search`);
 
       // Check if we hit the limit and there are more items
       const limitReached = hasMore && allItems.length >= maxItems;
       if (limitReached) {
-        console.warn(`[Memory] Search limit reached (${maxItems} items). Consider using filters to narrow results.`);
+        warn(`[Memory] Search limit reached (${maxItems} items). Consider using filters to narrow results.`);
 
         // Show warning notification to user
         const filterSuggestion = hiddenVideosState.filter === 'all'

@@ -289,6 +289,19 @@ export const IMPORT_EXPORT_CONFIG = {
   PROGRESS_UPDATE_THROTTLE: 100
 };
 
+// FIXED P3-1: UI Configuration (previously hardcoded)
+export const UI_CONFIG = {
+  // Hidden videos manager pagination
+  VIDEOS_PER_PAGE: 12,
+
+  // Search limits by device type
+  MAX_SEARCH_ITEMS_MOBILE: 500,
+  MAX_SEARCH_ITEMS_DESKTOP: 1000,
+
+  // Quota manager cleanup (quotaManager.js specific)
+  AGGRESSIVE_BATCH_SIZE: 50 // Used in aggressive cleanup mode
+};
+
 // Quota Management Configuration
 export const QUOTA_CONFIG = {
   // Estimate record size (bytes) - typical video record with metadata
