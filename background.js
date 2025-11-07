@@ -50,6 +50,11 @@ async function performFullInitialization(trigger = 'unknown') {
         console.error('Failed to start fallback processing alarm:', error);
       })
     ]);
+
+    // FIXED P1-3: Reset flag after successful initialization
+    // This allows re-initialization after Service Worker restart/suspend
+    // The flag prevents concurrent initialization, not repeated initialization
+    fullInitializationStarted = false;
   } catch (error) {
     logError('Background', error, {
       operation: 'performFullInitialization',

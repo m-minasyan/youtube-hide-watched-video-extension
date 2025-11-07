@@ -13,6 +13,9 @@ import { logError } from '../shared/errorHandler.js';
 import { debug, error, warn, info } from '../shared/logger.js';
 import { QUOTA_CONFIG, ERROR_CONFIG } from '../shared/constants.js';
 import { withStorageTimeout } from '../shared/utils.js';
+// FIXED P2-1: Import deleteOldestHiddenVideos and upsertHiddenVideos at top level
+// Previously these were dynamically imported 3 times, causing code duplication
+import { deleteOldestHiddenVideos, upsertHiddenVideos } from './indexedDb.js';
 
 // Fallback storage keys
 const FALLBACK_STORAGE_KEY = 'YTHWV_FALLBACK_STORAGE';
@@ -207,9 +210,6 @@ async function handleFallbackWarning(currentCount) {
         quotaDepth: quotaOperationDepth
       });
 
-      // Import deleteOldestHiddenVideos dynamically to avoid circular dependency
-      const { deleteOldestHiddenVideos } = await import('./indexedDb.js');
-
       // Delete old records from main DB with recursion protection
       if (!isCleaningUp) {
         await deleteOldestHiddenVideosWithProtection(deleteOldestHiddenVideos, aggressiveCleanupCount);
@@ -266,8 +266,6 @@ async function handleFallbackCritical(currentCount) {
         QUOTA_CONFIG.MAX_CLEANUP_COUNT, // Maximum 5000
         currentCount * 3                 // Or 3x more than in fallback
       );
-
-      const { deleteOldestHiddenVideos } = await import('./indexedDb.js');
 
       if (!isCleaningUp) {
         await deleteOldestHiddenVideosWithProtection(deleteOldestHiddenVideos, emergencyCleanup);
@@ -367,8 +365,6 @@ async function processFallbackStorageAggressively() {
   // Process in small batches for better reliability
   const AGGRESSIVE_BATCH_SIZE = 50;
   let processedCount = 0;
-
-  const { upsertHiddenVideos } = await import('./indexedDb.js');
 
   for (let i = 0; i < fallbackRecords.length; i += AGGRESSIVE_BATCH_SIZE) {
     const batch = fallbackRecords.slice(i, Math.min(i + AGGRESSIVE_BATCH_SIZE, fallbackRecords.length));
@@ -766,8 +762,9 @@ async function updateNotificationBackoff(consecutiveCount) {
  * @returns {number} Cooldown in milliseconds
  */
 function calculateNotificationCooldown(consecutiveCount) {
+  // FIXED P3-4: Use modern exponentiation operator instead of Math.pow
   const cooldown = CONFIG.BASE_NOTIFICATION_COOLDOWN_MS *
-    Math.pow(CONFIG.NOTIFICATION_BACKOFF_MULTIPLIER, consecutiveCount);
+    (CONFIG.NOTIFICATION_BACKOFF_MULTIPLIER ** consecutiveCount);
 
   return Math.min(cooldown, CONFIG.MAX_NOTIFICATION_COOLDOWN_MS);
 }
