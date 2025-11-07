@@ -939,7 +939,7 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
       await logQuotaEvent({
         type: 'cleanup_failed',
         cleanupCount,
-        error: cleanupError.message
+        error: error.message
       });
 
       // Show critical notification
