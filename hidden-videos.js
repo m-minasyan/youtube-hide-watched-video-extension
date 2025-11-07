@@ -42,6 +42,13 @@ import { isShorts } from './shared/utils.js';
 import { initTheme, toggleTheme } from './shared/theme.js';
 import { sendHiddenVideosMessage } from './shared/messaging.js';
 import { showNotification, NotificationType } from './shared/notifications.js';
+import {
+  StreamingRecordParser,
+  ChunkedJSONExporter,
+  formatBytes,
+  formatSpeed,
+  calculateETA
+} from './shared/streamingUtils.js';
 
 // Debug flag for development logging
 // Set to false before production release
@@ -864,7 +871,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     isImporting: false
   };
 
-  // File reader helper
+  // File reader helper (legacy - kept for compatibility)
   function readFileAsText(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -874,7 +881,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Export button handler
+  // Streaming file reader with progress (for large files)
+  async function readFileWithProgress(file) {
+    const chunkSize = IMPORT_EXPORT_CONFIG.STREAMING_READ_CHUNK_SIZE;
+    const stream = file.stream();
+    const reader = stream.getReader();
+    const decoder = new TextDecoder('utf-8');
+
+    let buffer = '';
+    let bytesRead = 0;
+    const totalBytes = file.size;
+    let done = false;
+
+    while (!done) {
+      const { value, done: streamDone } = await reader.read();
+      done = streamDone;
+
+      if (value) {
+        bytesRead += value.length;
+        buffer += decoder.decode(value, { stream: !done });
+
+        // Log progress for large files
+        if (DEBUG && totalBytes > 5 * 1024 * 1024) {
+          const progress = Math.round((bytesRead / totalBytes) * 100);
+          console.log(`Reading file: ${progress}% (${formatBytes(bytesRead)}/${formatBytes(totalBytes)})`);
+        }
+
+        // Yield to UI thread periodically to prevent freeze
+        if (bytesRead % (chunkSize * 5) === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      }
+    }
+
+    return buffer;
+  }
+
+  // Export button handler with chunked processing
   exportBtn.addEventListener('click', async () => {
     try {
       // Show loading state
@@ -886,9 +929,47 @@ document.addEventListener('DOMContentLoaded', async () => {
         HIDDEN_VIDEO_MESSAGES.EXPORT_ALL
       );
 
-      // Create JSON blob
-      const jsonString = JSON.stringify(exportData, null, 2);
-      const blob = new Blob([jsonString], { type: 'application/json' });
+      // Show notification for large exports
+      if (exportData.count > 10000) {
+        showNotification(
+          `Preparing export of ${exportData.count.toLocaleString()} videos... Please wait.`,
+          NotificationType.INFO,
+          3000
+        );
+      }
+
+      // Use chunked JSON exporter to avoid creating huge string in memory
+      const exporter = new ChunkedJSONExporter({
+        chunkSize: IMPORT_EXPORT_CONFIG.EXPORT_CHUNK_SIZE,
+        onProgress: (progress) => {
+          if (DEBUG) {
+            console.log(`Export progress: ${progress.stage} ${progress.progress}%`);
+          }
+          // Update button text with progress for large exports
+          if (exportData.count > 10000 && progress.stage === 'exporting') {
+            exportBtn.textContent = `Exporting ${progress.progress}%...`;
+          }
+        }
+      });
+
+      // Create metadata
+      const metadata = {
+        version: exportData.version,
+        exportDate: exportData.exportDate
+      };
+
+      // Function to get records in batches
+      const getRecordsBatch = async (offset, limit) => {
+        const end = Math.min(offset + limit, exportData.records.length);
+        return exportData.records.slice(offset, end);
+      };
+
+      // Export to JSON blob using chunked processing
+      const blob = await exporter.exportToJSON(
+        metadata,
+        getRecordsBatch,
+        exportData.count
+      );
 
       // Create download link
       const url = URL.createObjectURL(blob);
@@ -908,7 +989,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       URL.revokeObjectURL(url);
 
       // Show success notification
-      showNotification(`Successfully exported ${exportData.count} videos`, NotificationType.SUCCESS);
+      showNotification(
+        `Successfully exported ${exportData.count.toLocaleString()} videos (${formatBytes(blob.size)})`,
+        NotificationType.SUCCESS
+      );
 
     } catch (error) {
       if (DEBUG) console.error('Export failed:', error);
@@ -945,10 +1029,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         throw new Error(`File is too large. Maximum size: ${IMPORT_EXPORT_CONFIG.MAX_IMPORT_SIZE_MB}MB`);
       }
 
-      // Read file content
-      const content = await readFileAsText(file);
+      // Show notification for large files
+      if (file.size > 5 * 1024 * 1024) { // > 5MB
+        showNotification(
+          `Processing large file (${formatBytes(file.size)})... Please wait.`,
+          NotificationType.INFO,
+          3000
+        );
+      }
 
-      // Parse JSON
+      // Use streaming file reader to avoid blocking UI during file read
+      const content = await readFileWithProgress(file);
+
+      // Parse JSON (this step still needs to parse entire JSON at once)
       let data;
       try {
         data = JSON.parse(content);
@@ -1112,6 +1205,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   confirmImportBtn.addEventListener('click', async () => {
     const progressDiv = document.getElementById('import-progress');
     const progressText = document.getElementById('import-progress-text');
+    const progressPercentage = document.getElementById('import-progress-percentage');
+    const progressBar = document.getElementById('import-progress-bar');
+    const progressStats = document.getElementById('import-progress-stats');
+    const progressETA = document.getElementById('import-progress-eta');
 
     try {
       // Disable buttons and prevent modal close during import
@@ -1120,21 +1217,99 @@ document.addEventListener('DOMContentLoaded', async () => {
       closeImportModalBtn.disabled = true;
       importState.isImporting = true;
 
-      // Show loading state (no fake progress bar)
+      // Show progress UI
       progressDiv.style.display = 'block';
-      progressText.textContent = 'Importing records...';
+      progressText.textContent = 'Starting import...';
+      progressPercentage.textContent = '0%';
+      progressBar.style.width = '0%';
+      progressStats.textContent = '';
+      progressETA.textContent = '';
 
-      // Execute import
-      const result = await sendHiddenVideosMessage(
-        HIDDEN_VIDEO_MESSAGES.IMPORT_RECORDS,
-        {
-          data: importState.data,
-          conflictStrategy: importState.selectedStrategy
+      // Process records in batches to avoid blocking and show progress
+      const records = importState.data.records || [];
+      const totalRecords = records.length;
+      const batchSize = IMPORT_EXPORT_CONFIG.IMPORT_BATCH_SIZE;
+      const batches = Math.ceil(totalRecords / batchSize);
+
+      const startTime = Date.now();
+      let processedRecords = 0;
+      let lastProgressUpdate = 0;
+
+      // Aggregate results
+      const aggregatedResults = {
+        added: 0,
+        updated: 0,
+        skipped: 0,
+        errors: []
+      };
+
+      // Process each batch
+      for (let i = 0; i < batches; i++) {
+        const start = i * batchSize;
+        const end = Math.min(start + batchSize, totalRecords);
+        const batch = records.slice(start, end);
+
+        // Create batch data structure
+        const batchData = {
+          version: importState.data.version,
+          exportDate: importState.data.exportDate,
+          count: batch.length,
+          records: batch
+        };
+
+        // Import this batch
+        const batchResult = await sendHiddenVideosMessage(
+          HIDDEN_VIDEO_MESSAGES.IMPORT_RECORDS,
+          {
+            data: batchData,
+            conflictStrategy: importState.selectedStrategy
+          }
+        );
+
+        // Aggregate results
+        aggregatedResults.added += batchResult.added || 0;
+        aggregatedResults.updated += batchResult.updated || 0;
+        aggregatedResults.skipped += batchResult.skipped || 0;
+        if (batchResult.errors) {
+          aggregatedResults.errors.push(...batchResult.errors);
         }
-      );
+
+        // Update progress
+        processedRecords = end;
+        const progress = Math.round((processedRecords / totalRecords) * 100);
+        const now = Date.now();
+
+        // Throttle UI updates to avoid overwhelming the UI
+        if (now - lastProgressUpdate >= IMPORT_EXPORT_CONFIG.PROGRESS_UPDATE_THROTTLE || i === batches - 1) {
+          lastProgressUpdate = now;
+
+          // Update progress bar and percentage
+          progressBar.style.width = `${progress}%`;
+          progressPercentage.textContent = `${progress}%`;
+          progressText.textContent = `Importing batch ${i + 1} of ${batches}...`;
+
+          // Calculate and show stats
+          const elapsed = (now - startTime) / 1000; // seconds
+          const recordsPerSecond = processedRecords / elapsed;
+          progressStats.textContent = `${processedRecords.toLocaleString()} / ${totalRecords.toLocaleString()} records (${formatSpeed(recordsPerSecond)})`;
+
+          // Calculate ETA
+          if (processedRecords < totalRecords) {
+            const eta = calculateETA(processedRecords, totalRecords, startTime);
+            progressETA.textContent = `ETA: ${eta}`;
+          }
+        }
+
+        // Yield to UI thread to prevent freeze
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
 
       // Update completion message
+      progressBar.style.width = '100%';
+      progressPercentage.textContent = '100%';
       progressText.textContent = 'Import complete!';
+      progressStats.textContent = `${totalRecords.toLocaleString()} records processed`;
+      progressETA.textContent = '';
 
       // Show results after brief delay
       setTimeout(() => {
@@ -1143,14 +1318,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Show success notification with summary
         const summary = [
           `Import complete!`,
-          `Added: ${result.added}`,
-          `Updated: ${result.updated}`,
-          `Skipped: ${result.skipped}`
+          `Added: ${aggregatedResults.added}`,
+          `Updated: ${aggregatedResults.updated}`,
+          `Skipped: ${aggregatedResults.skipped}`
         ].join(' | ');
 
-        if (result.errors && result.errors.length > 0) {
+        if (aggregatedResults.errors && aggregatedResults.errors.length > 0) {
           // Show warning if there were errors
-          showNotification(summary + ` | Errors: ${result.errors.length}`, NotificationType.WARNING, 6000);
+          showNotification(summary + ` | Errors: ${aggregatedResults.errors.length}`, NotificationType.WARNING, 6000);
         } else {
           showNotification(summary, NotificationType.SUCCESS, 5000);
         }
