@@ -406,7 +406,7 @@ async function logQuotaEvent(event) {
     // Silently fail - don't want logging to cause more errors
     logError('QuotaManager', error, {
       operation: 'logQuotaEvent',
-      eventType: type,
+      eventType: event.type,
       message: 'Failed to log quota event'
     });
   }
