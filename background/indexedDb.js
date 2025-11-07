@@ -478,19 +478,14 @@ async function withStore(mode, handler, operationContext = null) {
 
     // If shutdown was requested and no operations are active, close the database
     if (shutdownRequested && activeOperations === 0) {
-      if (dbPromise) {
+      // Use resolvedDb for synchronous cleanup to prevent race condition
+      // where Chrome terminates Service Worker before async operations complete
+      if (resolvedDb) {
         try {
-          dbPromise.then(db => {
-            db.close();
-            dbPromise = null;
-            resolvedDb = null;
-            clearBackgroundCache();
-          }).catch(() => {
-            // Database may already be closed or in error state
-            dbPromise = null;
-            resolvedDb = null;
-            clearBackgroundCache();
-          });
+          resolvedDb.close();
+          dbPromise = null;
+          resolvedDb = null;
+          clearBackgroundCache();
         } catch (error) {
           // Ignore errors during shutdown cleanup
           dbPromise = null;
