@@ -11,7 +11,8 @@
 
 import { logError } from '../shared/errorHandler.js';
 import { debug, error, warn, info } from '../shared/logger.js';
-import { QUOTA_CONFIG, ERROR_CONFIG } from '../shared/constants.js';
+// FIXED P3-1: Import UI_CONFIG for AGGRESSIVE_BATCH_SIZE
+import { QUOTA_CONFIG, ERROR_CONFIG, UI_CONFIG } from '../shared/constants.js';
 import { withStorageTimeout } from '../shared/utils.js';
 // FIXED P2-1: Import deleteOldestHiddenVideos and upsertHiddenVideos at top level
 // Previously these were dynamically imported 3 times, causing code duplication
@@ -19,6 +20,7 @@ import { deleteOldestHiddenVideos, upsertHiddenVideos } from './indexedDb.js';
 
 // Fallback storage keys
 const FALLBACK_STORAGE_KEY = 'YTHWV_FALLBACK_STORAGE';
+const EMERGENCY_BACKUP_KEY = 'YTHWV_EMERGENCY_BACKUP'; // FIXED P1-2: Third-tier emergency storage
 const QUOTA_EVENTS_KEY = 'YTHWV_QUOTA_EVENTS';
 const LAST_NOTIFICATION_KEY = 'YTHWV_LAST_QUOTA_NOTIFICATION';
 const NOTIFICATION_BACKOFF_KEY = 'YTHWV_NOTIFICATION_BACKOFF';
@@ -48,7 +50,12 @@ const CONFIG = {
   NOTIFICATION_BACKOFF_RESET_MS: 24 * 60 * 60 * 1000,
 
   // Retry delays (exponential backoff in milliseconds)
-  RETRY_DELAYS: [5000, 30000, 120000] // 5s, 30s, 2min
+  RETRY_DELAYS: [5000, 30000, 120000], // 5s, 30s, 2min
+
+  // FIXED P2-4: Global rate limiting to prevent notification spam
+  // Maximum notifications per minute (across ALL types)
+  GLOBAL_NOTIFICATION_LIMIT: 3,
+  GLOBAL_NOTIFICATION_WINDOW_MS: 60 * 1000 // 1 minute
 };
 
 // Multi-tier Fallback Protection Thresholds
@@ -63,10 +70,39 @@ const FALLBACK_THRESHOLDS = {
 let fallbackLock = null;
 let isCleaningUp = false;
 
+// FIXED P2-4: Global notification rate limiter
+// Tracks timestamps of recent notifications across all types
+const globalNotificationTimestamps = [];
+
 // Recursion depth tracking to prevent infinite loops
 // Tracks depth of quota-related operations (cleanup, fallback processing, etc.)
 let quotaOperationDepth = 0;
 const MAX_QUOTA_OPERATION_DEPTH = 3; // Maximum recursion depth for quota operations
+
+/**
+ * FIXED P2-4: Global notification rate limiter
+ * Checks if notification can be shown based on global rate limit
+ * @returns {boolean} - Whether notification can be shown
+ */
+function canShowGlobalNotification() {
+  const now = Date.now();
+
+  // Remove timestamps outside the window
+  while (globalNotificationTimestamps.length > 0 &&
+         now - globalNotificationTimestamps[0] > CONFIG.GLOBAL_NOTIFICATION_WINDOW_MS) {
+    globalNotificationTimestamps.shift();
+  }
+
+  // Check if under limit
+  return globalNotificationTimestamps.length < CONFIG.GLOBAL_NOTIFICATION_LIMIT;
+}
+
+/**
+ * FIXED P2-4: Records a notification timestamp for rate limiting
+ */
+function recordGlobalNotification() {
+  globalNotificationTimestamps.push(Date.now());
+}
 
 /**
  * Tracks quota operation depth to prevent infinite recursion
@@ -363,7 +399,8 @@ async function processFallbackStorageAggressively() {
   }
 
   // Process in small batches for better reliability
-  const AGGRESSIVE_BATCH_SIZE = 50;
+  // FIXED P3-1: Use config instead of hardcoded value
+  const AGGRESSIVE_BATCH_SIZE = UI_CONFIG.AGGRESSIVE_BATCH_SIZE;
   let processedCount = 0;
 
   for (let i = 0; i < fallbackRecords.length; i += AGGRESSIVE_BATCH_SIZE) {
@@ -800,6 +837,18 @@ async function maybeResetNotificationBackoff(lastNotificationTime) {
  */
 async function showQuotaNotification(options = {}) {
   try {
+    // FIXED P2-4: Check global rate limit first
+    if (!canShowGlobalNotification()) {
+      await logQuotaEvent({
+        type: 'notification_suppressed',
+        reason: 'global_rate_limit_exceeded',
+        recentNotifications: globalNotificationTimestamps.length,
+        maxAllowed: CONFIG.GLOBAL_NOTIFICATION_LIMIT,
+        windowMinutes: CONFIG.GLOBAL_NOTIFICATION_WINDOW_MS / 60000
+      });
+      return;
+    }
+
     // Check if notifications are disabled by user
     const disabledResult = await withStorageTimeout(
       chrome.storage.local.get(NOTIFICATION_DISABLED_KEY),
@@ -888,6 +937,9 @@ async function showQuotaNotification(options = {}) {
       priority: 1
     });
 
+    // FIXED P2-4: Record notification for global rate limiting
+    recordGlobalNotification();
+
     await logQuotaEvent({
       type: 'notification_shown',
       title,
@@ -915,6 +967,17 @@ async function showCriticalNotification(options = {}) {
     const message = options.message || 'Critical storage issue detected. Please check extension settings immediately.';
 
     // CRITICAL notifications always show (no cooldown check)
+    // But still respect global rate limit to prevent spam from bugs
+    if (!canShowGlobalNotification()) {
+      await logQuotaEvent({
+        type: 'critical_notification_suppressed',
+        reason: 'global_rate_limit_exceeded',
+        title,
+        message
+      });
+      return;
+    }
+
     await chrome.notifications.create({
       type: 'basic',
       iconUrl: 'icons/icon128.png',
@@ -923,6 +986,9 @@ async function showCriticalNotification(options = {}) {
       priority: 2, // Maximum priority
       requireInteraction: true // Force user to dismiss
     });
+
+    // FIXED P2-4: Record critical notification for global rate limiting
+    recordGlobalNotification();
 
     await logQuotaEvent({
       type: 'critical_notification_shown',
@@ -990,22 +1056,155 @@ async function logInitialQuotaEvent(context, estimatedBytes, cleanupCount) {
 }
 
 /**
+ * FIXED P1-2: Emergency backup to prevent data loss when fallback is full
+ * Saves data to third-tier emergency storage and triggers auto-export
+ * @param {Array|Object} data - Data to save to emergency backup
+ * @returns {Promise<Object>} Emergency backup result
+ */
+async function saveToEmergencyBackup(data) {
+  try {
+    const records = Array.isArray(data) ? data : [data];
+
+    // Get existing emergency backup
+    const result = await withStorageTimeout(
+      chrome.storage.local.get(EMERGENCY_BACKUP_KEY),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.get(EMERGENCY_BACKUP_KEY)'
+    );
+    const emergencyData = result[EMERGENCY_BACKUP_KEY] || [];
+
+    // FIXED: Limit emergency backup size to prevent chrome.storage.local quota issues
+    // Maximum 100 records (~20KB) to stay well under chrome.storage.local limits
+    const MAX_EMERGENCY_RECORDS = 100;
+    const spaceAvailable = MAX_EMERGENCY_RECORDS - emergencyData.length;
+
+    if (spaceAvailable <= 0) {
+      logError('QuotaManager', new Error('Emergency backup full'), {
+        operation: 'saveToEmergencyBackup',
+        emergencyDataLength: emergencyData.length,
+        maxRecords: MAX_EMERGENCY_RECORDS,
+        fatal: true
+      });
+      return {
+        success: false,
+        error: 'Emergency backup full',
+        emergencyFull: true
+      };
+    }
+
+    // Add records with loop to avoid stack overflow on large arrays
+    const recordsToAdd = records.slice(0, spaceAvailable);
+    for (const record of recordsToAdd) {
+      emergencyData.push(record);
+    }
+
+    // Save back to storage
+    await withStorageTimeout(
+      chrome.storage.local.set({ [EMERGENCY_BACKUP_KEY]: emergencyData }),
+      ERROR_CONFIG.STORAGE_TIMEOUT,
+      'chrome.storage.local.set(EMERGENCY_BACKUP_KEY)'
+    );
+
+    // Trigger auto-export via downloads API
+    const exportData = {
+      exportType: 'emergency_backup',
+      exportDate: new Date().toISOString(),
+      recordCount: emergencyData.length,
+      warning: 'CRITICAL: Storage exhausted. This is an automatic emergency backup.',
+      records: emergencyData
+    };
+
+    const jsonBlob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: 'application/json'
+    });
+    const url = URL.createObjectURL(jsonBlob);
+
+    try {
+      await chrome.downloads.download({
+        url: url,
+        filename: `youtube-hidden-videos-EMERGENCY-${Date.now()}.json`,
+        saveAs: true
+      });
+    } catch (downloadError) {
+      logError('QuotaManager', downloadError, {
+        operation: 'emergency_backup_download',
+        recordCount: records.length
+      });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+
+    await logQuotaEvent({
+      type: 'emergency_backup_created',
+      recordCount: records.length,
+      totalEmergencyRecords: emergencyData.length
+    });
+
+    return {
+      success: true,
+      recordsSaved: records.length,
+      totalInEmergency: emergencyData.length
+    };
+  } catch (error) {
+    logError('QuotaManager', error, {
+      operation: 'saveToEmergencyBackup',
+      fatal: true
+    });
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * Handles the case when fallback storage rejected the records
+ * FIXED P1-2: Now saves to emergency backup instead of losing data
  * @param {Object} fallbackResult - Result from fallback storage attempt
  * @param {Array|Object} data - Data that was attempted to be saved
  * @returns {Promise<Object>} Quota result object
  */
 async function handleFallbackRejection(fallbackResult, data) {
+  // Try emergency backup before giving up
+  const emergencyResult = await saveToEmergencyBackup(data);
+
+  if (emergencyResult.success) {
+    await showCriticalNotification({
+      title: '🆘 EMERGENCY BACKUP CREATED',
+      message: `Storage is critically full (${fallbackResult.level}). Your ${Array.isArray(data) ? data.length : 1} video(s) have been saved to an emergency backup file. Please save the file and clear old videos in settings immediately to prevent data loss.`
+    });
+
+    return createQuotaResult({
+      success: true, // Data was saved to emergency backup
+      rejected: false,
+      fallbackSaved: false,
+      emergencyBackup: true,
+      level: fallbackResult.level,
+      recommendation: 'emergency_backup_created'
+    });
+  }
+
+  // Emergency backup also failed - truly critical
+  const isEmergencyFull = emergencyResult.emergencyFull;
+  const errorMessage = isEmergencyFull
+    ? `Cannot save ${Array.isArray(data) ? data.length : 1} videos. All storage tiers exhausted including emergency backup (max 100 records). CRITICAL: Clear old videos in settings NOW to prevent permanent data loss.`
+    : `Cannot save ${Array.isArray(data) ? data.length : 1} videos. All storage tiers failed. Clear old videos NOW or lose tracking data.`;
+
   await showCriticalNotification({
-    title: '🛑 Storage Full - Operation Blocked',
-    message: `Cannot save ${Array.isArray(data) ? data.length : 1} videos. Storage is critically full (${fallbackResult.level}). Clear old videos in settings immediately.`
+    title: '🛑 CRITICAL: DATA LOSS IMMINENT',
+    message: errorMessage
+  });
+
+  // Log to console for bug reports
+  console.error('[CRITICAL] All storage tiers exhausted:', {
+    dataLoss: Array.isArray(data) ? data.length : 1,
+    fallbackResult,
+    emergencyResult,
+    emergencyFull: isEmergencyFull
   });
 
   return createQuotaResult({
     success: false,
     rejected: true,
     level: fallbackResult.level,
-    error: 'Fallback storage full - operation rejected',
+    error: 'All storage tiers exhausted - operation rejected',
     recommendation: 'critical_cleanup_required'
   });
 }
