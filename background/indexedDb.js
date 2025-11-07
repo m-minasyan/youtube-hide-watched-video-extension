@@ -2,6 +2,7 @@ import { retryOperation, logError, classifyError, ErrorType } from '../shared/er
 import { getCachedRecord, setCachedRecord, invalidateCache, clearBackgroundCache } from './indexedDbCache.js';
 import { INDEXEDDB_CONFIG, QUOTA_CONFIG } from '../shared/constants.js';
 import { handleQuotaExceeded, getFromFallbackStorage, removeFromFallbackStorage } from './quotaManager.js';
+import { isValidVideoId } from '../shared/utils.js';
 
 const DB_NAME = 'ythwvHiddenVideos';
 const DB_VERSION = 1;
@@ -588,15 +589,36 @@ export async function initializeDb() {
 export async function upsertHiddenVideos(records) {
   if (!records || records.length === 0) return;
 
+  // Validate all videoIds before processing
+  const validRecords = records.filter(record => {
+    if (!record || !record.videoId) {
+      logError('IndexedDB', new Error('Record missing videoId'), {
+        operation: 'upsertHiddenVideos',
+        record
+      });
+      return false;
+    }
+    if (!isValidVideoId(record.videoId)) {
+      logError('IndexedDB', new Error('Invalid videoId format'), {
+        operation: 'upsertHiddenVideos',
+        videoId: record.videoId
+      });
+      return false;
+    }
+    return true;
+  });
+
+  if (validRecords.length === 0) return;
+
   // Pass operation context for quota management
   const operationContext = {
     operationType: 'upsert_batch',
-    data: records,
-    recordCount: records.length
+    data: validRecords,
+    recordCount: validRecords.length
   };
 
   await withStore('readwrite', (store) => {
-    records.forEach((record) => {
+    validRecords.forEach((record) => {
       store.put(record);
       // Update background cache
       setCachedRecord(record.videoId, record);
@@ -611,6 +633,16 @@ export async function upsertHiddenVideo(record) {
 
 export async function deleteHiddenVideo(videoId) {
   if (!videoId) return;
+
+  // Validate videoId format for security
+  if (!isValidVideoId(videoId)) {
+    logError('IndexedDB', new Error('Invalid videoId format'), {
+      operation: 'deleteHiddenVideo',
+      videoId
+    });
+    return;
+  }
+
   await withStore('readwrite', (store) => {
     store.delete(videoId);
   });
@@ -628,12 +660,26 @@ export async function deleteHiddenVideos(videoIds) {
   const unique = Array.from(new Set(videoIds.filter(Boolean)));
   if (unique.length === 0) return;
 
+  // Validate all videoIds for security
+  const validIds = unique.filter(videoId => {
+    if (!isValidVideoId(videoId)) {
+      logError('IndexedDB', new Error('Invalid videoId format'), {
+        operation: 'deleteHiddenVideos',
+        videoId
+      });
+      return false;
+    }
+    return true;
+  });
+
+  if (validIds.length === 0) return;
+
   await withStore('readwrite', (store) => {
-    unique.forEach(videoId => store.delete(videoId));
+    validIds.forEach(videoId => store.delete(videoId));
   });
 
   // Invalidate background cache for all deleted videos
-  unique.forEach(videoId => invalidateCache(videoId));
+  validIds.forEach(videoId => invalidateCache(videoId));
 }
 
 // Use cursor for large batches (configurable threshold)
