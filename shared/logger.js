@@ -33,6 +33,17 @@ export function debug(...args) {
 }
 
 /**
+ * Legacy function for backward compatibility
+ * @param {...any} msgs - Messages to log
+ * @deprecated Use debug() instead
+ */
+export function logDebug(...msgs) {
+  if (DEBUG) {
+    console.log('[YT-HWV]', ...msgs);
+  }
+}
+
+/**
  * Log error information (ALWAYS logged, even in production)
  * Critical errors must be logged to debug production issues
  * @param {...any} args - Arguments to log
@@ -82,6 +93,7 @@ export function createLogger(namespace) {
 
 export default {
   debug,
+  logDebug,
   error,
   warn,
   info,

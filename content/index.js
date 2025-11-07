@@ -5,7 +5,7 @@ import { setupMutationObserver } from './observers/mutationObserver.js';
 import { setupUrlObserver } from './observers/urlObserver.js';
 import { setupXhrObserver } from './observers/xhrObserver.js';
 import { setupIntersectionObserver, disconnectIntersectionObserver } from './observers/intersectionObserver.js';
-import { logDebug, warn } from './utils/logger.js';
+import { logDebug, warn } from '../shared/logger.js';
 import { sendHiddenVideosMessage } from '../shared/messaging.js';
 import { HIDDEN_VIDEO_MESSAGES } from '../shared/constants.js';
 import { logError } from '../shared/errorHandler.js';

@@ -1,5 +1,5 @@
 import { SELECTORS } from '../utils/constants.js';
-import { logDebug } from '../utils/logger.js';
+import { logDebug } from '../../shared/logger.js';
 import { cachedDocumentQuery, cachedClosest, cachedQuerySelector } from '../utils/domCache.js';
 
 export function findShortsContainers() {

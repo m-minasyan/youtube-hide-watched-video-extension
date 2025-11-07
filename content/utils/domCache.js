@@ -1,6 +1,6 @@
 import { trackSelectorQuery } from './domSelectorHealth.js';
 import { DEBUG } from '../utils/constants.js';
-import { debug, warn } from './logger.js';
+import { debug, warn } from '../../shared/logger.js';
 
 // WeakMap caches for different query types
 const elementParentCache = new WeakMap();
