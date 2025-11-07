@@ -1073,8 +1073,30 @@ async function saveToEmergencyBackup(data) {
     );
     const emergencyData = result[EMERGENCY_BACKUP_KEY] || [];
 
-    // Add new records
-    emergencyData.push(...records);
+    // FIXED: Limit emergency backup size to prevent chrome.storage.local quota issues
+    // Maximum 100 records (~20KB) to stay well under chrome.storage.local limits
+    const MAX_EMERGENCY_RECORDS = 100;
+    const spaceAvailable = MAX_EMERGENCY_RECORDS - emergencyData.length;
+
+    if (spaceAvailable <= 0) {
+      logError('QuotaManager', new Error('Emergency backup full'), {
+        operation: 'saveToEmergencyBackup',
+        emergencyDataLength: emergencyData.length,
+        maxRecords: MAX_EMERGENCY_RECORDS,
+        fatal: true
+      });
+      return {
+        success: false,
+        error: 'Emergency backup full',
+        emergencyFull: true
+      };
+    }
+
+    // Add records with loop to avoid stack overflow on large arrays
+    const recordsToAdd = records.slice(0, spaceAvailable);
+    for (const record of recordsToAdd) {
+      emergencyData.push(record);
+    }
 
     // Save back to storage
     await withStorageTimeout(
@@ -1160,16 +1182,22 @@ async function handleFallbackRejection(fallbackResult, data) {
   }
 
   // Emergency backup also failed - truly critical
+  const isEmergencyFull = emergencyResult.emergencyFull;
+  const errorMessage = isEmergencyFull
+    ? `Cannot save ${Array.isArray(data) ? data.length : 1} videos. All storage tiers exhausted including emergency backup (max 100 records). CRITICAL: Clear old videos in settings NOW to prevent permanent data loss.`
+    : `Cannot save ${Array.isArray(data) ? data.length : 1} videos. All storage tiers failed. Clear old videos NOW or lose tracking data.`;
+
   await showCriticalNotification({
     title: '🛑 CRITICAL: DATA LOSS IMMINENT',
-    message: `Cannot save ${Array.isArray(data) ? data.length : 1} videos. All storage tiers exhausted. Clear old videos NOW or lose tracking data.`
+    message: errorMessage
   });
 
   // Log to console for bug reports
-  console.error('[CRITICAL] Data loss prevented by emergency backup failed:', {
-    data,
+  console.error('[CRITICAL] All storage tiers exhausted:', {
+    dataLoss: Array.isArray(data) ? data.length : 1,
     fallbackResult,
-    emergencyResult
+    emergencyResult,
+    emergencyFull: isEmergencyFull
   });
 
   return createQuotaResult({

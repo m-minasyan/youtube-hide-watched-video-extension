@@ -52,6 +52,9 @@ async function performFullInitialization(trigger = 'unknown') {
           console.error('Failed to start fallback processing alarm:', error);
         })
       ]);
+      // FIXED: Clear promise after successful initialization to allow re-initialization
+      // This is important for Service Worker suspend/resume cycles
+      fullInitializationPromise = null;
     } catch (error) {
       logError('Background', error, {
         operation: 'performFullInitialization',
