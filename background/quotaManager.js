@@ -284,6 +284,9 @@ async function handleFallbackEmergency(currentCount) {
         operation: 'emergency_download',
         fatal: false
       });
+    } finally {
+      // Always revoke the object URL to prevent memory leaks
+      URL.revokeObjectURL(url);
     }
 
     // Show notification
