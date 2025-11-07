@@ -32,10 +32,15 @@ async function initializeHiddenVideos() {
 // be suspended between pings (~30s inactivity threshold). This is acceptable
 // because the service worker is designed to be ephemeral - all state is persisted
 // in IndexedDB and the worker restarts quickly when needed.
-function startKeepAlive() {
-  if (keepAliveStarted) {
-    return; // Already started, prevent duplicate alarms
+async function startKeepAlive() {
+  // Check if alarm already exists to prevent duplicates after Service Worker restart
+  // The in-memory keepAliveStarted flag is not reliable as it resets on SW restart
+  const existingAlarm = await chrome.alarms.get(KEEP_ALIVE_ALARM);
+  if (existingAlarm) {
+    keepAliveStarted = true; // Sync in-memory flag with actual alarm state
+    return; // Already exists, prevent duplicate
   }
+
   keepAliveStarted = true;
   chrome.alarms.create(KEEP_ALIVE_ALARM, {
     periodInMinutes: SERVICE_WORKER_CONFIG.KEEP_ALIVE_INTERVAL / 60000 // 1 minute (Chrome API minimum)
@@ -49,7 +54,13 @@ function stopKeepAlive() {
 
 // Fallback storage processing
 // Periodically processes fallback storage to retry failed quota operations
-function startFallbackProcessing() {
+async function startFallbackProcessing() {
+  // Check if alarm already exists to prevent duplicates after Service Worker restart
+  const existingAlarm = await chrome.alarms.get(FALLBACK_PROCESSING_ALARM);
+  if (existingAlarm) {
+    return; // Already exists, prevent duplicate
+  }
+
   // Check every 5 minutes if there's data in fallback storage
   chrome.alarms.create(FALLBACK_PROCESSING_ALARM, {
     periodInMinutes: 5
@@ -115,9 +126,15 @@ chrome.runtime.onInstalled.addListener((details) => {
 
 chrome.runtime.onStartup.addListener(() => {
   initializeHiddenVideos()
-    .then(() => {
-      startKeepAlive();
-      startFallbackProcessing();
+    .then(async () => {
+      await Promise.all([
+        startKeepAlive().catch((error) => {
+          console.error('Failed to start keep-alive alarm:', error);
+        }),
+        startFallbackProcessing().catch((error) => {
+          console.error('Failed to start fallback processing alarm:', error);
+        })
+      ]);
     })
     .catch((error) => {
       console.error('Failed to initialize hidden videos service on startup', error);
@@ -135,9 +152,15 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // Start keep-alive and fallback processing when extension loads
 initializeHiddenVideos()
-  .then(() => {
-    startKeepAlive();
-    startFallbackProcessing();
+  .then(async () => {
+    await Promise.all([
+      startKeepAlive().catch((error) => {
+        console.error('Failed to start keep-alive alarm:', error);
+      }),
+      startFallbackProcessing().catch((error) => {
+        console.error('Failed to start fallback processing alarm:', error);
+      })
+    ]);
   })
   .catch((error) => {
     console.error('Failed to initialize hidden videos service', error);

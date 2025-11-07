@@ -60,6 +60,13 @@ global.chrome = {
   alarms: {
     create: jest.fn(),
     clear: jest.fn(),
+    get: jest.fn((name, callback) => {
+      const result = undefined; // No existing alarm by default
+      if (typeof callback === 'function') {
+        callback(result);
+      }
+      return Promise.resolve(result);
+    }),
     onAlarm: {
       addListener: jest.fn()
     }
