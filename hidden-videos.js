@@ -64,7 +64,6 @@ function debounce(func, delay) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   const themeToggle = document.getElementById('theme-toggle');
-  const filterButtons = document.querySelectorAll('.filter-btn');
   const clearAllBtn = document.getElementById('clear-all');
   const videosContainer = document.getElementById('videos-container');
   const totalCount = document.getElementById('total-count');
@@ -790,24 +789,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  filterButtons.forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      filterButtons.forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      hiddenVideosState.filter = btn.dataset.filter;
-      hiddenVideosState.currentPage = 1;
-      hiddenVideosState.pageCursors = [null];
+  // PERFORMANCE OPTIMIZATION: Use event delegation instead of multiple event listeners
+  // Cache references to avoid repeated querySelectorAll and reduce O(n²) to O(1)
+  const filterButtonsContainer = document.querySelector('.filter-section .button-group');
+  let activeFilterButton = filterButtonsContainer.querySelector('.filter-btn.active');
 
-      // Clear search when changing filter (switches to server-side pagination)
-      if (hiddenVideosState.searchQuery) {
-        clearSearchMemory(); // Clear search memory to prevent memory leaks
-        searchInput.value = '';
-        clearSearchBtn.style.display = 'none';
-      }
+  // Single event listener on parent container (event delegation)
+  filterButtonsContainer.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.filter-btn');
+    if (!btn) return;
 
-      await refreshStats();
-      await loadHiddenVideos();
-    });
+    // Skip if already active
+    if (btn === activeFilterButton) return;
+
+    // Remove active from cached button (O(1) instead of O(n))
+    if (activeFilterButton) {
+      activeFilterButton.classList.remove('active');
+    }
+
+    // Set new active button
+    btn.classList.add('active');
+    activeFilterButton = btn;
+
+    hiddenVideosState.filter = btn.dataset.filter;
+    hiddenVideosState.currentPage = 1;
+    hiddenVideosState.pageCursors = [null];
+
+    // Clear search when changing filter (switches to server-side pagination)
+    if (hiddenVideosState.searchQuery) {
+      clearSearchMemory(); // Clear search memory to prevent memory leaks
+      searchInput.value = '';
+      clearSearchBtn.style.display = 'none';
+    }
+
+    await refreshStats();
+    await loadHiddenVideos();
   });
 
   document.getElementById('prev-page').addEventListener('click', async () => {
@@ -1098,14 +1114,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     trapFocus(importModal);
   }
 
-  // Conflict strategy selection
-  const strategyButtons = document.querySelectorAll('.conflict-strategy-btn');
-  strategyButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      strategyButtons.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      importState.selectedStrategy = btn.dataset.strategy;
-    });
+  // PERFORMANCE OPTIMIZATION: Use event delegation for conflict strategy buttons
+  // Cache references to avoid repeated querySelectorAll and reduce O(n²) to O(1)
+  const strategyButtonsContainer = document.querySelector('.import-options .button-group');
+  let activeStrategyButton = strategyButtonsContainer.querySelector('.conflict-strategy-btn.active');
+
+  // Single event listener on parent container (event delegation)
+  strategyButtonsContainer.addEventListener('click', (e) => {
+    const btn = e.target.closest('.conflict-strategy-btn');
+    if (!btn) return;
+
+    // Skip if already active
+    if (btn === activeStrategyButton) return;
+
+    // Remove active from cached button (O(1) instead of O(n))
+    if (activeStrategyButton) {
+      activeStrategyButton.classList.remove('active');
+    }
+
+    // Set new active button
+    btn.classList.add('active');
+    activeStrategyButton = btn;
+    importState.selectedStrategy = btn.dataset.strategy;
   });
 
   // Confirm import button
@@ -1198,10 +1228,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Reset modal UI
     document.getElementById('import-progress').style.display = 'none';
 
-    // Reset strategy buttons
-    document.querySelectorAll('.conflict-strategy-btn').forEach((btn, index) => {
-      btn.classList.toggle('active', index === 0);
-    });
+    // Reset strategy buttons - use cached reference instead of querySelectorAll
+    if (activeStrategyButton) {
+      activeStrategyButton.classList.remove('active');
+    }
+    activeStrategyButton = strategyButtonsContainer.querySelector('.conflict-strategy-btn');
+    if (activeStrategyButton) {
+      activeStrategyButton.classList.add('active');
+    }
   }
 
   closeImportModalBtn.addEventListener('click', closeImportModal);
