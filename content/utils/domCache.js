@@ -46,9 +46,9 @@ export function cachedClosest(element, selector) {
     selectorCache.set(selector, result);
 
     return result;
-  } catch (err) {
+  } catch (error) {
     // Invalid selector or element - fall back to uncached query
-    warn('[YT-HWV Cache] Error in cachedClosest:', err);
+    warn('[YT-HWV Cache] Error in cachedClosest:', error);
     try {
       return element.closest(selector);
     } catch (fallbackError) {
@@ -83,9 +83,9 @@ export function cachedQuerySelector(element, selector) {
     selectorCache.set(selector, result);
 
     return result;
-  } catch (err) {
+  } catch (error) {
     // Invalid selector or element - fall back to uncached query
-    warn('[YT-HWV Cache] Error in cachedQuerySelector:', err);
+    warn('[YT-HWV Cache] Error in cachedQuerySelector:', error);
     try {
       return element.querySelector(selector);
     } catch (fallbackError) {
@@ -121,9 +121,9 @@ export function cachedQuerySelectorAll(element, selector) {
     selectorCache.set(selector, result);
 
     return result;
-  } catch (err) {
+  } catch (error) {
     // Invalid selector or element - fall back to uncached query
-    warn('[YT-HWV Cache] Error in cachedQuerySelectorAll:', err);
+    warn('[YT-HWV Cache] Error in cachedQuerySelectorAll:', error);
     try {
       return Array.from(element.querySelectorAll(selector));
     } catch (fallbackError) {
@@ -165,9 +165,9 @@ export function cachedDocumentQuery(selector, ttl = 1000) {
     });
 
     return results;
-  } catch (err) {
+  } catch (error) {
     // Invalid selector - fall back to uncached query
-    warn('[YT-HWV Cache] Error in cachedDocumentQuery:', err);
+    warn('[YT-HWV Cache] Error in cachedDocumentQuery:', error);
     try {
       return Array.from(document.querySelectorAll(selector));
     } catch (fallbackError) {
@@ -354,8 +354,8 @@ export function cachedDocumentQueryWithFallback(selectorKey, selectors, ttl = 10
 
         return results;
       }
-    } catch (err) {
-      warn(`[YT-HWV] Selector failed: ${selector}`, err);
+    } catch (error) {
+      warn(`[YT-HWV] Selector failed: ${selector}`, error);
     }
   }
 
@@ -386,8 +386,8 @@ export function cachedQuerySelectorWithFallback(element, selectorKey, selectors)
         }
         return result;
       }
-    } catch (err) {
-      warn(`[YT-HWV] Selector failed: ${selector}`, err);
+    } catch (error) {
+      warn(`[YT-HWV] Selector failed: ${selector}`, error);
     }
   }
 

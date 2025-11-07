@@ -26,8 +26,8 @@ export function findShortsContainers() {
           }
         }
       });
-    } catch(e) {
-      logDebug(`Selector failed: ${selector}`, e);
+    } catch (error) {
+      logDebug(`Selector failed: ${selector}`, error);
     }
   });
 
