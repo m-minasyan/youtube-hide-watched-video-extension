@@ -145,7 +145,7 @@ export const SELECTOR_STRINGS = {
 // For webpack builds: __DEV__ is defined by DefinePlugin
 // For direct browser loads (popup.js): check if process exists before accessing
 export const DEBUG = typeof __DEV__ !== 'undefined' ? __DEV__ :
-  (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production');
+  (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production') || false;
 
 // DOM Cache Configuration
 export const CACHE_CONFIG = {
