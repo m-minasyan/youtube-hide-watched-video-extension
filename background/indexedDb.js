@@ -20,6 +20,9 @@ let activeOperations = 0;
 let shutdownRequested = false;
 let pendingCloseCallback = null;
 
+// Maximum concurrent operations to prevent resource exhaustion
+const MAX_ACTIVE_OPERATIONS = 1000;
+
 // Fallback storage processing lock to prevent race conditions
 let fallbackProcessingInProgress = false;
 let fallbackProcessingPromise = null;
@@ -290,8 +293,21 @@ export function closeDbSync() {
 }
 
 async function withStore(mode, handler, operationContext = null) {
+  // Check for maximum concurrent operations to prevent resource exhaustion
+  if (activeOperations >= MAX_ACTIVE_OPERATIONS) {
+    const error = new Error('Too many concurrent operations');
+    logError('IndexedDB', error, {
+      operation: 'withStore',
+      mode,
+      activeOperations,
+      maxActiveOperations: MAX_ACTIVE_OPERATIONS
+    });
+    throw error;
+  }
+
   // Track active operations for graceful shutdown
-  activeOperations++;
+  // Use Math.max to protect against negative values (defensive programming)
+  activeOperations = Math.max(0, activeOperations + 1);
 
   try {
     // Check if shutdown has been requested
@@ -499,7 +515,8 @@ async function withStore(mode, handler, operationContext = null) {
     throw error;
   } finally {
     // Decrement active operations counter
-    activeOperations--;
+    // Use Math.max to protect against negative values (defensive programming)
+    activeOperations = Math.max(0, activeOperations - 1);
 
     // If shutdown was requested and no operations are active, close the database
     if (shutdownRequested && activeOperations === 0) {
