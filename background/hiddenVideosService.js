@@ -59,14 +59,14 @@ function buildRecord(videoId, state, title, updatedAt) {
 async function broadcastHiddenVideosEvent(event) {
   try {
     ensurePromise(chrome.runtime.sendMessage({ type: 'HIDDEN_VIDEOS_EVENT', event })).catch(() => {});
-  } catch (err) {
-    error('Failed to broadcast runtime event', err);
+  } catch (error) {
+    error('Failed to broadcast runtime event', error);
   }
   try {
     const tabs = await queryYoutubeTabs();
     await Promise.all(tabs.map((tab) => ensurePromise(chrome.tabs.sendMessage(tab.id, { type: 'HIDDEN_VIDEOS_EVENT', event })).catch(() => {})));
-  } catch (err) {
-    error('Failed to broadcast tab event', err);
+  } catch (error) {
+    error('Failed to broadcast tab event', error);
   }
 }
 function extractLegacyEntries(source) {
@@ -237,8 +237,8 @@ async function handleHealthCheck() {
   let cacheStats;
   try {
     cacheStats = getCacheStats();
-  } catch (err) {
-    error('Failed to get cache stats', err);
+  } catch (error) {
+    error('Failed to get cache stats', error);
     cacheStats = { error: 'Failed to retrieve cache stats' };
   }
 
@@ -647,12 +647,12 @@ async function handleImportRecords(message) {
         await delay(0);
       }
 
-    } catch (err) {
+    } catch (error) {
       results.errors.push(
-        `Failed to process batch starting at record ${i}: ${err.message}`
+        `Failed to process batch starting at record ${i}: ${error.message}`
       );
       // Don't break - try to continue with next batch unless it's a quota error
-      if (err.message.includes('exceed maximum record limit')) {
+      if (error.message.includes('exceed maximum record limit')) {
         break;
       }
     }
@@ -721,9 +721,9 @@ function registerMessageListener() {
         const successResponse = { ok: true, result };
         if (sendResponse) sendResponse(successResponse);
         return successResponse;
-      } catch (err) {
-        error('[HiddenVideos] Message handler error:', err);
-        const errorResponse = { ok: false, error: err.message };
+      } catch (error) {
+        error('[HiddenVideos] Message handler error:', error);
+        const errorResponse = { ok: false, error: error.message };
         if (sendResponse) sendResponse(errorResponse);
         return errorResponse;
       }
@@ -782,11 +782,11 @@ async function ensureMigration() {
     migrationPromise = (async () => {
       try {
         await migrateLegacyHiddenVideos();
-      } catch (err) {
-        error('Hidden videos migration failed', err);
+      } catch (error) {
+        error('Hidden videos migration failed', error);
         // Reset the promise on failure to allow retry
         migrationPromise = null;
-        throw err;
+        throw error;
       }
     })();
   }

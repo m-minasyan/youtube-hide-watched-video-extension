@@ -952,7 +952,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       let data;
       try {
         data = JSON.parse(content);
-      } catch (parseError) {
+      } catch (error) {
         throw new Error('Invalid JSON format. Please ensure the file is a valid export.');
       }
 

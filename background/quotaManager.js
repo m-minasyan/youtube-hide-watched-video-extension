@@ -277,9 +277,9 @@ async function handleFallbackEmergency(currentCount) {
         filename: `youtube-hidden-videos-emergency-${Date.now()}.json`,
         saveAs: true // Ask user to choose location
       });
-    } catch (downloadError) {
+    } catch (error) {
       // If downloads API fails, log but continue
-      logError('QuotaManager', downloadError, {
+      logError('QuotaManager', error, {
         operation: 'emergency_download',
         fatal: false
       });
@@ -393,9 +393,9 @@ async function logQuotaEvent(event) {
     }
 
     await chrome.storage.local.set({ [QUOTA_EVENTS_KEY]: events });
-  } catch (err) {
+  } catch (error) {
     // Silently fail - don't want logging to cause more errors
-    error('Failed to log quota event:', err);
+    console.error('Failed to log quota event:', error);
   }
 }
 
@@ -929,8 +929,8 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
         pressureLevel: fallbackResult.pressureLevel,
         recommendation: 'retry_operation'
       };
-    } catch (cleanupError) {
-      logError('QuotaManager', cleanupError, {
+    } catch (error) {
+      logError('QuotaManager', error, {
         operation: 'cleanup',
         cleanupCount,
         fatal: true
