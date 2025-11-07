@@ -75,14 +75,15 @@ export class StreamingJSONParser {
       // We still need to parse all at once, but at least reading was chunked
       const data = JSON.parse(buffer);
 
-      // SECURITY: Validate record count immediately after parsing to prevent DoS
-      // This is a second line of defense after file size validation
-      // Prevents loading millions of records into memory
-      if (data.count && data.count > IMPORT_EXPORT_CONFIG.MAX_IMPORT_RECORDS) {
+      // SECURITY: Early validation of metadata count as defense-in-depth
+      // Note: This validates metadata consistency, not actual memory safety
+      // The real protection is file size limit (line 29) and records.length check (line 134 in StreamingRecordParser)
+      // This check prevents processing files with obviously incorrect metadata
+      if (data.count && typeof data.count === 'number' && data.count > IMPORT_EXPORT_CONFIG.MAX_IMPORT_RECORDS) {
         throw new Error(
-          `Record count in metadata (${data.count.toLocaleString()}) exceeds maximum allowed ` +
-          `(${IMPORT_EXPORT_CONFIG.MAX_IMPORT_RECORDS.toLocaleString()}). ` +
-          `This file is too large to import safely.`
+          `File metadata indicates ${data.count.toLocaleString()} records, ` +
+          `exceeding maximum of ${IMPORT_EXPORT_CONFIG.MAX_IMPORT_RECORDS.toLocaleString()}. ` +
+          `This file appears to be too large to import safely.`
         );
       }
 
@@ -97,11 +98,10 @@ export class StreamingJSONParser {
     } catch (error) {
       this.onError(error);
       // Preserve original error stack trace
-      // Note: error.cause requires Chrome 93+/Firefox 91+, but provides better debugging
+      // Note: error.cause is supported in Chrome 93+/Firefox 91+
+      // In older browsers, this property is simply ignored (no error thrown)
       const wrappedError = new Error(`Failed to parse JSON: ${error.message}`);
-      if ('cause' in Error.prototype || error.stack) {
-        wrappedError.cause = error;
-      }
+      wrappedError.cause = error; // Safe to set unconditionally
       throw wrappedError;
     }
   }
