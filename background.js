@@ -15,6 +15,7 @@ ensureMessageListenerRegistered();
 
 let hiddenVideosInitializationPromise = null;
 let keepAliveStarted = false; // Prevents duplicate keep-alive alarm creation
+let fullInitializationStarted = false; // Prevents duplicate full initialization
 const KEEP_ALIVE_ALARM = 'keep-alive';
 const FALLBACK_PROCESSING_ALARM = 'process-fallback-storage';
 
@@ -26,6 +27,41 @@ async function initializeHiddenVideos() {
     });
   }
   await hiddenVideosInitializationPromise;
+}
+
+/**
+ * Performs full initialization including alarms
+ * Uses flag to prevent duplicate initialization from onStartup and top-level code
+ */
+async function performFullInitialization(trigger = 'unknown') {
+  if (fullInitializationStarted) {
+    return; // Already initialized or in progress
+  }
+
+  fullInitializationStarted = true;
+
+  try {
+    await initializeHiddenVideos();
+    await Promise.all([
+      startKeepAlive().catch((error) => {
+        console.error('Failed to start keep-alive alarm:', error);
+      }),
+      startFallbackProcessing().catch((error) => {
+        console.error('Failed to start fallback processing alarm:', error);
+      })
+    ]);
+  } catch (error) {
+    logError('Background', error, {
+      operation: 'performFullInitialization',
+      trigger,
+      message: 'Failed to perform full initialization'
+    });
+    // Stop alarms if initialization fails
+    stopKeepAlive();
+    stopFallbackProcessing();
+    // Reset flag to allow retry
+    fullInitializationStarted = false;
+  }
 }
 
 // Keep service worker alive during active usage using chrome.alarms API
@@ -137,27 +173,7 @@ chrome.runtime.onInstalled.addListener((details) => {
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  initializeHiddenVideos()
-    .then(async () => {
-      await Promise.all([
-        startKeepAlive().catch((error) => {
-          console.error('Failed to start keep-alive alarm:', error);
-        }),
-        startFallbackProcessing().catch((error) => {
-          console.error('Failed to start fallback processing alarm:', error);
-        })
-      ]);
-    })
-    .catch((error) => {
-      logError('Background', error, {
-        operation: 'initializeHiddenVideos',
-        trigger: 'onStartup',
-        message: 'Failed to initialize hidden videos service on startup'
-      });
-      // Stop alarms if initialization fails
-      stopKeepAlive();
-      stopFallbackProcessing();
-    });
+  performFullInitialization('onStartup');
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -167,27 +183,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 // Start keep-alive and fallback processing when extension loads
-initializeHiddenVideos()
-  .then(async () => {
-    await Promise.all([
-      startKeepAlive().catch((error) => {
-        console.error('Failed to start keep-alive alarm:', error);
-      }),
-      startFallbackProcessing().catch((error) => {
-        console.error('Failed to start fallback processing alarm:', error);
-      })
-    ]);
-  })
-  .catch((error) => {
-    logError('Background', error, {
-      operation: 'initializeHiddenVideos',
-      trigger: 'extensionLoad',
-      message: 'Failed to initialize hidden videos service'
-    });
-    // Stop alarms if they were running from previous session
-    stopKeepAlive();
-    stopFallbackProcessing();
-  });
+// This handles initial load and service worker restarts
+performFullInitialization('extensionLoad');
 
 // Clean up on suspend
 // CRITICAL: onSuspend must use SYNCHRONOUS operations only

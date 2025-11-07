@@ -85,7 +85,10 @@ export class StreamingJSONParser {
 
     } catch (error) {
       this.onError(error);
-      throw new Error(`Failed to parse JSON: ${error.message}`);
+      // Preserve original error stack trace using .cause
+      const wrappedError = new Error(`Failed to parse JSON: ${error.message}`);
+      wrappedError.cause = error;
+      throw wrappedError;
     }
   }
 }

@@ -34,6 +34,26 @@ export function withStorageTimeout(promise, timeoutMs, operationName = 'Storage 
 }
 
 /**
+ * Validates that videoId contains only safe characters
+ * YouTube video IDs should only contain alphanumeric characters, hyphens, and underscores
+ * This prevents potential CSS injection or other security issues
+ * @param {string} videoId - Video ID to validate
+ * @returns {boolean} - True if videoId is valid, false otherwise
+ */
+export function isValidVideoId(videoId) {
+  if (!videoId || typeof videoId !== 'string') return false;
+
+  // YouTube video IDs are typically 11 characters (standard) or < 15 (Shorts)
+  // Allow up to 20 characters for future-proofing
+  if (videoId.length === 0 || videoId.length > 20) return false;
+
+  // Only allow alphanumeric, hyphen, underscore
+  // This prevents CSS injection and other attacks
+  const validPattern = /^[a-zA-Z0-9_-]+$/;
+  return validPattern.test(videoId);
+}
+
+/**
  * Determines if a video ID belongs to a YouTube Short.
  * Shorts have video IDs shorter than 15 characters.
  */

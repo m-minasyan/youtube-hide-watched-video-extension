@@ -2,6 +2,7 @@ import { retryOperation, logError, classifyError, ErrorType } from '../shared/er
 import { getCachedRecord, setCachedRecord, invalidateCache, clearBackgroundCache } from './indexedDbCache.js';
 import { INDEXEDDB_CONFIG, QUOTA_CONFIG } from '../shared/constants.js';
 import { handleQuotaExceeded, getFromFallbackStorage, removeFromFallbackStorage } from './quotaManager.js';
+import { isValidVideoId } from '../shared/utils.js';
 
 const DB_NAME = 'ythwvHiddenVideos';
 const DB_VERSION = 1;
@@ -16,12 +17,44 @@ let dbResetInProgress = false;
 let dbResetPromise = null;
 
 // Active operations tracking for graceful shutdown
+// Use atomic operations via Promise chain to prevent race conditions
 let activeOperations = 0;
+let operationLock = Promise.resolve();
 let shutdownRequested = false;
 let pendingCloseCallback = null;
 
 // Maximum concurrent operations to prevent resource exhaustion
 const MAX_ACTIVE_OPERATIONS = 1000;
+
+/**
+ * Atomically increments the active operations counter
+ * @returns {Promise<number>} - New operation count
+ */
+function incrementOperations() {
+  return operationLock = operationLock.then(() => {
+    activeOperations++;
+    return activeOperations;
+  }).catch(() => {
+    // Lock chain should never reject, but handle defensively
+    activeOperations++;
+    return activeOperations;
+  });
+}
+
+/**
+ * Atomically decrements the active operations counter
+ * @returns {Promise<number>} - New operation count
+ */
+function decrementOperations() {
+  return operationLock = operationLock.then(() => {
+    activeOperations = Math.max(0, activeOperations - 1);
+    return activeOperations;
+  }).catch(() => {
+    // Lock chain should never reject, but handle defensively
+    activeOperations = Math.max(0, activeOperations - 1);
+    return activeOperations;
+  });
+}
 
 // Fallback storage processing lock to prevent race conditions
 let fallbackProcessingInProgress = false;
@@ -306,8 +339,8 @@ async function withStore(mode, handler, operationContext = null) {
   }
 
   // Track active operations for graceful shutdown
-  // Use Math.max to protect against negative values (defensive programming)
-  activeOperations = Math.max(0, activeOperations + 1);
+  // Use atomic increment to prevent race conditions
+  await incrementOperations();
 
   try {
     // Check if shutdown has been requested
@@ -444,7 +477,8 @@ async function withStore(mode, handler, operationContext = null) {
         try {
           // Retry the operation with up to QUOTA_CONFIG.MAX_RETRY_ATTEMPTS attempts
           // Validate retry attempts to prevent excessive retries (1-10 range)
-          const maxRetries = Math.max(1, Math.min(QUOTA_CONFIG.MAX_RETRY_ATTEMPTS || 3, 10));
+          // Use ?? instead of || to properly handle 0, null, undefined
+          const maxRetries = Math.max(1, Math.min(QUOTA_CONFIG.MAX_RETRY_ATTEMPTS ?? 3, 10));
           let lastError = error;
 
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -514,12 +548,11 @@ async function withStore(mode, handler, operationContext = null) {
     logError('IndexedDB', error, { operation: 'withStore', mode, fatal: true });
     throw error;
   } finally {
-    // Decrement active operations counter
-    // Use Math.max to protect against negative values (defensive programming)
-    activeOperations = Math.max(0, activeOperations - 1);
+    // Decrement active operations counter atomically
+    const currentOps = await decrementOperations();
 
     // If shutdown was requested and no operations are active, close the database
-    if (shutdownRequested && activeOperations === 0) {
+    if (shutdownRequested && currentOps === 0) {
       // Use resolvedDb for synchronous cleanup to prevent race condition
       // where Chrome terminates Service Worker before async operations complete
       if (resolvedDb) {
@@ -556,15 +589,36 @@ export async function initializeDb() {
 export async function upsertHiddenVideos(records) {
   if (!records || records.length === 0) return;
 
+  // Validate all videoIds before processing
+  const validRecords = records.filter(record => {
+    if (!record || !record.videoId) {
+      logError('IndexedDB', new Error('Record missing videoId'), {
+        operation: 'upsertHiddenVideos',
+        record
+      });
+      return false;
+    }
+    if (!isValidVideoId(record.videoId)) {
+      logError('IndexedDB', new Error('Invalid videoId format'), {
+        operation: 'upsertHiddenVideos',
+        videoId: record.videoId
+      });
+      return false;
+    }
+    return true;
+  });
+
+  if (validRecords.length === 0) return;
+
   // Pass operation context for quota management
   const operationContext = {
     operationType: 'upsert_batch',
-    data: records,
-    recordCount: records.length
+    data: validRecords,
+    recordCount: validRecords.length
   };
 
   await withStore('readwrite', (store) => {
-    records.forEach((record) => {
+    validRecords.forEach((record) => {
       store.put(record);
       // Update background cache
       setCachedRecord(record.videoId, record);
@@ -579,6 +633,16 @@ export async function upsertHiddenVideo(record) {
 
 export async function deleteHiddenVideo(videoId) {
   if (!videoId) return;
+
+  // Validate videoId format for security
+  if (!isValidVideoId(videoId)) {
+    logError('IndexedDB', new Error('Invalid videoId format'), {
+      operation: 'deleteHiddenVideo',
+      videoId
+    });
+    return;
+  }
+
   await withStore('readwrite', (store) => {
     store.delete(videoId);
   });
@@ -596,12 +660,26 @@ export async function deleteHiddenVideos(videoIds) {
   const unique = Array.from(new Set(videoIds.filter(Boolean)));
   if (unique.length === 0) return;
 
+  // Validate all videoIds for security
+  const validIds = unique.filter(videoId => {
+    if (!isValidVideoId(videoId)) {
+      logError('IndexedDB', new Error('Invalid videoId format'), {
+        operation: 'deleteHiddenVideos',
+        videoId
+      });
+      return false;
+    }
+    return true;
+  });
+
+  if (validIds.length === 0) return;
+
   await withStore('readwrite', (store) => {
-    unique.forEach(videoId => store.delete(videoId));
+    validIds.forEach(videoId => store.delete(videoId));
   });
 
   // Invalidate background cache for all deleted videos
-  unique.forEach(videoId => invalidateCache(videoId));
+  validIds.forEach(videoId => invalidateCache(videoId));
 }
 
 // Use cursor for large batches (configurable threshold)

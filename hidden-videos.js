@@ -79,6 +79,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const videosPerPage = 12;
 
+  // AbortController for managing all event listeners
+  // This allows us to remove all listeners at once during cleanup
+  const abortController = new AbortController();
+  const signal = abortController.signal;
+
   /**
    * Detects if the current device is mobile
    * @returns {boolean} - True if mobile device
@@ -358,11 +363,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           <p>Unable to load search results. Please try again.</p>
         </div>
       `;
-      // Reset state and clear memory on error
+      // Reset state on error
       hiddenVideosState.items = [];
-      clearSearchMemory();
       hiddenVideosState.hasMore = false;
+      // CRITICAL: Clear search memory on error to prevent memory leaks
+      clearSearchMemory();
     } finally {
+      // Always hide loading indicator
       if (loadingIndicator) {
         loadingIndicator.style.display = 'none';
       }
@@ -754,7 +761,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadHiddenVideos();
   }
 
-  themeToggle.addEventListener('click', toggleTheme);
+  themeToggle.addEventListener('click', toggleTheme, { signal });
 
   const searchInput = document.getElementById('search-input');
   const clearSearchBtn = document.getElementById('clear-search');
@@ -788,7 +795,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     handleSearch(query);
-  });
+  }, { signal });
 
   // Clear search button event
   clearSearchBtn.addEventListener('click', () => {
@@ -798,7 +805,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     hiddenVideosState.currentPage = 1;
     hiddenVideosState.pageCursors = [null];
     loadHiddenVideos();
-  });
+  }, { signal });
 
   // Handle Enter key in search
   searchInput.addEventListener('keydown', (e) => {
@@ -818,7 +825,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       hiddenVideosState.pageCursors = [null];
       loadHiddenVideos();
     }
-  });
+  }, { signal });
 
   // PERFORMANCE OPTIMIZATION: Use event delegation instead of multiple event listeners
   // Cache references to avoid repeated querySelectorAll and reduce O(n²) to O(1)
@@ -855,14 +862,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await refreshStats();
     await loadHiddenVideos();
-  });
+  }, { signal });
 
   document.getElementById('prev-page').addEventListener('click', async () => {
     if (hiddenVideosState.currentPage > 1) {
       hiddenVideosState.currentPage -= 1;
       await loadHiddenVideos();
     }
-  });
+  }, { signal });
 
   document.getElementById('next-page').addEventListener('click', async () => {
     const isSearching = hiddenVideosState.searchQuery.trim() !== '';
@@ -882,7 +889,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       hiddenVideosState.currentPage += 1;
       await loadHiddenVideos();
     }
-  });
+  }, { signal });
 
   clearAllBtn.addEventListener('click', async () => {
     if (confirm('Are you sure you want to remove all hidden videos?')) {
@@ -900,7 +907,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       await refreshStats();
       await loadHiddenVideos();
     }
-  });
+  , { signal });
 
   // Export/Import functionality
   const exportBtn = document.getElementById('export-btn');
@@ -1050,12 +1057,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       exportBtn.disabled = false;
       exportBtn.textContent = 'Export List';
     }
-  });
+  , { signal });
 
   // Import button handler
   importBtn.addEventListener('click', () => {
     fileInput.click();
-  });
+  , { signal });
 
   // File input change handler
   fileInput.addEventListener('change', async (e) => {
@@ -1122,7 +1129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Reset file input
       fileInput.value = '';
     }
-  });
+  , { signal });
 
   // Focus trap helper for modal accessibility
   function trapFocus(modal) {
@@ -1261,7 +1268,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     btn.classList.add('active');
     activeStrategyButton = btn;
     importState.selectedStrategy = btn.dataset.strategy;
-  });
+  , { signal });
 
   // Confirm import button
   confirmImportBtn.addEventListener('click', async () => {
@@ -1414,7 +1421,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       cancelImportBtn.disabled = false;
       closeImportModalBtn.disabled = false;
     }
-  });
+  , { signal });
 
   // Modal close handlers
   function closeImportModal() {
@@ -1451,21 +1458,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  closeImportModalBtn.addEventListener('click', closeImportModal);
-  cancelImportBtn.addEventListener('click', closeImportModal);
+  closeImportModalBtn.addEventListener('click', closeImportModal, { signal });
+  cancelImportBtn.addEventListener('click', closeImportModal, { signal });
 
   // Close modal on backdrop click
   importModal.addEventListener('click', (e) => {
     if (e.target.id === 'import-modal') {
       closeImportModal();
     }
-  });
+  , { signal });
+
+  /**
+   * Comprehensive cleanup function for page unload
+   * Removes all event listeners and clears memory
+   */
+  function performCleanup() {
+    // Abort all event listeners registered with signal
+    abortController.abort();
+
+    // Clear search memory
+    clearSearchMemory();
+
+    // Clear state arrays
+    hiddenVideosState.items = [];
+    hiddenVideosState.allItems = [];
+    hiddenVideosState.pageCursors = [null];
+
+    // Clear container to remove child event listeners
+    if (videosContainer) {
+      videosContainer.replaceChildren();
+    }
+  }
 
   // Cleanup memory on page unload to prevent memory leaks
-  window.addEventListener('beforeunload', () => {
-    clearSearchMemory();
-    hiddenVideosState.items = [];
-  });
+  window.addEventListener('beforeunload', performCleanup);
 
   await initTheme();
   await refreshStats();
