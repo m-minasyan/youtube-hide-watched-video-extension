@@ -79,6 +79,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const videosPerPage = 12;
 
+  // AbortController for managing all event listeners
+  // This allows us to remove all listeners at once during cleanup
+  const abortController = new AbortController();
+  const signal = abortController.signal;
+
   /**
    * Detects if the current device is mobile
    * @returns {boolean} - True if mobile device
@@ -358,13 +363,20 @@ document.addEventListener('DOMContentLoaded', async () => {
           <p>Unable to load search results. Please try again.</p>
         </div>
       `;
-      // Reset state and clear memory on error
+      // Reset state on error
       hiddenVideosState.items = [];
-      clearSearchMemory();
       hiddenVideosState.hasMore = false;
     } finally {
+      // Always hide loading indicator
       if (loadingIndicator) {
         loadingIndicator.style.display = 'none';
+      }
+
+      // CRITICAL: Clear search memory in finally block to prevent memory leaks
+      // This ensures cleanup happens even if there's an uncaught error
+      // Only clear if we're no longer in search mode (error occurred)
+      if (hiddenVideosState.items.length === 0 && hiddenVideosState.allItems.length > 0) {
+        clearSearchMemory();
       }
     }
   }
@@ -1461,11 +1473,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Cleanup memory on page unload to prevent memory leaks
-  window.addEventListener('beforeunload', () => {
+  /**
+   * Comprehensive cleanup function for page unload
+   * Removes all event listeners and clears memory
+   */
+  function performCleanup() {
+    // Abort all event listeners registered with signal
+    abortController.abort();
+
+    // Clear search memory
     clearSearchMemory();
+
+    // Clear state arrays
     hiddenVideosState.items = [];
-  });
+    hiddenVideosState.allItems = [];
+    hiddenVideosState.pageCursors = [null];
+
+    // Clear container to remove child event listeners
+    if (videosContainer) {
+      videosContainer.replaceChildren();
+    }
+  }
+
+  // Cleanup memory on page unload to prevent memory leaks
+  window.addEventListener('beforeunload', performCleanup);
 
   await initTheme();
   await refreshStats();

@@ -60,6 +60,37 @@ const FALLBACK_THRESHOLDS = {
 let fallbackLock = null;
 let isCleaningUp = false;
 
+// Recursion depth tracking to prevent infinite loops
+// Tracks depth of quota-related operations (cleanup, fallback processing, etc.)
+let quotaOperationDepth = 0;
+const MAX_QUOTA_OPERATION_DEPTH = 3; // Maximum recursion depth for quota operations
+
+/**
+ * Tracks quota operation depth to prevent infinite recursion
+ * @param {Function} fn - Function to execute
+ * @param {string} operationName - Name of operation for logging
+ * @returns {Promise<any>} - Result of function
+ */
+async function withQuotaDepthTracking(fn, operationName = 'quota_operation') {
+  // Check recursion depth before incrementing
+  if (quotaOperationDepth >= MAX_QUOTA_OPERATION_DEPTH) {
+    logError('QuotaManager', new Error(`Maximum quota operation depth exceeded: ${quotaOperationDepth}`), {
+      operation: operationName,
+      depth: quotaOperationDepth,
+      maxDepth: MAX_QUOTA_OPERATION_DEPTH,
+      preventingRecursion: true
+    });
+    throw new Error(`Quota operation depth limit exceeded (${quotaOperationDepth}/${MAX_QUOTA_OPERATION_DEPTH})`);
+  }
+
+  quotaOperationDepth++;
+  try {
+    return await fn();
+  } finally {
+    quotaOperationDepth = Math.max(0, quotaOperationDepth - 1);
+  }
+}
+
 /**
  * Estimates the size of data to be stored in bytes
  * @param {Object|Array} data - Data to estimate
@@ -159,154 +190,166 @@ async function checkFallbackPressure(currentCount) {
  * 🟡 WARNING (80%): Aggressive cleanup of main DB
  */
 async function handleFallbackWarning(currentCount) {
-  try {
-    // Delete MUCH more records from main DB
-    // Goal: free up space for fallback records
-    const aggressiveCleanupCount = Math.max(
-      QUOTA_CONFIG.MIN_CLEANUP_COUNT * 5, // Minimum 500 records
-      currentCount * 2                     // Or 2x more than in fallback
-    );
+  return withQuotaDepthTracking(async () => {
+    try {
+      // Delete MUCH more records from main DB
+      // Goal: free up space for fallback records
+      const aggressiveCleanupCount = Math.max(
+        QUOTA_CONFIG.MIN_CLEANUP_COUNT * 5, // Minimum 500 records
+        currentCount * 2                     // Or 2x more than in fallback
+      );
 
-    logError('QuotaManager', new Error('Fallback WARNING threshold reached'), {
-      operation: 'handleFallbackWarning',
-      currentCount,
-      utilization: `${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`,
-      cleanupTarget: aggressiveCleanupCount
-    });
+      logError('QuotaManager', new Error('Fallback WARNING threshold reached'), {
+        operation: 'handleFallbackWarning',
+        currentCount,
+        utilization: `${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`,
+        cleanupTarget: aggressiveCleanupCount,
+        quotaDepth: quotaOperationDepth
+      });
 
-    // Import deleteOldestHiddenVideos dynamically to avoid circular dependency
-    const { deleteOldestHiddenVideos } = await import('./indexedDb.js');
+      // Import deleteOldestHiddenVideos dynamically to avoid circular dependency
+      const { deleteOldestHiddenVideos } = await import('./indexedDb.js');
 
-    // Delete old records from main DB with recursion protection
-    if (!isCleaningUp) {
-      await deleteOldestHiddenVideosWithProtection(deleteOldestHiddenVideos, aggressiveCleanupCount);
-    }
+      // Delete old records from main DB with recursion protection
+      if (!isCleaningUp) {
+        await deleteOldestHiddenVideosWithProtection(deleteOldestHiddenVideos, aggressiveCleanupCount);
+      }
 
-    // Try to process fallback immediately
-    const result = await processFallbackStorageAggressively();
+      // Try to process fallback immediately
+      const result = await processFallbackStorageAggressively();
 
-    if (result.success && result.processed > 0) {
-      await showQuotaNotification({
-        title: 'Storage Optimization',
-        message: `Freed space for ${result.processed} pending videos. Deleted ${aggressiveCleanupCount} old records.`
+      if (result.success && result.processed > 0) {
+        await showQuotaNotification({
+          title: 'Storage Optimization',
+          message: `Freed space for ${result.processed} pending videos. Deleted ${aggressiveCleanupCount} old records.`
+        });
+      }
+
+      await logQuotaEvent({
+        type: 'fallback_warning_handled',
+        currentCount,
+        cleanupCount: aggressiveCleanupCount,
+        processedFromFallback: result.processed
+      });
+
+    } catch (error) {
+      logError('QuotaManager', error, {
+        operation: 'handleFallbackWarning',
+        quotaDepth: quotaOperationDepth,
+        fatal: true
       });
     }
-
-    await logQuotaEvent({
-      type: 'fallback_warning_handled',
-      currentCount,
-      cleanupCount: aggressiveCleanupCount,
-      processedFromFallback: result.processed
-    });
-
-  } catch (error) {
-    logError('QuotaManager', error, {
-      operation: 'handleFallbackWarning',
-      fatal: true
-    });
-  }
+  }, 'handleFallbackWarning');
 }
 
 /**
  * 🟠 CRITICAL (90%): Block operations + notification
  */
 async function handleFallbackCritical(currentCount) {
-  try {
-    logError('QuotaManager', new Error('Fallback CRITICAL threshold reached'), {
-      operation: 'handleFallbackCritical',
-      currentCount,
-      utilization: `${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`
-    });
+  return withQuotaDepthTracking(async () => {
+    try {
+      logError('QuotaManager', new Error('Fallback CRITICAL threshold reached'), {
+        operation: 'handleFallbackCritical',
+        currentCount,
+        utilization: `${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`,
+        quotaDepth: quotaOperationDepth
+      });
 
-    // Show critical notification
-    await showCriticalNotification({
-      title: '🔴 CRITICAL: Storage Almost Full',
-      message: `Fallback storage at ${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(0)}%. New video tracking is temporarily disabled. Please clear old videos in settings immediately.`
-    });
+      // Show critical notification
+      await showCriticalNotification({
+        title: '🔴 CRITICAL: Storage Almost Full',
+        message: `Fallback storage at ${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(0)}%. New video tracking is temporarily disabled. Please clear old videos in settings immediately.`
+      });
 
-    // Last attempt at aggressive cleanup
-    const emergencyCleanup = Math.min(
-      QUOTA_CONFIG.MAX_CLEANUP_COUNT, // Maximum 5000
-      currentCount * 3                 // Or 3x more than in fallback
-    );
+      // Last attempt at aggressive cleanup
+      const emergencyCleanup = Math.min(
+        QUOTA_CONFIG.MAX_CLEANUP_COUNT, // Maximum 5000
+        currentCount * 3                 // Or 3x more than in fallback
+      );
 
-    const { deleteOldestHiddenVideos } = await import('./indexedDb.js');
+      const { deleteOldestHiddenVideos } = await import('./indexedDb.js');
 
-    if (!isCleaningUp) {
-      await deleteOldestHiddenVideosWithProtection(deleteOldestHiddenVideos, emergencyCleanup);
+      if (!isCleaningUp) {
+        await deleteOldestHiddenVideosWithProtection(deleteOldestHiddenVideos, emergencyCleanup);
+      }
+
+      await processFallbackStorageAggressively();
+
+      await logQuotaEvent({
+        type: 'fallback_critical_handled',
+        currentCount,
+        emergencyCleanup
+      });
+
+    } catch (error) {
+      logError('QuotaManager', error, {
+        operation: 'handleFallbackCritical',
+        quotaDepth: quotaOperationDepth,
+        fatal: true
+      });
     }
-
-    await processFallbackStorageAggressively();
-
-    await logQuotaEvent({
-      type: 'fallback_critical_handled',
-      currentCount,
-      emergencyCleanup
-    });
-
-  } catch (error) {
-    logError('QuotaManager', error, {
-      operation: 'handleFallbackCritical',
-      fatal: true
-    });
-  }
+  }, 'handleFallbackCritical');
 }
 
 /**
  * 🔴 EMERGENCY (95%): Auto-export fallback data
  */
 async function handleFallbackEmergency(currentCount) {
-  try {
-    logError('QuotaManager', new Error('Fallback EMERGENCY threshold reached'), {
-      operation: 'handleFallbackEmergency',
-      currentCount,
-      utilization: `${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`
-    });
-
-    // Automatic export of fallback data
-    const exportData = await exportFallbackStorage();
-
-    // Save export via chrome.downloads API
-    const jsonBlob = new Blob([JSON.stringify(exportData, null, 2)], {
-      type: 'application/json'
-    });
-    const url = URL.createObjectURL(jsonBlob);
-
+  return withQuotaDepthTracking(async () => {
     try {
-      await chrome.downloads.download({
-        url: url,
-        filename: `youtube-hidden-videos-emergency-${Date.now()}.json`,
-        saveAs: true // Ask user to choose location
+      logError('QuotaManager', new Error('Fallback EMERGENCY threshold reached'), {
+        operation: 'handleFallbackEmergency',
+        currentCount,
+        utilization: `${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`,
+        quotaDepth: quotaOperationDepth
       });
+
+      // Automatic export of fallback data
+      const exportData = await exportFallbackStorage();
+
+      // Save export via chrome.downloads API
+      const jsonBlob = new Blob([JSON.stringify(exportData, null, 2)], {
+        type: 'application/json'
+      });
+      const url = URL.createObjectURL(jsonBlob);
+
+      try {
+        await chrome.downloads.download({
+          url: url,
+          filename: `youtube-hidden-videos-emergency-${Date.now()}.json`,
+          saveAs: true // Ask user to choose location
+        });
+      } catch (error) {
+        // If downloads API fails, log but continue
+        logError('QuotaManager', error, {
+          operation: 'emergency_download',
+          fatal: false
+        });
+      } finally {
+        // Always revoke the object URL to prevent memory leaks
+        URL.revokeObjectURL(url);
+      }
+
+      // Show notification
+      await showCriticalNotification({
+        title: '🆘 EMERGENCY: Auto-Export Started',
+        message: `Emergency backup created. Fallback storage at ${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(0)}%. Save the file and clear old videos immediately.`
+      });
+
+      await logQuotaEvent({
+        type: 'fallback_emergency_export',
+        currentCount,
+        recordsExported: exportData.recordCount
+      });
+
     } catch (error) {
-      // If downloads API fails, log but continue
       logError('QuotaManager', error, {
-        operation: 'emergency_download',
-        fatal: false
+        operation: 'handleFallbackEmergency',
+        quotaDepth: quotaOperationDepth,
+        fatal: true
       });
-    } finally {
-      // Always revoke the object URL to prevent memory leaks
-      URL.revokeObjectURL(url);
     }
-
-    // Show notification
-    await showCriticalNotification({
-      title: '🆘 EMERGENCY: Auto-Export Started',
-      message: `Emergency backup created. Fallback storage at ${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(0)}%. Save the file and clear old videos immediately.`
-    });
-
-    await logQuotaEvent({
-      type: 'fallback_emergency_export',
-      currentCount,
-      recordsExported: exportData.recordCount
-    });
-
-  } catch (error) {
-    logError('QuotaManager', error, {
-      operation: 'handleFallbackEmergency',
-      fatal: true
-    });
-  }
+  }, 'handleFallbackEmergency');
 }
 
 /**
@@ -431,7 +474,8 @@ async function saveToFallbackStorage(records) {
   }
 
   // Create new lock promise
-  fallbackLock = (async () => {
+  // Assign result back to fallbackLock so it's available for awaiting
+  const lockPromise = (async () => {
     try {
       const result = await withStorageTimeout(
         chrome.storage.local.get(FALLBACK_STORAGE_KEY),
@@ -502,9 +546,15 @@ async function saveToFallbackStorage(records) {
     }
   })();
 
+  fallbackLock = lockPromise;
+
   try {
-    return await fallbackLock;
+    return await lockPromise;
+  } catch (error) {
+    // Ensure error is propagated after cleanup
+    throw error;
   } finally {
+    // Always clear lock, even on rejection
     fallbackLock = null;
   }
 }

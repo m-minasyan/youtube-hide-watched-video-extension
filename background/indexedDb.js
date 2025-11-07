@@ -16,12 +16,44 @@ let dbResetInProgress = false;
 let dbResetPromise = null;
 
 // Active operations tracking for graceful shutdown
+// Use atomic operations via Promise chain to prevent race conditions
 let activeOperations = 0;
+let operationLock = Promise.resolve();
 let shutdownRequested = false;
 let pendingCloseCallback = null;
 
 // Maximum concurrent operations to prevent resource exhaustion
 const MAX_ACTIVE_OPERATIONS = 1000;
+
+/**
+ * Atomically increments the active operations counter
+ * @returns {Promise<number>} - New operation count
+ */
+function incrementOperations() {
+  return operationLock = operationLock.then(() => {
+    activeOperations++;
+    return activeOperations;
+  }).catch(() => {
+    // Lock chain should never reject, but handle defensively
+    activeOperations++;
+    return activeOperations;
+  });
+}
+
+/**
+ * Atomically decrements the active operations counter
+ * @returns {Promise<number>} - New operation count
+ */
+function decrementOperations() {
+  return operationLock = operationLock.then(() => {
+    activeOperations = Math.max(0, activeOperations - 1);
+    return activeOperations;
+  }).catch(() => {
+    // Lock chain should never reject, but handle defensively
+    activeOperations = Math.max(0, activeOperations - 1);
+    return activeOperations;
+  });
+}
 
 // Fallback storage processing lock to prevent race conditions
 let fallbackProcessingInProgress = false;
@@ -306,8 +338,8 @@ async function withStore(mode, handler, operationContext = null) {
   }
 
   // Track active operations for graceful shutdown
-  // Use Math.max to protect against negative values (defensive programming)
-  activeOperations = Math.max(0, activeOperations + 1);
+  // Use atomic increment to prevent race conditions
+  await incrementOperations();
 
   try {
     // Check if shutdown has been requested
@@ -444,7 +476,8 @@ async function withStore(mode, handler, operationContext = null) {
         try {
           // Retry the operation with up to QUOTA_CONFIG.MAX_RETRY_ATTEMPTS attempts
           // Validate retry attempts to prevent excessive retries (1-10 range)
-          const maxRetries = Math.max(1, Math.min(QUOTA_CONFIG.MAX_RETRY_ATTEMPTS || 3, 10));
+          // Use ?? instead of || to properly handle 0, null, undefined
+          const maxRetries = Math.max(1, Math.min(QUOTA_CONFIG.MAX_RETRY_ATTEMPTS ?? 3, 10));
           let lastError = error;
 
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -514,12 +547,11 @@ async function withStore(mode, handler, operationContext = null) {
     logError('IndexedDB', error, { operation: 'withStore', mode, fatal: true });
     throw error;
   } finally {
-    // Decrement active operations counter
-    // Use Math.max to protect against negative values (defensive programming)
-    activeOperations = Math.max(0, activeOperations - 1);
+    // Decrement active operations counter atomically
+    const currentOps = await decrementOperations();
 
     // If shutdown was requested and no operations are active, close the database
-    if (shutdownRequested && activeOperations === 0) {
+    if (shutdownRequested && currentOps === 0) {
       // Use resolvedDb for synchronous cleanup to prevent race condition
       // where Chrome terminates Service Worker before async operations complete
       if (resolvedDb) {
