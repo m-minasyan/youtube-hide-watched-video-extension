@@ -888,6 +888,181 @@ async function showCriticalNotification(options = {}) {
 }
 
 /**
+ * Creates a standardized quota result object
+ * @param {Object} options - Result options
+ * @returns {Object} Standardized result object
+ */
+function createQuotaResult({
+  success,
+  cleanupPerformed = false,
+  fallbackSaved = false,
+  rejected = false,
+  level = null,
+  recordsDeleted = null,
+  fallbackRecords = null,
+  pressureLevel = null,
+  error = null,
+  recommendation
+}) {
+  const result = {
+    success,
+    cleanupPerformed,
+    fallbackSaved,
+    recommendation
+  };
+
+  if (rejected) result.rejected = rejected;
+  if (level) result.level = level;
+  if (recordsDeleted !== null) result.recordsDeleted = recordsDeleted;
+  if (fallbackRecords !== null) result.fallbackRecords = fallbackRecords;
+  if (pressureLevel) result.pressureLevel = pressureLevel;
+  if (error) result.error = error;
+
+  return result;
+}
+
+/**
+ * Logs initial quota exceeded event
+ * @param {Object} context - Operation context
+ * @param {number} estimatedBytes - Estimated bytes needed
+ * @param {number} cleanupCount - Number of records to clean up
+ */
+async function logInitialQuotaEvent(context, estimatedBytes, cleanupCount) {
+  const { data, operationType = 'unknown' } = context;
+
+  await logQuotaEvent({
+    type: 'quota_exceeded',
+    operationType,
+    dataSize: Array.isArray(data) ? data.length : 1,
+    estimatedBytes,
+    cleanupCount
+  });
+}
+
+/**
+ * Handles the case when fallback storage rejected the records
+ * @param {Object} fallbackResult - Result from fallback storage attempt
+ * @param {Array|Object} data - Data that was attempted to be saved
+ * @returns {Promise<Object>} Quota result object
+ */
+async function handleFallbackRejection(fallbackResult, data) {
+  await showCriticalNotification({
+    title: '🛑 Storage Full - Operation Blocked',
+    message: `Cannot save ${Array.isArray(data) ? data.length : 1} videos. Storage is critically full (${fallbackResult.level}). Clear old videos in settings immediately.`
+  });
+
+  return createQuotaResult({
+    success: false,
+    rejected: true,
+    level: fallbackResult.level,
+    error: 'Fallback storage full - operation rejected',
+    recommendation: 'critical_cleanup_required'
+  });
+}
+
+/**
+ * Handles generic fallback storage failure
+ * @returns {Promise<Object>} Quota result object
+ */
+async function handleFallbackError() {
+  await showQuotaNotification({
+    title: 'Critical Storage Error',
+    message: 'Unable to save video data. Please export your data and clear old videos in the extension settings.'
+  });
+
+  return createQuotaResult({
+    success: false,
+    error: 'Failed to save to fallback storage',
+    recommendation: 'manual_intervention_required'
+  });
+}
+
+/**
+ * Performs cleanup operation with recursion protection
+ * @param {Function} cleanupFunction - Function to delete old records
+ * @param {number} cleanupCount - Number of records to delete
+ * @returns {Promise<boolean>} Whether cleanup was performed
+ */
+async function performCleanupOperation(cleanupFunction, cleanupCount) {
+  if (isCleaningUp) {
+    return false;
+  }
+
+  isCleaningUp = true;
+  try {
+    await cleanupFunction(cleanupCount);
+    return true;
+  } finally {
+    isCleaningUp = false;
+  }
+}
+
+/**
+ * Handles successful cleanup operation
+ * @param {number} cleanupCount - Number of records deleted
+ * @param {number} cleanupTime - Time taken for cleanup in ms
+ * @param {Object} fallbackResult - Result from fallback storage
+ * @returns {Promise<Object>} Quota result object
+ */
+async function handleCleanupSuccess(cleanupCount, cleanupTime, fallbackResult) {
+  await logQuotaEvent({
+    type: 'cleanup_success',
+    recordsDeleted: cleanupCount,
+    cleanupTimeMs: cleanupTime,
+    fallbackPressureLevel: fallbackResult.pressureLevel
+  });
+
+  await showQuotaNotification({
+    message: `Storage space optimized. Deleted ${cleanupCount} old videos. Your recent data has been preserved.`
+  });
+
+  return createQuotaResult({
+    success: true,
+    cleanupPerformed: true,
+    recordsDeleted: cleanupCount,
+    fallbackSaved: true,
+    fallbackRecords: fallbackResult.recordsSaved,
+    pressureLevel: fallbackResult.pressureLevel,
+    recommendation: 'retry_operation'
+  });
+}
+
+/**
+ * Handles cleanup operation failure
+ * @param {Error} error - The cleanup error
+ * @param {number} cleanupCount - Number of records attempted to delete
+ * @param {Object} fallbackResult - Result from fallback storage
+ * @returns {Promise<Object>} Quota result object
+ */
+async function handleCleanupFailure(error, cleanupCount, fallbackResult) {
+  logError('QuotaManager', error, {
+    operation: 'cleanup',
+    cleanupCount,
+    fatal: true
+  });
+
+  await logQuotaEvent({
+    type: 'cleanup_failed',
+    cleanupCount,
+    error: error.message
+  });
+
+  await showQuotaNotification({
+    title: 'Storage Cleanup Failed',
+    message: 'Unable to free storage space. Please manually clear old videos in the extension settings.'
+  });
+
+  return createQuotaResult({
+    success: false,
+    fallbackSaved: true,
+    fallbackRecords: fallbackResult.recordsSaved,
+    pressureLevel: fallbackResult.pressureLevel,
+    error: 'Cleanup failed',
+    recommendation: 'manual_cleanup_required'
+  });
+}
+
+/**
  * Main quota exceeded handler with multi-tier fallback protection
  * @param {Error} error - The quota exceeded error
  * @param {Function} cleanupFunction - Function to delete old records (deleteOldestHiddenVideos)
@@ -904,124 +1079,36 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
 
   try {
     // Extract operation details
-    const { data, operationType = 'unknown' } = operationContext;
+    const { data } = operationContext;
 
-    // Estimate space needed
+    // Estimate space needed and calculate cleanup count
     const estimatedBytes = estimateDataSize(data);
     const cleanupCount = calculateCleanupCount(estimatedBytes);
 
-    // Log quota event
-    await logQuotaEvent({
-      type: 'quota_exceeded',
-      operationType,
-      dataSize: Array.isArray(data) ? data.length : 1,
-      estimatedBytes,
-      cleanupCount
-    });
+    // Log initial quota event
+    await logInitialQuotaEvent(operationContext, estimatedBytes, cleanupCount);
 
     // Save data to fallback storage first (critical - before cleanup)
-    // This now includes pressure checking
     const fallbackResult = await saveToFallbackStorage(data);
 
-    // 🛑 If fallback REJECTED the records - DO NOT delete data
+    // Handle fallback rejection (storage critically full)
     if (!fallbackResult.success && fallbackResult.rejected) {
-      // Data NOT saved, DO NOT perform cleanup
-      await showCriticalNotification({
-        title: '🛑 Storage Full - Operation Blocked',
-        message: `Cannot save ${Array.isArray(data) ? data.length : 1} videos. Storage is critically full (${fallbackResult.level}). Clear old videos in settings immediately.`
-      });
-
-      return {
-        success: false,
-        cleanupPerformed: false,
-        fallbackSaved: false,
-        rejected: true,
-        level: fallbackResult.level,
-        error: 'Fallback storage full - operation rejected',
-        recommendation: 'critical_cleanup_required'
-      };
+      return await handleFallbackRejection(fallbackResult, data);
     }
 
-    // If fallback failed for other reasons (not rejection)
+    // Handle other fallback failures
     if (!fallbackResult.success) {
-      // Critical: couldn't even save to fallback storage
-      await showQuotaNotification({
-        title: 'Critical Storage Error',
-        message: 'Unable to save video data. Please export your data and clear old videos in the extension settings.'
-      });
-
-      return {
-        success: false,
-        cleanupPerformed: false,
-        fallbackSaved: false,
-        error: 'Failed to save to fallback storage',
-        recommendation: 'manual_intervention_required'
-      };
+      return await handleFallbackError();
     }
 
     // Perform cleanup with recursion protection
     try {
-      // Use protection wrapper for cleanup
-      if (!isCleaningUp) {
-        isCleaningUp = true;
-        try {
-          await cleanupFunction(cleanupCount);
-        } finally {
-          isCleaningUp = false;
-        }
-      }
-
+      await performCleanupOperation(cleanupFunction, cleanupCount);
       const cleanupTime = Date.now() - startTime;
 
-      await logQuotaEvent({
-        type: 'cleanup_success',
-        recordsDeleted: cleanupCount,
-        cleanupTimeMs: cleanupTime,
-        fallbackPressureLevel: fallbackResult.pressureLevel
-      });
-
-      // Show notification to user (with cooldown)
-      await showQuotaNotification({
-        message: `Storage space optimized. Deleted ${cleanupCount} old videos. Your recent data has been preserved.`
-      });
-
-      return {
-        success: true,
-        cleanupPerformed: true,
-        recordsDeleted: cleanupCount,
-        fallbackSaved: true,
-        fallbackRecords: fallbackResult.recordsSaved,
-        pressureLevel: fallbackResult.pressureLevel,
-        recommendation: 'retry_operation'
-      };
-    } catch (error) {
-      logError('QuotaManager', error, {
-        operation: 'cleanup',
-        cleanupCount,
-        fatal: true
-      });
-
-      await logQuotaEvent({
-        type: 'cleanup_failed',
-        cleanupCount,
-        error: error.message
-      });
-
-      // Show critical notification
-      await showQuotaNotification({
-        title: 'Storage Cleanup Failed',
-        message: 'Unable to free storage space. Please manually clear old videos in the extension settings.'
-      });
-
-      return {
-        success: false,
-        cleanupPerformed: false,
-        fallbackSaved: true,
-        fallbackRecords: fallbackResult.recordsSaved,
-        pressureLevel: fallbackResult.pressureLevel,
-        error: 'Cleanup failed',
-        recommendation: 'manual_cleanup_required'
-      };
+      return await handleCleanupSuccess(cleanupCount, cleanupTime, fallbackResult);
+    } catch (cleanupError) {
+      return await handleCleanupFailure(cleanupError, cleanupCount, fallbackResult);
     }
   } catch (error) {
     logError('QuotaManager', error, {
@@ -1029,13 +1116,11 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
       fatal: true
     });
 
-    return {
+    return createQuotaResult({
       success: false,
-      cleanupPerformed: false,
-      fallbackSaved: false,
       error: error.message,
       recommendation: 'system_error'
-    };
+    });
   }
 }
 
