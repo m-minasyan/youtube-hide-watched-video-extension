@@ -213,8 +213,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const normalizedQuery = normalizeString(sanitizedQuery);
 
     return items.filter(item => {
-      const title = normalizeString(item.title || '');
-      const videoId = normalizeString(item.videoId || '');
+      // SECURITY: Sanitize both title and videoId for defense-in-depth
+      // Even though these values come from YouTube, sanitization provides
+      // an additional security layer against potential injection attacks
+      const title = normalizeString(sanitizeSearchQuery(item.title || ''));
+      const videoId = normalizeString(sanitizeSearchQuery(item.videoId || ''));
 
       // Search in title and videoId
       return title.includes(normalizedQuery) || videoId.includes(normalizedQuery);
