@@ -732,6 +732,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         state: nextState
       });
     }
+
+    // MEMORY LEAK FIX: Clear search memory before reloading data
+    // After video state changes, we need to reload data from server
+    // If we're in search mode, clear old allItems to prevent memory accumulation
+    if (hiddenVideosState.isSearchMode && hiddenVideosState.allItems.length > 0) {
+      clearSearchMemory(false); // Keep the search query, will reload with same query
+    }
+
     await refreshStats();
     const totalVideos = getTotalVideosForCurrentFilter();
     const itemsRemaining = hiddenVideosState.items.length - 1;
@@ -750,6 +758,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Debounced search handler
   const handleSearch = debounce(async (query) => {
+    // MEMORY LEAK FIX: Clear old search data before loading new search results
+    // This prevents accumulation of old allItems data when search query changes
+    if (hiddenVideosState.allItems.length > 0) {
+      clearSearchMemory(false); // Don't clear query yet, we're about to set a new one
+    }
+
     // SECURITY: Sanitize query before storing in state
     // This ensures only safe queries are used throughout the application
     hiddenVideosState.searchQuery = sanitizeSearchQuery(query);
@@ -788,6 +802,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.key === 'Enter') {
       e.preventDefault();
       const query = searchInput.value;
+
+      // MEMORY LEAK FIX: Clear old search data before loading new search results
+      // This prevents accumulation of old allItems data when search query changes
+      if (hiddenVideosState.allItems.length > 0) {
+        clearSearchMemory(false); // Don't clear query yet, we're about to set a new one
+      }
+
       // SECURITY: Sanitize query before storing in state
       hiddenVideosState.searchQuery = sanitizeSearchQuery(query);
       hiddenVideosState.currentPage = 1;
@@ -863,6 +884,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   clearAllBtn.addEventListener('click', async () => {
     if (confirm('Are you sure you want to remove all hidden videos?')) {
       await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.CLEAR_ALL);
+
+      // MEMORY LEAK FIX: Clear search memory after clear all
+      // All videos have been removed from database, so cached search data is now stale
+      // Clear allItems to prevent displaying outdated search results
+      if (hiddenVideosState.isSearchMode || hiddenVideosState.allItems.length > 0) {
+        clearSearchMemory(false); // Keep search query if user had one, results will be empty
+      }
+
       hiddenVideosState.pageCursors = [null];
       hiddenVideosState.currentPage = 1;
       await refreshStats();
@@ -1360,6 +1389,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           showNotification(summary, NotificationType.SUCCESS, 5000);
         }
 
+        // MEMORY LEAK FIX: Clear search memory after import
+        // Imported data may have changed the dataset, old search cache is now stale
+        if (hiddenVideosState.isSearchMode || hiddenVideosState.allItems.length > 0) {
+          clearSearchMemory(false); // Keep search query if user had one, will reload with it
+        }
+
         // Refresh the list
         refreshStats().then(() => loadHiddenVideos());
       }, 500);
@@ -1436,6 +1471,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   chrome.runtime.onMessage.addListener((message) => {
     if (message && message.type === 'HIDDEN_VIDEOS_EVENT') {
       refreshStats().then(async () => {
+        // MEMORY LEAK FIX: Clear search memory after external data changes
+        // Video data was changed by another part of the extension (e.g., content script)
+        // Old search cache is now stale and needs to be reloaded
+        if (hiddenVideosState.isSearchMode || hiddenVideosState.allItems.length > 0) {
+          clearSearchMemory(false); // Keep search query if user had one, will reload with it
+        }
+
         const totalVideos = getTotalVideosForCurrentFilter();
         const maxPages = Math.max(1, Math.ceil(Math.max(totalVideos, 0) / videosPerPage));
 
