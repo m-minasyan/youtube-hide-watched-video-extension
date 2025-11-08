@@ -95,34 +95,32 @@ function withProgressiveCursorTimeout(cursorOperationFactory, operationName = 'C
    * @returns {number} - Timeout in milliseconds
    */
   const getTimeoutForAttempt = (attempt) => {
-    // FIXED P2-4: Improved validation with clamping
-    // Validate attempt number and clamp to valid range
-    if (!Number.isFinite(attempt) || attempt < 1) {
-      logError('IndexedDB', new Error(`Invalid attempt number: ${attempt}`), {
+    // FIXED P2-2: Simplified validation and normalization
+    let normalized = attempt;
+
+    // Validate and normalize attempt number
+    if (!Number.isFinite(attempt)) {
+      logError('IndexedDB', new Error(`Non-finite attempt number: ${attempt}`), {
         operation: 'getTimeoutForAttempt',
-        attempt,
-        clampedTo: 1
+        attemptValue: attempt,
+        attemptType: typeof attempt,
+        defaulting: 1
       });
-      attempt = 1; // Clamp to minimum
+      normalized = 1;
+    } else if (attempt < 1) {
+      normalized = 1;
+    } else if (attempt > 3) {
+      normalized = 3;
+    } else {
+      normalized = Math.floor(attempt);
     }
 
-    // Clamp to valid range [1, 3]
-    const safeAttempt = Math.max(1, Math.min(3, Math.floor(attempt)));
-
-    if (safeAttempt !== attempt) {
-      logError('IndexedDB', new Error(`Attempt number ${attempt} clamped to ${safeAttempt}`), {
-        operation: 'getTimeoutForAttempt',
-        originalAttempt: attempt,
-        clampedAttempt: safeAttempt
-      });
-    }
-
-    switch (safeAttempt) {
+    switch (normalized) {
       case 1: return INDEXEDDB_CONFIG.CURSOR_TIMEOUT; // 30s - covers 99% of cases
       case 2: return INDEXEDDB_CONFIG.CURSOR_TIMEOUT_RETRY_1; // 60s - handles slower devices
       case 3: return INDEXEDDB_CONFIG.CURSOR_TIMEOUT_RETRY_2; // 90s - edge cases (200k+ records)
       default:
-        // Should never reach here due to clamping, but safety fallback
+        // Should never reach here due to normalization, but safety fallback
         return INDEXEDDB_CONFIG.CURSOR_TIMEOUT_RETRY_2;
     }
   };
@@ -428,9 +426,16 @@ async function withStore(mode, handler, operationContext = null) {
               return;
             }
 
-            // If handler was rejected, reject promise even if transaction completed
-            // (shouldn't happen if abort() worked, but defensive programming)
+            // FIXED P2-1: If handler was rejected but transaction committed, log warning
+            // This indicates data was saved despite handler rejection
             if (handlerRejected) {
+              logError('IndexedDB', handlerError, {
+                operation: 'withStore',
+                phase: 'post-commit-handler-rejection',
+                warning: 'Transaction committed successfully but handler rejected',
+                dataState: 'saved',
+                returnValue: 'error_after_commit'
+              });
               reject(handlerError);
               return;
             }
@@ -446,15 +451,15 @@ async function withStore(mode, handler, operationContext = null) {
               ]);
               resolve(value);
             } catch (error) {
-              // Handler failed after transaction completed
+              // FIXED P2-1: Handler failed after transaction completed
               // Transaction cannot be aborted at this point - data is already saved
-              if (error.message === 'Handler timeout after transaction complete') {
-                logError('IndexedDB', error, {
-                  operation: 'withStore',
-                  phase: 'post-commit-handler-timeout',
-                  warning: 'Transaction already committed - handler cleanup timed out'
-                });
-              }
+              // Log warning to indicate data state
+              logError('IndexedDB', error, {
+                operation: 'withStore',
+                phase: 'post-commit-handler-error',
+                warning: 'Transaction committed successfully but handler failed',
+                dataState: 'saved'
+              });
               reject(error);
             }
           };
@@ -561,11 +566,24 @@ async function withStore(mode, handler, operationContext = null) {
                   performingAdditionalCleanup: true
                 });
 
-                // FIXED P2-4: Multiplicative cleanup strategy instead of additive
-                // Doubles cleanup each retry: 100 -> 200 -> 400 (much more effective)
-                // Old strategy: 100 -> 150 -> 175 (too slow for large deficits)
-                const additionalCleanup = quotaResult.recordsDeleted * Math.pow(2, attempt);
-                await deleteOldestHiddenVideos(Math.floor(additionalCleanup));
+                // FIXED P2-4: Conservative multiplicative cleanup strategy
+                // Uses 1.5x growth instead of 2x to prevent excessive deletion
+                // Example progression for 1000 initial: 1000 -> 1500 -> 2250 -> 3375
+                const additionalCleanup = quotaResult.recordsDeleted * Math.pow(1.5, attempt);
+                const cappedCleanup = Math.min(
+                  Math.floor(additionalCleanup),
+                  QUOTA_CONFIG.MAX_CLEANUP_COUNT // Cap at 5000 to prevent excessive deletion
+                );
+
+                logError('IndexedDB', new Error('Performing progressive cleanup'), {
+                  operation: 'quota_retry',
+                  attempt,
+                  initialCleanup: quotaResult.recordsDeleted,
+                  additionalCleanup: cappedCleanup,
+                  totalDeleted: quotaResult.recordsDeleted + cappedCleanup
+                });
+
+                await deleteOldestHiddenVideos(cappedCleanup);
               } else if (retryErrorType !== ErrorType.QUOTA_EXCEEDED) {
                 // Different error - throw immediately
                 throw retryError;

@@ -107,25 +107,22 @@ function canShowGlobalNotification() {
  * Limits array size to prevent unbounded growth
  */
 function recordGlobalNotification() {
-  // FIXED P1-5: Hard cap to prevent unbounded growth from bugs in rate limiting logic
-  // If array grows beyond 1000, it indicates a serious bug - reset immediately
-  if (globalNotificationTimestamps.length >= 1000) {
-    logError('QuotaManager', new Error('Notification array overflow detected - possible bug'), {
-      operation: 'recordGlobalNotification',
-      arrayLength: globalNotificationTimestamps.length,
-      possibleBug: true,
-      action: 'emergency_reset'
-    });
-    globalNotificationTimestamps.length = 0; // Emergency reset
+  const now = Date.now();
+
+  // FIXED P1-1: Trim expired entries BEFORE adding new one
+  // Remove timestamps older than GLOBAL_NOTIFICATION_WINDOW_MS
+  while (globalNotificationTimestamps.length > 0 &&
+         now - globalNotificationTimestamps[0] > CONFIG.GLOBAL_NOTIFICATION_WINDOW_MS) {
+    globalNotificationTimestamps.shift();
   }
 
-  globalNotificationTimestamps.push(Date.now());
-
-  // P1-4 FIX: Use splice instead of while+shift for O(1) performance
-  // shift() in loop is O(n²), splice is O(n)
-  if (globalNotificationTimestamps.length > 100) {
-    globalNotificationTimestamps.splice(0, globalNotificationTimestamps.length - 100);
+  // FIXED P1-1: Defensive cap at 100 entries BEFORE adding new one
+  // This prevents ever reaching emergency overflow condition
+  if (globalNotificationTimestamps.length >= 100) {
+    globalNotificationTimestamps.shift(); // Remove oldest
   }
+
+  globalNotificationTimestamps.push(now);
 }
 
 /**
@@ -704,12 +701,10 @@ async function saveToFallbackStorage(records) {
     return { success: true, message: 'No records to save' };
   }
 
-  // FIXED P2-2: Atomic lock check and assignment to prevent TOCTOU race
-  // If lock exists, wait for it then recursively call to re-check
-  if (fallbackLock) {
+  // FIXED P1-2: Wait for existing lock to complete using while loop instead of recursion
+  // This prevents TOCTOU race condition and stack overflow from deep recursion
+  while (fallbackLock) {
     await fallbackLock;
-    // After waiting, recursively call to re-check lock and potentially create new one
-    return saveToFallbackStorage(records);
   }
 
   // Create new lock promise and assign IMMEDIATELY before any async operations
@@ -1000,21 +995,40 @@ async function updateNotificationBackoff(consecutiveCount) {
 }
 
 /**
- * Calculates current notification cooldown using exponential backoff
- * Formula: min(BASE_COOLDOWN * (MULTIPLIER ^ consecutiveCount), MAX_COOLDOWN)
+ * Calculates notification cooldown with exponential backoff
+ *
+ * FIXED P2-7: Comprehensive documentation of cooldown calculation
+ *
+ * Formula: min(BASE_COOLDOWN * (2 ^ consecutiveCount), MAX_COOLDOWN)
+ *
+ * Progression examples:
+ * - Count 0: 15m * 2^0 = 15m
+ * - Count 1: 15m * 2^1 = 30m
+ * - Count 2: 15m * 2^2 = 60m
+ * - Count 3: 15m * 2^3 = 120m (capped at MAX_COOLDOWN)
+ * - Count 10: 15m * 2^10 = 15,360m (capped at MAX_COOLDOWN = 120m)
+ *
+ * Note: Although the formula can produce values up to 15,360 minutes for count=10,
+ * the MAX_NOTIFICATION_COOLDOWN_MS cap of 2 hours (120 minutes) prevents this.
+ * The effective progression is limited by MAX_CONSECUTIVE_NOTIFICATIONS (3),
+ * which caps actual usage at 2^3 = 8x multiplier (120 minutes).
+ *
+ * The safeCount clamp to 10 prevents numeric overflow and performance issues
+ * from corrupted storage values, not from normal operation.
+ *
  * @param {number} consecutiveCount - Number of consecutive notifications
- * @returns {number} Cooldown in milliseconds
+ * @returns {number} Cooldown in milliseconds (min: 15m, max: 2h)
  */
 function calculateNotificationCooldown(consecutiveCount) {
-  // FIXED P2-4: Clamp consecutiveCount to reasonable range before expensive exponentiation
-  // Prevents numeric overflow and performance issues from corrupted storage
+  // Clamp to prevent numeric overflow and corrupted storage values
+  // Max value of 10 prevents Math.pow from producing extremely large numbers
   const safeCount = Math.max(0, Math.min(consecutiveCount, 10));
 
-  // FIXED P3-2: Use Math.pow() for consistency and compatibility
-  // ** operator not transpiled by webpack, Math.pow() is safer
+  // Use Math.pow for consistency and compatibility (** operator not transpiled by webpack)
   const cooldown = CONFIG.BASE_NOTIFICATION_COOLDOWN_MS *
     Math.pow(CONFIG.NOTIFICATION_BACKOFF_MULTIPLIER, safeCount);
 
+  // Cap at 2 hours to prevent indefinite notification silence
   return Math.min(cooldown, CONFIG.MAX_NOTIFICATION_COOLDOWN_MS);
 }
 
@@ -1289,46 +1303,43 @@ async function saveToEmergencyBackup(data) {
     const emergencyData = Array.isArray(rawEmergencyData) ? rawEmergencyData : [];
 
     const MAX_EMERGENCY_RECORDS = 500;
-    const spaceAvailable = MAX_EMERGENCY_RECORDS - emergencyData.length;
 
-    // FIXED P1-2: Instead of rejecting when full, rotate old records (FIFO)
-    if (spaceAvailable <= 0) {
-      // Remove oldest records to make space for new ones
-      const recordsToRemove = Math.min(records.length, emergencyData.length);
-      emergencyData.splice(0, recordsToRemove);
+    // FIXED P1-4: Calculate exact space needed to fit new records
+    // Remove oldest records to make space for all new records (or as many as possible)
+    const totalNeeded = records.length;
+    const currentSize = emergencyData.length;
+    const spaceNeeded = Math.max(0, (currentSize + totalNeeded) - MAX_EMERGENCY_RECORDS);
 
-      logError('QuotaManager', new Error('Emergency backup full - rotating old records'), {
+    if (spaceNeeded > 0) {
+      // Remove oldest records to make space
+      emergencyData.splice(0, spaceNeeded);
+
+      logError('QuotaManager', new Error('Emergency backup rotating old records'), {
         operation: 'saveToEmergencyBackup',
-        emergencyDataLength: emergencyData.length,
-        maxRecords: MAX_EMERGENCY_RECORDS,
-        recordsRotated: recordsToRemove,
+        recordsRemoved: spaceNeeded,
+        recordsToAdd: totalNeeded,
+        finalSize: emergencyData.length + totalNeeded,
         warning: true
       });
     }
 
-    // BUGFIX: Recalculate space after rotation to prevent exceeding limit
-    const spaceAfterRotation = MAX_EMERGENCY_RECORDS - emergencyData.length;
-    const recordsToAdd = records.slice(0, Math.min(records.length, spaceAfterRotation));
+    // All new records should fit now (or we'll take as many as possible)
+    const recordsToAdd = records.slice(0, Math.min(records.length, MAX_EMERGENCY_RECORDS - emergencyData.length));
 
-    // FIXED P1-6: Validate recordsToAdd is an array before iteration
-    // Prevents crash if data corruption occurs during quota handling
-    if (!Array.isArray(recordsToAdd)) {
-      logError('QuotaManager', new Error('Emergency backup received non-array data'), {
+    // Add all new records (guaranteed to fit now)
+    for (const record of recordsToAdd) {
+      emergencyData.push(record);
+    }
+
+    // FIXED P1-4: Defensive check to ensure we didn't exceed limit
+    if (emergencyData.length > MAX_EMERGENCY_RECORDS) {
+      logError('QuotaManager', new Error('Emergency backup exceeded limit'), {
         operation: 'saveToEmergencyBackup',
-        dataType: typeof recordsToAdd,
-        dataValue: JSON.stringify(recordsToAdd).substring(0, 100),
-        action: 'converting_to_array'
+        actualSize: emergencyData.length,
+        maxSize: MAX_EMERGENCY_RECORDS,
+        trimming: true
       });
-      // Defensive: convert to array or use original records
-      const safeRecordsToAdd = Array.isArray(records) ? records.slice(0, spaceAfterRotation) : [];
-      for (const record of safeRecordsToAdd) {
-        emergencyData.push(record);
-      }
-    } else {
-      // Add records with loop to avoid stack overflow on large arrays
-      for (const record of recordsToAdd) {
-        emergencyData.push(record);
-      }
+      emergencyData.splice(0, emergencyData.length - MAX_EMERGENCY_RECORDS);
     }
 
     // Save back to storage

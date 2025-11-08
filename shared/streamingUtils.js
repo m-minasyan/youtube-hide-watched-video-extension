@@ -13,6 +13,8 @@ import { warn } from './logger.js';
 export class StreamingJSONParser {
   constructor(file, options = {}) {
     this.file = file;
+    this.originalSize = file.size; // FIXED P2-6: Store size at construction for TOCTOU check
+    this.originalName = file.name; // FIXED P2-6: Store name for identity verification
     this.chunkSize = options.chunkSize || 1024 * 1024; // 1MB chunks by default
     this.onProgress = options.onProgress || (() => {});
     this.onError = options.onError || (() => {});
@@ -24,12 +26,21 @@ export class StreamingJSONParser {
    */
   async parse() {
     try {
+      // FIXED P2-6: Validate file hasn't been replaced since construction
+      if (this.file.size !== this.originalSize || this.file.name !== this.originalName) {
+        throw new Error(
+          `File was modified or replaced after selection. ` +
+          `Original: ${this.originalName} (${formatBytes(this.originalSize)}), ` +
+          `Current: ${this.file.name} (${formatBytes(this.file.size)})`
+        );
+      }
+
       // Step 0: Validate file size BEFORE parsing to prevent DoS/OOM attacks
       // Check file size before reading any content to avoid loading malicious files
       const maxFileSize = IMPORT_EXPORT_CONFIG.MAX_IMPORT_SIZE_MB * 1024 * 1024; // Convert MB to bytes
-      if (this.file.size > maxFileSize) {
+      if (this.originalSize > maxFileSize) {
         throw new Error(
-          `File too large: ${formatBytes(this.file.size)} ` +
+          `File too large: ${formatBytes(this.originalSize)} ` +
           `(max: ${formatBytes(maxFileSize)}). ` +
           `Large files could cause memory issues.`
         );
@@ -145,16 +156,9 @@ export class StreamingRecordParser {
         throw new Error('Invalid import format: missing records array');
       }
 
-      // FIXED P2-1/P2-9: Warn if metadata doesn't match actual records
-      if (data.count && typeof data.count === 'number' && data.count !== data.records.length) {
-        warn(
-          `[StreamingParser] Metadata mismatch: count=${data.count} vs actual=${data.records.length}. ` +
-          `Using actual length for validation.`
-        );
-      }
-
-      // Step 2.1: Validate ACTUAL records array size to prevent OOM
-      // This is the only reliable protection - metadata can be forged
+      // FIXED P2-9: Validate ACTUAL records array size to prevent OOM
+      // Note: Metadata fields (count, version, etc.) can be forged and are not trusted for validation
+      // We only validate the actual records array length
       if (data.records.length > IMPORT_EXPORT_CONFIG.MAX_IMPORT_RECORDS) {
         throw new Error(
           `Too many records: ${data.records.length.toLocaleString()} ` +

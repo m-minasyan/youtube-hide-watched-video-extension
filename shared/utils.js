@@ -1,3 +1,5 @@
+import { debug } from './logger.js';
+
 /**
  * Ensures a value is a Promise.
  * Chrome APIs can return either a Promise or use callbacks.
@@ -55,13 +57,21 @@ export function withStorageTimeout(promise, timeoutMs, operationName = 'Storage 
 export function isValidVideoId(videoId) {
   if (!videoId || typeof videoId !== 'string') return false;
 
-  // FIXED P2-2: Stricter validation - YouTube IDs are 11 chars (standard) or up to 15 (Shorts)
-  // Reduced from 20 to 15 to prevent malformed IDs that could cause URL generation issues
-  // Min 10 chars prevents short IDs that are clearly invalid
-  if (videoId.length < 10 || videoId.length > 15) return false;
+  // FIXED P2-11: More permissive length validation for compatibility
+  // YouTube video IDs are typically 8-15 characters, but allow 6-20 for:
+  // - Historical compatibility (older IDs may be shorter)
+  // - Future-proofing (YouTube may change ID format)
+  // - Shorts IDs can vary (8-11 characters)
+  if (videoId.length < 6 || videoId.length > 20) {
+    return false;
+  }
 
-  // Only allow alphanumeric, hyphen, underscore
-  // This prevents CSS injection and other attacks
+  // Log unusual lengths for monitoring (typical is 10-15)
+  if ((videoId.length < 10 || videoId.length > 15) && typeof debug !== 'undefined') {
+    debug('[VideoID] Unusual length:', videoId.length, 'for ID:', videoId);
+  }
+
+  // Only allow alphanumeric, hyphen, underscore (prevents injection)
   const validPattern = /^[a-zA-Z0-9_-]+$/;
   return validPattern.test(videoId);
 }

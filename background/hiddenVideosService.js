@@ -67,24 +67,58 @@ async function broadcastHiddenVideosEvent(event) {
   }
   try {
     const tabs = await queryYoutubeTabs();
-    // FIXED P2-12: Rate limiting for Chrome API calls
+    // FIXED P2-12: Rate limiting with exponential backoff for Chrome API calls
     // Process tabs in batches to avoid throttling with 100+ tabs
     // Chrome has internal rate limits (~1000 calls/minute)
     const BATCH_SIZE = 10;
+    const MAX_CONSECUTIVE_FAILURES = 3;
     const failedBroadcasts = [];
+    let consecutiveFailures = 0;
 
     for (let i = 0; i < tabs.length; i += BATCH_SIZE) {
       const batch = tabs.slice(i, i + BATCH_SIZE);
-      await Promise.all(batch.map(async (tab) => {
-        try {
-          await ensurePromise(chrome.tabs.sendMessage(tab.id, { type: 'HIDDEN_VIDEOS_EVENT', event }));
-        } catch (err) {
-          failedBroadcasts.push({ tabId: tab.id, error: err.message });
-        }
-      }));
 
-      // Small delay between batches to respect rate limits
-      if (i + BATCH_SIZE < tabs.length) {
+      const batchResults = await Promise.allSettled(
+        batch.map(tab =>
+          ensurePromise(chrome.tabs.sendMessage(tab.id, { type: 'HIDDEN_VIDEOS_EVENT', event }))
+        )
+      );
+
+      const batchFailed = batchResults.filter(r => r.status === 'rejected').length;
+
+      // Track consecutive batch failures
+      if (batchFailed === batch.length) {
+        consecutiveFailures++;
+
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          logError('HiddenVideosService', new Error('Too many consecutive broadcast failures'), {
+            operation: 'broadcastHiddenVideosEvent',
+            tabsProcessed: i,
+            totalTabs: tabs.length,
+            stopping: true
+          });
+          break;
+        }
+
+        // Exponential backoff for rate limiting
+        const backoffDelay = Math.min(1000 * Math.pow(2, consecutiveFailures), 5000);
+        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+      } else {
+        consecutiveFailures = 0;
+      }
+
+      // Record failures
+      batchResults.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          failedBroadcasts.push({
+            tabId: batch[index].id,
+            error: result.reason?.message || 'Unknown error'
+          });
+        }
+      });
+
+      // Normal delay between batches
+      if (i + BATCH_SIZE < tabs.length && consecutiveFailures === 0) {
         await new Promise(resolve => setTimeout(resolve, 10));
       }
     }
@@ -131,32 +165,31 @@ async function migrateLegacyHiddenVideos() {
   ]);
   const legacyProgress = progressResult[STORAGE_KEYS.MIGRATION_PROGRESS] || {};
 
-  // FIXED P2-5: Validate partial writes from interrupted batch
-  // If batch was interrupted, check if any records were actually written before crash
+  // FIXED P2-5: Efficient interrupted batch handling
+  // Check if ANY records exist in database to determine if batch was partially written
   if (legacyProgress.batchInProgress) {
-    warn('[Migration] Detected interrupted batch, validating partial writes');
+    warn('[Migration] Detected interrupted batch, checking for partial writes');
 
-    const allEntries = [...extractLegacyEntries(syncResult[STORAGE_KEYS.HIDDEN_VIDEOS]),
-                        ...extractLegacyEntries(localResult[STORAGE_KEYS.HIDDEN_VIDEOS])];
-
-    // Find which batch was being processed when crash occurred
     const batchStart = legacyProgress.syncIndex || legacyProgress.localIndex || 0;
-    const batchEnd = Math.min(batchStart + 500, allEntries.length); // BATCH_SIZE=500
-    const batchVideoIds = allEntries.slice(batchStart, batchEnd).map(([id]) => id);
 
-    // Check if any records from interrupted batch were written
-    const existingRecords = await getHiddenVideosByIds(batchVideoIds);
-    const writtenCount = Object.keys(existingRecords).length;
+    // Check if ANY records exist in database (efficient count query)
+    // This is much faster than fetching all records from the batch
+    const stats = await getHiddenVideosStats();
 
-    if (writtenCount > 0) {
-      warn(`[Migration] Found ${writtenCount} partially written records from interrupted batch`);
-
-      // Skip already-written records to prevent duplicate timestamps
-      // Update index to skip processed records
+    if (stats.total > 0) {
+      // Some records exist - resume from batch start to be safe
+      // This might process some records twice, but upsert handles duplicates correctly
+      // and this prevents complex partial-write detection logic
+      warn(`[Migration] Found ${stats.total} records in database, resuming from batch start at index ${batchStart}`);
+      // Progress indices already point to batch start, no update needed
+    } else {
+      // No records at all - safe to start from batch beginning
+      // Reset indices to batch start just to be explicit
       if (legacyProgress.syncIndex !== undefined) {
-        legacyProgress.syncIndex = Math.min(batchStart + writtenCount, allEntries.length);
-      } else if (legacyProgress.localIndex !== undefined) {
-        legacyProgress.localIndex = Math.min(batchStart + writtenCount, allEntries.length);
+        legacyProgress.syncIndex = batchStart;
+      }
+      if (legacyProgress.localIndex !== undefined) {
+        legacyProgress.localIndex = batchStart;
       }
     }
   }
@@ -478,20 +511,40 @@ function validateImportData(data) {
   // FIXED P1-3: Detect duplicate timestamp attacks
   // Malicious imports with many identical timestamps can degrade IndexedDB byStateUpdatedAt index to O(n)
   // Count timestamp frequency to detect this attack pattern
+  const MAX_DUPLICATES_PER_TIMESTAMP = 100; // More reasonable limit to prevent index degradation
+  const MAX_UNIQUE_FUTURE_TIMESTAMPS = 10; // Limit future timestamp diversity to prevent attacks
+
   const timestampCounts = new Map();
+  const now = Date.now();
+  let futureTimestampCount = 0;
+
   data.records.forEach(record => {
     if (record && Number.isFinite(record.updatedAt)) {
       const count = timestampCounts.get(record.updatedAt) || 0;
       timestampCounts.set(record.updatedAt, count + 1);
+
+      // Track future timestamps separately
+      if (record.updatedAt > now) {
+        futureTimestampCount++;
+      }
     }
   });
 
   const maxDuplicates = timestampCounts.size > 0 ? Math.max(...timestampCounts.values()) : 0;
-  if (maxDuplicates > 1000) {
+  if (maxDuplicates > MAX_DUPLICATES_PER_TIMESTAMP) {
     errors.push(
-      `Suspicious timestamp pattern detected: ${maxDuplicates} records with identical timestamp. ` +
+      `Suspicious timestamp pattern: ${maxDuplicates} records with identical timestamp. ` +
       `This could indicate a malicious file designed to corrupt database indexes. ` +
-      `Maximum allowed duplicates: 1000.`
+      `Maximum allowed: ${MAX_DUPLICATES_PER_TIMESTAMP}.`
+    );
+  }
+
+  // Check for excessive future timestamps (another attack vector)
+  const uniqueFutureTimestamps = Array.from(timestampCounts.keys()).filter(t => t > now).length;
+  if (uniqueFutureTimestamps > MAX_UNIQUE_FUTURE_TIMESTAMPS) {
+    errors.push(
+      `Too many unique future timestamps: ${uniqueFutureTimestamps}. ` +
+      `This could indicate a timestamp attack. Maximum allowed: ${MAX_UNIQUE_FUTURE_TIMESTAMPS}.`
     );
   }
 
@@ -712,9 +765,20 @@ async function handleImportRecords(message) {
   // STREAMING APPROACH: Process records in batches to avoid memory overflow
   // This prevents loading all existing records into memory at once
   const IMPORT_BATCH_SIZE = 500; // Process 500 records at a time
+  const MAX_IMPORT_DURATION = 10 * 60 * 1000; // FIXED P2-3: 10 minute max for entire import
+  const IMPORT_START_TIME = Date.now();
   let totalProcessed = 0;
 
   for (let i = 0; i < validRecords.length; i += IMPORT_BATCH_SIZE) {
+    // FIXED P2-3: Check cumulative timeout to prevent Service Worker termination
+    const elapsedTime = Date.now() - IMPORT_START_TIME;
+    if (elapsedTime > MAX_IMPORT_DURATION) {
+      results.errors.push(
+        `Import timeout after ${Math.floor(elapsedTime / 1000)}s. ` +
+        `Processed ${totalProcessed} of ${validRecords.length} records.`
+      );
+      break;
+    }
     const batch = validRecords.slice(i, i + IMPORT_BATCH_SIZE);
 
     // Check memory safety before each batch
@@ -739,12 +803,15 @@ async function handleImportRecords(message) {
         );
       }
 
-      // P1-5 FIX: Add timeout protection for upsertHiddenVideos
+      // FIXED P2-3: Dynamic timeout based on remaining time
       // Prevents Service Worker termination on large batches
       if (recordsToUpsert.length > 0) {
+        const remainingTime = MAX_IMPORT_DURATION - (Date.now() - IMPORT_START_TIME);
+        const batchTimeout = Math.min(30000, Math.max(5000, remainingTime)); // Min 5s, max 30s
+
         await withTimeout(
           upsertHiddenVideos(recordsToUpsert),
-          30000, // 30 second timeout per batch
+          batchTimeout,
           `Import batch ${Math.floor(i / IMPORT_BATCH_SIZE) + 1}`
         );
       }
