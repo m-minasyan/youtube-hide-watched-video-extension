@@ -55,9 +55,10 @@ export function withStorageTimeout(promise, timeoutMs, operationName = 'Storage 
 export function isValidVideoId(videoId) {
   if (!videoId || typeof videoId !== 'string') return false;
 
-  // YouTube video IDs are typically 11 characters (standard) or < 15 (Shorts)
-  // Allow up to 20 characters for future-proofing
-  if (videoId.length === 0 || videoId.length > 20) return false;
+  // FIXED P2-2: Stricter validation - YouTube IDs are 11 chars (standard) or up to 15 (Shorts)
+  // Reduced from 20 to 15 to prevent malformed IDs that could cause URL generation issues
+  // Min 10 chars prevents short IDs that are clearly invalid
+  if (videoId.length < 10 || videoId.length > 15) return false;
 
   // Only allow alphanumeric, hyphen, underscore
   // This prevents CSS injection and other attacks

@@ -432,6 +432,7 @@ async function handleFallbackEmergency(currentCount) {
 /**
  * Aggressively processes fallback storage
  * Tries to process ALL records with retry limit to prevent infinite loops
+ * FIXED P1-5: Added per-record retry tracking to prevent infinite retry loops
  * @returns {Promise<Object>} Result with processed count
  */
 async function processFallbackStorageAggressively() {
@@ -443,9 +444,11 @@ async function processFallbackStorageAggressively() {
 
   // P1-1 FIX: Add retry limit to prevent infinite loop on persistent errors
   const MAX_CONSECUTIVE_FAILURES = 3;
+  const MAX_RECORD_RETRIES = 5; // FIXED P1-5: Maximum retries per record
   const AGGRESSIVE_BATCH_SIZE = QUOTA_CONFIG.AGGRESSIVE_BATCH_SIZE;
   let processedCount = 0;
   let consecutiveFailures = 0;
+  let skippedRecords = 0; // FIXED P1-5: Track permanently failed records
 
   while (fallbackRecords.length > 0) {
     // P1-1 FIX: Break if too many consecutive failures
@@ -454,6 +457,7 @@ async function processFallbackStorageAggressively() {
         operation: 'processFallbackStorageAggressively',
         consecutiveFailures,
         processedCount,
+        skippedRecords,
         remainingRecords: fallbackRecords.length,
         stopping: true
       });
@@ -474,13 +478,39 @@ async function processFallbackStorageAggressively() {
     } catch (error) {
       consecutiveFailures++;
 
-      // On error, push failed batch back to the front
-      fallbackRecords.unshift(...batch);
+      // FIXED P1-5: Track retry count per record to prevent infinite retry
+      const failedBatch = batch.map(record => {
+        // Initialize or increment retry count
+        const retryCount = (record._fallbackRetryCount || 0) + 1;
+
+        // If record exceeded max retries, skip it permanently
+        if (retryCount > MAX_RECORD_RETRIES) {
+          logError('QuotaManager', new Error('Record exceeded max retries'), {
+            operation: 'processFallbackStorageAggressively',
+            videoId: record.videoId,
+            retryCount,
+            maxRetries: MAX_RECORD_RETRIES,
+            action: 'skipping_permanently'
+          });
+          skippedRecords++;
+          return null; // Mark for removal
+        }
+
+        // Otherwise, mark retry count and return for re-queue
+        return { ...record, _fallbackRetryCount: retryCount };
+      }).filter(r => r !== null); // Remove permanently failed records
+
+      // On error, push failed batch back to the front (with updated retry counts)
+      if (failedBatch.length > 0) {
+        fallbackRecords.unshift(...failedBatch);
+      }
 
       logError('QuotaManager', error, {
         operation: 'processFallbackStorageAggressively',
         processedBefore: processedCount,
         batchFailed: batch.length,
+        requeuedCount: failedBatch.length,
+        skippedCount: batch.length - failedBatch.length,
         consecutiveFailures,
         willRetry: consecutiveFailures < MAX_CONSECUTIVE_FAILURES
       });
@@ -496,7 +526,8 @@ async function processFallbackStorageAggressively() {
   return {
     success: processedCount > 0,
     processed: processedCount,
-    remaining: fallbackRecords.length
+    remaining: fallbackRecords.length,
+    skipped: skippedRecords // FIXED P1-5: Report skipped records
   };
 }
 
@@ -868,10 +899,14 @@ async function updateNotificationBackoff(consecutiveCount) {
  * @returns {number} Cooldown in milliseconds
  */
 function calculateNotificationCooldown(consecutiveCount) {
+  // FIXED P2-4: Clamp consecutiveCount to reasonable range before expensive exponentiation
+  // Prevents numeric overflow and performance issues from corrupted storage
+  const safeCount = Math.max(0, Math.min(consecutiveCount, 10));
+
   // FIXED P3-2: Use Math.pow() for consistency and compatibility
   // ** operator not transpiled by webpack, Math.pow() is safer
   const cooldown = CONFIG.BASE_NOTIFICATION_COOLDOWN_MS *
-    Math.pow(CONFIG.NOTIFICATION_BACKOFF_MULTIPLIER, consecutiveCount);
+    Math.pow(CONFIG.NOTIFICATION_BACKOFF_MULTIPLIER, safeCount);
 
   return Math.min(cooldown, CONFIG.MAX_NOTIFICATION_COOLDOWN_MS);
 }

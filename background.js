@@ -5,7 +5,7 @@ import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 import { processFallbackStorage } from './background/indexedDb.js';
 import { getFallbackStats } from './background/quotaManager.js';
 import { logError } from './shared/errorHandler.js';
-import { info, warn } from './shared/logger.js';
+import { info, warn, debug } from './shared/logger.js';
 
 // CRITICAL: Register message listener IMMEDIATELY at top level (synchronously)
 // This must happen before any async operations to avoid race conditions where
@@ -97,9 +97,27 @@ async function startKeepAlive() {
     return; // Already exists, prevent duplicate
   }
 
-  keepAliveStarted = true;
-  chrome.alarms.create(KEEP_ALIVE_ALARM, {
-    periodInMinutes: SERVICE_WORKER_CONFIG.KEEP_ALIVE_INTERVAL / 60000 // 1 minute (Chrome API minimum)
+  // FIXED P1-2: Set flag AFTER successful creation with error handling
+  // Use await with Promise wrapper to handle callback-based chrome.alarms API
+  await new Promise((resolve, reject) => {
+    chrome.alarms.create(KEEP_ALIVE_ALARM, {
+      periodInMinutes: SERVICE_WORKER_CONFIG.KEEP_ALIVE_INTERVAL / 60000 // 1 minute (Chrome API minimum)
+    }, () => {
+      if (chrome.runtime.lastError) {
+        // Alarm creation failed - keep flag as false
+        keepAliveStarted = false;
+        logError('Background', chrome.runtime.lastError, {
+          operation: 'startKeepAlive',
+          fatal: true,
+          message: 'Failed to create keep-alive alarm'
+        });
+        reject(chrome.runtime.lastError);
+      } else {
+        // Success - set flag to true only after confirmation
+        keepAliveStarted = true;
+        resolve();
+      }
+    });
   });
 }
 
@@ -207,10 +225,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     // FIXED P1-6: Added debug logging instead of empty catch
     ensurePromise(chrome.tabs.sendMessage(tabId, { action: 'pageUpdated' })).catch((error) => {
       // Expected errors: tab closed, content script not ready
-      // Only log in development mode to avoid noise
-      if (typeof DEBUG !== 'undefined' && DEBUG) {
-        console.debug('Failed to send pageUpdated to tab:', tabId, error.message);
-      }
+      // FIXED P3-1: Use logger instead of direct console.debug
+      debug('Failed to send pageUpdated to tab:', tabId, error.message);
     });
   }
 });
