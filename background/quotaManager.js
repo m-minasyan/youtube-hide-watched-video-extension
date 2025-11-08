@@ -868,9 +868,10 @@ async function updateNotificationBackoff(consecutiveCount) {
  * @returns {number} Cooldown in milliseconds
  */
 function calculateNotificationCooldown(consecutiveCount) {
-  // FIXED P3-4: Use modern exponentiation operator instead of Math.pow
+  // FIXED P3-2: Use Math.pow() for consistency and compatibility
+  // ** operator not transpiled by webpack, Math.pow() is safer
   const cooldown = CONFIG.BASE_NOTIFICATION_COOLDOWN_MS *
-    (CONFIG.NOTIFICATION_BACKOFF_MULTIPLIER ** consecutiveCount);
+    Math.pow(CONFIG.NOTIFICATION_BACKOFF_MULTIPLIER, consecutiveCount);
 
   return Math.min(cooldown, CONFIG.MAX_NOTIFICATION_COOLDOWN_MS);
 }
