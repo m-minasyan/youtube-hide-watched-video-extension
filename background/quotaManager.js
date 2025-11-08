@@ -74,6 +74,11 @@ let isCleaningUp = false;
 // Tracks timestamps of recent notifications across all types
 const globalNotificationTimestamps = [];
 
+// FIXED P3-8: Per-type notification cooldown to prevent spam of same notification type
+// Maps notification type to last shown timestamp
+const lastNotificationByType = new Map();
+const PER_TYPE_COOLDOWN_MS = 60000; // 1 minute cooldown per type
+
 // Recursion depth tracking to prevent infinite loops
 // Tracks depth of quota-related operations (cleanup, fallback processing, etc.)
 let quotaOperationDepth = 0;
@@ -143,6 +148,17 @@ async function withQuotaDepthTracking(fn, operationName = 'quota_operation') {
     throw new Error(`Quota operation depth limit exceeded (${quotaOperationDepth}/${MAX_QUOTA_OPERATION_DEPTH})`);
   }
 
+  // FIXED P2-4: Monitor and warn when approaching maximum depth
+  // This early warning helps detect potential infinite recursion before it happens
+  if (quotaOperationDepth >= MAX_QUOTA_OPERATION_DEPTH - 1) {
+    warn('[QuotaManager] Approaching maximum recursion depth', {
+      operation: operationName,
+      currentDepth: quotaOperationDepth,
+      maxDepth: MAX_QUOTA_OPERATION_DEPTH,
+      stack: new Error().stack
+    });
+  }
+
   quotaOperationDepth++;
   try {
     return await fn();
@@ -152,7 +168,8 @@ async function withQuotaDepthTracking(fn, operationName = 'quota_operation') {
 }
 
 /**
- * Estimates the size of data to be stored in bytes
+ * FIXED P2-6: Estimates the size of data with input validation
+ * Prevents overflow and malicious inputs from causing incorrect cleanup
  * @param {Object|Array} data - Data to estimate
  * @returns {number} Estimated size in bytes
  */
@@ -161,6 +178,13 @@ function estimateDataSize(data) {
 
   // For arrays, sum individual record sizes
   if (Array.isArray(data)) {
+    // FIXED P2-6: Validate array size to prevent overflow/malicious input
+    if (data.length > 100000) {
+      warn('[QuotaManager] Suspicious large array detected in estimateDataSize', { length: data.length });
+      // Cap estimate at 100k records to prevent overflow
+      return 100000 * QUOTA_CONFIG.ESTIMATED_RECORD_SIZE;
+    }
+
     return data.length * QUOTA_CONFIG.ESTIMATED_RECORD_SIZE;
   }
 
@@ -169,15 +193,31 @@ function estimateDataSize(data) {
 }
 
 /**
- * Calculates how many records to delete to free up space
+ * FIXED P2-6: Calculates cleanup count with input validation
+ * Prevents infinity, NaN, and overflow from causing incorrect behavior
  * @param {number} estimatedNeededBytes - Bytes needed for the operation
  * @returns {number} Number of records to delete
  */
 function calculateCleanupCount(estimatedNeededBytes) {
+  // FIXED P2-6: Validate input to prevent infinity/NaN/overflow
+  if (!Number.isFinite(estimatedNeededBytes) || estimatedNeededBytes < 0) {
+    logError('QuotaManager', new Error('Invalid estimatedNeededBytes'), {
+      value: estimatedNeededBytes,
+      operation: 'calculateCleanupCount'
+    });
+    return QUOTA_CONFIG.MIN_CLEANUP_COUNT;
+  }
+
   // Calculate records needed with safety margin
   const recordsNeeded = Math.ceil(
     (estimatedNeededBytes / QUOTA_CONFIG.ESTIMATED_RECORD_SIZE) * QUOTA_CONFIG.CLEANUP_SAFETY_MARGIN
   );
+
+  // FIXED P2-6: Additional safety check for infinity
+  if (!Number.isFinite(recordsNeeded)) {
+    warn('[QuotaManager] Calculated recordsNeeded is not finite', { estimatedNeededBytes });
+    return QUOTA_CONFIG.MAX_CLEANUP_COUNT;
+  }
 
   // Apply min/max bounds
   return Math.max(
@@ -1082,6 +1122,22 @@ async function showQuotaNotification(options = {}) {
       return;
     }
 
+    // FIXED P3-8: Check per-type cooldown to prevent notification spam
+    const notificationType = options.type || 'default';
+    const lastShown = lastNotificationByType.get(notificationType) || 0;
+    const timeSinceLastShown = Date.now() - lastShown;
+
+    if (timeSinceLastShown < PER_TYPE_COOLDOWN_MS) {
+      await logQuotaEvent({
+        type: 'notification_suppressed',
+        reason: 'per_type_cooldown',
+        notificationType,
+        timeSinceLastShownSeconds: Math.round(timeSinceLastShown / 1000),
+        cooldownSeconds: PER_TYPE_COOLDOWN_MS / 1000
+      });
+      return;
+    }
+
     // Check if notifications are disabled by user
     const disabledResult = await withStorageTimeout(
       chrome.storage.local.get(NOTIFICATION_DISABLED_KEY),
@@ -1173,10 +1229,14 @@ async function showQuotaNotification(options = {}) {
     // FIXED P2-4: Record notification for global rate limiting
     recordGlobalNotification();
 
+    // FIXED P3-8: Record per-type notification timestamp
+    lastNotificationByType.set(notificationType, Date.now());
+
     await logQuotaEvent({
       type: 'notification_shown',
       title,
       message,
+      notificationType,
       consecutiveCount: newConsecutiveCount,
       currentCooldownMinutes: Math.round(currentCooldown / 60000),
       isFinalNotification: newConsecutiveCount === CONFIG.MAX_CONSECUTIVE_NOTIFICATIONS
@@ -1376,10 +1436,24 @@ async function saveToEmergencyBackup(data) {
         filename: `youtube-hidden-videos-EMERGENCY-${Date.now()}.json`,
         saveAs: true
       });
+
+      // FIXED P2-8: Clear emergency backup after successful export
+      // This prevents wasting storage with orphaned backup data
+      await chrome.storage.local.remove(EMERGENCY_BACKUP_KEY);
+
+      await logQuotaEvent({
+        type: 'emergency_backup_cleared',
+        recordCount: emergencyData.length,
+        reason: 'export_successful'
+      });
+
     } catch (downloadError) {
+      // Keep backup if download failed - user can retry later
       logError('QuotaManager', downloadError, {
         operation: 'emergency_backup_download',
-        recordCount: records.length
+        recordCount: records.length,
+        dataKept: true,
+        note: 'Emergency backup retained in chrome.storage.local for retry'
       });
     } finally {
       URL.revokeObjectURL(url);
