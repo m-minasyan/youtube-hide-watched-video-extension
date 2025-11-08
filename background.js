@@ -44,6 +44,9 @@ async function performFullInitialization(trigger = 'unknown') {
   fullInitializationPromise = (async () => {
     try {
       await initializeHiddenVideos();
+
+      // Wait for ALL alarm setup to complete before clearing promise
+      // This prevents race condition during rapid SW restart
       await Promise.all([
         startKeepAlive().catch((error) => {
           console.error('Failed to start keep-alive alarm:', error);
@@ -52,9 +55,6 @@ async function performFullInitialization(trigger = 'unknown') {
           console.error('Failed to start fallback processing alarm:', error);
         })
       ]);
-      // FIXED: Clear promise after successful initialization to allow re-initialization
-      // This is important for Service Worker suspend/resume cycles
-      fullInitializationPromise = null;
     } catch (error) {
       logError('Background', error, {
         operation: 'performFullInitialization',
@@ -64,9 +64,12 @@ async function performFullInitialization(trigger = 'unknown') {
       // Stop alarms if initialization fails
       stopKeepAlive();
       stopFallbackProcessing();
-      // Clear promise to allow retry
-      fullInitializationPromise = null;
       throw error;
+    } finally {
+      // FIXED P1-1: Always clear promise in finally block to prevent race condition
+      // This ensures cleanup happens after ALL operations complete or fail
+      // Critical for Service Worker suspend/resume cycles
+      fullInitializationPromise = null;
     }
   })();
 
@@ -187,7 +190,14 @@ chrome.runtime.onStartup.addListener(() => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('youtube.com')) {
-    ensurePromise(chrome.tabs.sendMessage(tabId, { action: 'pageUpdated' })).catch(() => {});
+    // FIXED P1-6: Added debug logging instead of empty catch
+    ensurePromise(chrome.tabs.sendMessage(tabId, { action: 'pageUpdated' })).catch((error) => {
+      // Expected errors: tab closed, content script not ready
+      // Only log in development mode to avoid noise
+      if (typeof DEBUG !== 'undefined' && DEBUG) {
+        console.debug('Failed to send pageUpdated to tab:', tabId, error.message);
+      }
+    });
   }
 });
 

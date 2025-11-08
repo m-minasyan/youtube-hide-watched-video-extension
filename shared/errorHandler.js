@@ -116,6 +116,8 @@ export async function retryOperation(
 // Error logger with tracking
 const errorLog = [];
 const MAX_LOG_SIZE = 100;
+// FIXED P2-10: Add TTL for old error entries (24 hours)
+const ERROR_LOG_TTL = 24 * 60 * 60 * 1000;
 
 export function logError(context, err, metadata = {}) {
   const entry = {
@@ -125,6 +127,12 @@ export function logError(context, err, metadata = {}) {
     message: err?.message || String(err),
     metadata
   };
+
+  // FIXED P2-10: Remove expired entries before adding new one
+  const now = Date.now();
+  while (errorLog.length > 0 && (now - errorLog[errorLog.length - 1].timestamp) > ERROR_LOG_TTL) {
+    errorLog.pop();
+  }
 
   errorLog.unshift(entry);
   if (errorLog.length > MAX_LOG_SIZE) {
