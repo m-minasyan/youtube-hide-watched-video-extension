@@ -98,7 +98,8 @@ async function startKeepAlive() {
   }
 
   // FIXED P1-2: Set flag AFTER successful creation with error handling
-  return new Promise((resolve, reject) => {
+  // Use await with Promise wrapper to handle callback-based chrome.alarms API
+  await new Promise((resolve, reject) => {
     chrome.alarms.create(KEEP_ALIVE_ALARM, {
       periodInMinutes: SERVICE_WORKER_CONFIG.KEEP_ALIVE_INTERVAL / 60000 // 1 minute (Chrome API minimum)
     }, () => {
