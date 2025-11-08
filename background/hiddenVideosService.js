@@ -131,10 +131,34 @@ async function migrateLegacyHiddenVideos() {
   ]);
   const legacyProgress = progressResult[STORAGE_KEYS.MIGRATION_PROGRESS] || {};
 
-  // Check if previous batch was interrupted during processing
+  // FIXED P2-5: Validate partial writes from interrupted batch
+  // If batch was interrupted, check if any records were actually written before crash
   if (legacyProgress.batchInProgress) {
-    warn('[Migration] Detected interrupted batch, restarting from same position');
-    // Indices remain at same position - batch will be reprocessed (safe with upsert)
+    warn('[Migration] Detected interrupted batch, validating partial writes');
+
+    const allEntries = [...extractLegacyEntries(syncResult[STORAGE_KEYS.HIDDEN_VIDEOS]),
+                        ...extractLegacyEntries(localResult[STORAGE_KEYS.HIDDEN_VIDEOS])];
+
+    // Find which batch was being processed when crash occurred
+    const batchStart = legacyProgress.syncIndex || legacyProgress.localIndex || 0;
+    const batchEnd = Math.min(batchStart + 500, allEntries.length); // BATCH_SIZE=500
+    const batchVideoIds = allEntries.slice(batchStart, batchEnd).map(([id]) => id);
+
+    // Check if any records from interrupted batch were written
+    const existingRecords = await getHiddenVideosByIds(batchVideoIds);
+    const writtenCount = Object.keys(existingRecords).length;
+
+    if (writtenCount > 0) {
+      warn(`[Migration] Found ${writtenCount} partially written records from interrupted batch`);
+
+      // Skip already-written records to prevent duplicate timestamps
+      // Update index to skip processed records
+      if (legacyProgress.syncIndex !== undefined) {
+        legacyProgress.syncIndex = Math.min(batchStart + writtenCount, allEntries.length);
+      } else if (legacyProgress.localIndex !== undefined) {
+        legacyProgress.localIndex = Math.min(batchStart + writtenCount, allEntries.length);
+      }
+    }
   }
 
   const localEntries = extractLegacyEntries(localResult[STORAGE_KEYS.HIDDEN_VIDEOS]);
@@ -190,11 +214,12 @@ async function processLegacyBatch(entries, progressKey, timestampSeed, progressS
   while (index < entries.length) {
     const slice = entries.slice(index, index + BATCH_SIZE);
     const records = [];
-    // P2-8 FIX: Use Date.now() for proper timestamps instead of timestampSeed arithmetic
-    // timestampSeed + offset creates invalid timestamps (seconds ahead, not milliseconds)
+    // FIXED P2-8: Use descending timestamps to ensure all are in the past
+    // Previous: batchTimestamp + offset created timestamps 0-499ms in FUTURE
+    // New: batchTimestamp - offset ensures all timestamps are in PAST
     const batchTimestamp = Date.now();
     slice.forEach(([videoId, raw], offset) => {
-      const record = normalizeLegacyRecord(videoId, raw, batchTimestamp + offset);
+      const record = normalizeLegacyRecord(videoId, raw, batchTimestamp - offset);
       if (record) {
         records.push(record);
       }

@@ -77,7 +77,12 @@ const globalNotificationTimestamps = [];
 // Recursion depth tracking to prevent infinite loops
 // Tracks depth of quota-related operations (cleanup, fallback processing, etc.)
 let quotaOperationDepth = 0;
-const MAX_QUOTA_OPERATION_DEPTH = 3; // Maximum recursion depth for quota operations
+// FIXED P2-1: Increased from 3 to 5 for complex quota scenarios with multiple retry layers
+const MAX_QUOTA_OPERATION_DEPTH = 5; // Maximum recursion depth for quota operations
+
+// FIXED P2-1: Separate depth tracking for fallback processing to prevent oscillation loops
+let fallbackProcessingDepth = 0;
+const MAX_FALLBACK_PROCESSING_DEPTH = 2; // Maximum depth for fallback warning/critical handlers
 
 /**
  * FIXED P2-4: Global notification rate limiter
@@ -248,22 +253,36 @@ async function checkFallbackPressure(currentCount) {
  * 🟡 WARNING (80%): Aggressive cleanup of main DB
  */
 async function handleFallbackWarning(currentCount) {
-  return withQuotaDepthTracking(async () => {
-    try {
-      // Delete MUCH more records from main DB
-      // Goal: free up space for fallback records
-      const aggressiveCleanupCount = Math.max(
-        QUOTA_CONFIG.MIN_CLEANUP_COUNT * 5, // Minimum 500 records
-        currentCount * 2                     // Or 2x more than in fallback
-      );
+  // FIXED P2-1: Separate depth tracking for fallback processing to prevent infinite loops
+  if (fallbackProcessingDepth >= MAX_FALLBACK_PROCESSING_DEPTH) {
+    logError('QuotaManager', new Error('Maximum fallback processing depth reached'), {
+      operation: 'handleFallbackWarning',
+      depth: fallbackProcessingDepth,
+      maxDepth: MAX_FALLBACK_PROCESSING_DEPTH,
+      preventingRecursion: true
+    });
+    return;
+  }
 
-      logError('QuotaManager', new Error('Fallback WARNING threshold reached'), {
-        operation: 'handleFallbackWarning',
-        currentCount,
-        utilization: `${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`,
-        cleanupTarget: aggressiveCleanupCount,
-        quotaDepth: quotaOperationDepth
-      });
+  fallbackProcessingDepth++;
+  try {
+    return await withQuotaDepthTracking(async () => {
+      try {
+        // Delete MUCH more records from main DB
+        // Goal: free up space for fallback records
+        const aggressiveCleanupCount = Math.max(
+          QUOTA_CONFIG.MIN_CLEANUP_COUNT * 5, // Minimum 500 records
+          currentCount * 2                     // Or 2x more than in fallback
+        );
+
+        logError('QuotaManager', new Error('Fallback WARNING threshold reached'), {
+          operation: 'handleFallbackWarning',
+          currentCount,
+          utilization: `${(currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS * 100).toFixed(1)}%`,
+          cleanupTarget: aggressiveCleanupCount,
+          quotaDepth: quotaOperationDepth,
+          fallbackDepth: fallbackProcessingDepth
+        });
 
       // Delete old records from main DB with recursion protection
       if (!isCleaningUp) {
@@ -287,14 +306,19 @@ async function handleFallbackWarning(currentCount) {
         processedFromFallback: result.processed
       });
 
-    } catch (error) {
-      logError('QuotaManager', error, {
-        operation: 'handleFallbackWarning',
-        quotaDepth: quotaOperationDepth,
-        fatal: true
-      });
-    }
-  }, 'handleFallbackWarning');
+      } catch (error) {
+        logError('QuotaManager', error, {
+          operation: 'handleFallbackWarning',
+          quotaDepth: quotaOperationDepth,
+          fallbackDepth: fallbackProcessingDepth,
+          fatal: true
+        });
+      }
+    }, 'handleFallbackWarning');
+  } finally {
+    // FIXED P2-1: Always decrement fallbackProcessingDepth to prevent stuck depth counter
+    fallbackProcessingDepth = Math.max(0, fallbackProcessingDepth - 1);
+  }
 }
 
 /**
@@ -542,13 +566,15 @@ async function saveToFallbackStorage(records) {
     return { success: true, message: 'No records to save' };
   }
 
-  // 🔒 Race condition protection - wait for any pending operation
+  // FIXED P2-2: Atomic lock check and assignment to prevent TOCTOU race
+  // If lock exists, wait for it then recursively call to re-check
   if (fallbackLock) {
     await fallbackLock;
+    // After waiting, recursively call to re-check lock and potentially create new one
+    return saveToFallbackStorage(records);
   }
 
-  // Create new lock promise
-  // Assign result back to fallbackLock so it's available for awaiting
+  // Create new lock promise and assign IMMEDIATELY before any async operations
   const lockPromise = (async () => {
     try {
       const result = await withStorageTimeout(
@@ -620,6 +646,8 @@ async function saveToFallbackStorage(records) {
     }
   })();
 
+  // FIXED P2-2: Assign lock IMMEDIATELY after creation, before await
+  // This ensures concurrent calls will wait on this lock
   fallbackLock = lockPromise;
 
   try {

@@ -426,10 +426,25 @@ async function withStore(mode, handler, operationContext = null) {
             }
 
             try {
-              const value = await handlerPromise;
+              // FIXED P2-3: Add timeout to prevent hung handler after transaction complete
+              // Transaction is already committed, but handler may have async cleanup
+              const value = await Promise.race([
+                handlerPromise,
+                new Promise((_, rej) =>
+                  setTimeout(() => rej(new Error('Handler timeout after transaction complete')), 5000)
+                )
+              ]);
               resolve(value);
             } catch (error) {
               // Handler failed after transaction completed
+              // Transaction cannot be aborted at this point - data is already saved
+              if (error.message === 'Handler timeout after transaction complete') {
+                logError('IndexedDB', error, {
+                  operation: 'withStore',
+                  phase: 'post-commit-handler-timeout',
+                  warning: 'Transaction already committed - handler cleanup timed out'
+                });
+              }
               reject(error);
             }
           };
@@ -533,8 +548,10 @@ async function withStore(mode, handler, operationContext = null) {
                   performingAdditionalCleanup: true
                 });
 
-                // Progressive cleanup - delete more records each retry
-                const additionalCleanup = quotaResult.recordsDeleted * 0.5; // 50% more each time
+                // FIXED P2-4: Multiplicative cleanup strategy instead of additive
+                // Doubles cleanup each retry: 100 -> 200 -> 400 (much more effective)
+                // Old strategy: 100 -> 150 -> 175 (too slow for large deficits)
+                const additionalCleanup = quotaResult.recordsDeleted * Math.pow(2, attempt);
                 await deleteOldestHiddenVideos(Math.floor(additionalCleanup));
               } else if (retryErrorType !== ErrorType.QUOTA_EXCEEDED) {
                 // Different error - throw immediately
