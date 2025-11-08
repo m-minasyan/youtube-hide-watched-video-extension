@@ -15,6 +15,8 @@ import { logError, classifyError, ErrorType } from '../../shared/errorHandler.js
 import { showNotification } from '../../shared/notifications.js';
 // FIXED P3-4: Import UI timing constants
 import { UI_TIMING } from '../../shared/constants.js';
+// FIXED: Import debug function that was being used but not imported
+import { debug } from '../../shared/logger.js';
 
 // Re-export sendHiddenVideosMessage for backward compatibility
 export { sendHiddenVideosMessage };

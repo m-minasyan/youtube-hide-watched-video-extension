@@ -870,10 +870,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Remove active from cached button (O(1) instead of O(n))
     if (activeFilterButton) {
       activeFilterButton.classList.remove('active');
+      // FIXED: Update aria-pressed for accessibility
+      activeFilterButton.setAttribute('aria-pressed', 'false');
     }
 
     // Set new active button
     btn.classList.add('active');
+    // FIXED: Update aria-pressed for accessibility
+    btn.setAttribute('aria-pressed', 'true');
     activeFilterButton = btn;
 
     hiddenVideosState.filter = btn.dataset.filter;

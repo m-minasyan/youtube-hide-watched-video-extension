@@ -12,7 +12,7 @@
 import { logError } from '../shared/errorHandler.js';
 import { debug, error, warn, info } from '../shared/logger.js';
 // P3-5 FIX: Removed UI_CONFIG import (AGGRESSIVE_BATCH_SIZE moved to QUOTA_CONFIG)
-import { QUOTA_CONFIG, ERROR_CONFIG } from '../shared/constants.js';
+import { QUOTA_CONFIG, ERROR_CONFIG, UI_TIMING } from '../shared/constants.js';
 import { withStorageTimeout } from '../shared/utils.js';
 // FIXED P2-1: Import deleteOldestHiddenVideos and upsertHiddenVideos at top level
 // Previously these were dynamically imported 3 times, causing code duplication
@@ -579,7 +579,8 @@ async function processFallbackStorageAggressively() {
       consecutiveFailures = 0; // Reset on success
 
       // Give browser time to breathe
-      await new Promise(resolve => setTimeout(resolve, 10));
+      // FIXED P3-4: Use constant instead of magic number
+      await new Promise(resolve => setTimeout(resolve, UI_TIMING.BATCH_YIELD_MS));
 
     } catch (error) {
       consecutiveFailures++;
