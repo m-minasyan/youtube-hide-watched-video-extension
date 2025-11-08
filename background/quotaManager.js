@@ -11,8 +11,8 @@
 
 import { logError } from '../shared/errorHandler.js';
 import { debug, error, warn, info } from '../shared/logger.js';
-// FIXED P3-1: Import UI_CONFIG for AGGRESSIVE_BATCH_SIZE
-import { QUOTA_CONFIG, ERROR_CONFIG, UI_CONFIG } from '../shared/constants.js';
+// P3-5 FIX: Removed UI_CONFIG import (AGGRESSIVE_BATCH_SIZE moved to QUOTA_CONFIG)
+import { QUOTA_CONFIG, ERROR_CONFIG } from '../shared/constants.js';
 import { withStorageTimeout } from '../shared/utils.js';
 // FIXED P2-1: Import deleteOldestHiddenVideos and upsertHiddenVideos at top level
 // Previously these were dynamically imported 3 times, causing code duplication
@@ -98,17 +98,16 @@ function canShowGlobalNotification() {
 }
 
 /**
- * FIXED P2-2: Records a notification timestamp for rate limiting
+ * Records a notification timestamp for rate limiting
  * Limits array size to prevent unbounded growth
  */
 function recordGlobalNotification() {
   globalNotificationTimestamps.push(Date.now());
 
-  // FIXED P2-2: Limit array size to prevent memory leak
-  // Keep only last 100 timestamps (enough for rate limiting)
-  // BUGFIX: Use while loop to handle multiple excess elements
-  while (globalNotificationTimestamps.length > 100) {
-    globalNotificationTimestamps.shift();
+  // P1-4 FIX: Use splice instead of while+shift for O(1) performance
+  // shift() in loop is O(n²), splice is O(n)
+  if (globalNotificationTimestamps.length > 100) {
+    globalNotificationTimestamps.splice(0, globalNotificationTimestamps.length - 100);
   }
 }
 
@@ -396,7 +395,7 @@ async function handleFallbackEmergency(currentCount) {
 
 /**
  * Aggressively processes fallback storage
- * Tries to process ALL records, ignoring errors
+ * Tries to process ALL records with retry limit to prevent infinite loops
  * @returns {Promise<Object>} Result with processed count
  */
 async function processFallbackStorageAggressively() {
@@ -406,25 +405,39 @@ async function processFallbackStorageAggressively() {
     return { success: true, processed: 0, remaining: 0 };
   }
 
-  // FIXED P2-8: Use splice for in-place modification instead of slice
-  // This avoids creating ~100 intermediate array copies for 5000 records
-  // Process in small batches for better reliability
-  // FIXED P3-1: Use config instead of hardcoded value
-  const AGGRESSIVE_BATCH_SIZE = UI_CONFIG.AGGRESSIVE_BATCH_SIZE;
+  // P1-1 FIX: Add retry limit to prevent infinite loop on persistent errors
+  const MAX_CONSECUTIVE_FAILURES = 3;
+  const AGGRESSIVE_BATCH_SIZE = QUOTA_CONFIG.AGGRESSIVE_BATCH_SIZE;
   let processedCount = 0;
+  let consecutiveFailures = 0;
 
   while (fallbackRecords.length > 0) {
+    // P1-1 FIX: Break if too many consecutive failures
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      logError('QuotaManager', new Error('Maximum consecutive failures reached'), {
+        operation: 'processFallbackStorageAggressively',
+        consecutiveFailures,
+        processedCount,
+        remainingRecords: fallbackRecords.length,
+        stopping: true
+      });
+      break;
+    }
+
     // Use splice to remove from front (in-place, no copy)
     const batch = fallbackRecords.splice(0, Math.min(AGGRESSIVE_BATCH_SIZE, fallbackRecords.length));
 
     try {
       await upsertHiddenVideos(batch);
       processedCount += batch.length;
+      consecutiveFailures = 0; // Reset on success
 
       // Give browser time to breathe
       await new Promise(resolve => setTimeout(resolve, 10));
 
     } catch (error) {
+      consecutiveFailures++;
+
       // On error, push failed batch back to the front
       fallbackRecords.unshift(...batch);
 
@@ -432,7 +445,8 @@ async function processFallbackStorageAggressively() {
         operation: 'processFallbackStorageAggressively',
         processedBefore: processedCount,
         batchFailed: batch.length,
-        stopping: true
+        consecutiveFailures,
+        willRetry: consecutiveFailures < MAX_CONSECUTIVE_FAILURES
       });
 
       // Stop processing on error - save updated fallback storage
@@ -440,8 +454,7 @@ async function processFallbackStorageAggressively() {
     }
   }
 
-  // FIXED P2-8: Save updated fallback storage once at the end
-  // Much more efficient than multiple removeFromFallbackStorage calls
+  // Save updated fallback storage once at the end
   await chrome.storage.local.set({ [FALLBACK_STORAGE_KEY]: fallbackRecords });
 
   return {
@@ -1087,11 +1100,11 @@ async function saveToEmergencyBackup(data) {
       ERROR_CONFIG.STORAGE_TIMEOUT,
       'chrome.storage.local.get(EMERGENCY_BACKUP_KEY)'
     );
-    const emergencyData = result[EMERGENCY_BACKUP_KEY] || [];
 
-    // FIXED P1-2: Increased limit from 100 to 500 records (~100KB)
-    // Still well under chrome.storage.local limits (10MB total)
-    // Added rotation to prevent data loss when limit reached
+    // P2-6 FIX: Validate emergencyData is an array to prevent runtime errors
+    const rawEmergencyData = result[EMERGENCY_BACKUP_KEY];
+    const emergencyData = Array.isArray(rawEmergencyData) ? rawEmergencyData : [];
+
     const MAX_EMERGENCY_RECORDS = 500;
     const spaceAvailable = MAX_EMERGENCY_RECORDS - emergencyData.length;
 
@@ -1242,16 +1255,17 @@ async function handleFallbackRejection(fallbackResult, data) {
     });
   }
 
-  // FIXED P1-2: Updated message to reflect rotation instead of rejection
-  const errorMessage = `Cannot save ${Array.isArray(data) ? data.length : 1} videos. All storage tiers failed. Auto-backup file saved to Downloads. CRITICAL: Clear old videos in settings NOW to prevent permanent data loss.`;
+  // P3-4 FIX: Shortened error message to fit notification UI (< 120 chars)
+  const recordCount = Array.isArray(data) ? data.length : 1;
+  const errorMessage = `Storage full! ${recordCount} video(s) auto-saved to Downloads. Clear old videos now to prevent data loss.`;
 
   await showCriticalNotification({
-    title: '🛑 CRITICAL: AUTO-BACKUP CREATED',
+    title: '🛑 Storage Critical',
     message: errorMessage
   });
 
-  // Log to console for bug reports
-  console.error('[CRITICAL] All storage tiers exhausted:', {
+  // Log error for bug reports (always logged, even in production)
+  error('[CRITICAL] All storage tiers exhausted:', {
     dataLoss: Array.isArray(data) ? data.length : 1,
     fallbackResult,
     emergencyResult

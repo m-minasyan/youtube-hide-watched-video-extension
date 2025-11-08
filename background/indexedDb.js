@@ -294,9 +294,9 @@ export function closeDbSync() {
       shutdownRequested: true
     });
 
-    // FIXED P1-4: Set timeout for force-close after grace period
-    // This prevents database from staying open indefinitely
-    // 100ms grace period allows operations to complete naturally
+    // P2-5 FIX: Increased timeout from 100ms to 500ms for slower devices
+    // This prevents database from staying open indefinitely while allowing
+    // more time for operations to complete naturally on constrained devices
     setTimeout(() => {
       if (resolvedDb && shutdownRequested) {
         try {
@@ -314,7 +314,7 @@ export function closeDbSync() {
           clearBackgroundCache();
         }
       }
-    }, 100); // 100ms grace period
+    }, 500); // P2-5: 500ms grace period for slow devices
 
     return;
   }

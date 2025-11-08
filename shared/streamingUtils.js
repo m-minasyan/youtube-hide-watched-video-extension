@@ -4,6 +4,7 @@
  */
 
 import { IMPORT_EXPORT_CONFIG } from './constants.js';
+import { warn } from './logger.js';
 
 /**
  * Streaming JSON parser for large files
@@ -89,18 +90,9 @@ export class StreamingJSONParser {
 
     } catch (error) {
       this.onError(error);
-      // Preserve original error stack trace
-      // FIXED P2-3: Check error.cause support (Chrome 93+/Firefox 91+)
-      // Use fallback property for older browsers
+      // P2-3 FIX: Use consistent originalError property for compatibility
       const wrappedError = new Error(`Failed to parse JSON: ${error.message}`);
-
-      if ('cause' in Error.prototype || typeof wrappedError.cause !== 'undefined') {
-        wrappedError.cause = error;
-      } else {
-        // Fallback for browsers without error.cause support
-        wrappedError.originalError = error;
-      }
-
+      wrappedError.originalError = error;
       throw wrappedError;
     }
   }
@@ -145,7 +137,7 @@ export class StreamingRecordParser {
 
       // FIXED P2-1/P2-9: Warn if metadata doesn't match actual records
       if (data.count && typeof data.count === 'number' && data.count !== data.records.length) {
-        console.warn(
+        warn(
           `[StreamingParser] Metadata mismatch: count=${data.count} vs actual=${data.records.length}. ` +
           `Using actual length for validation.`
         );

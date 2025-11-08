@@ -141,14 +141,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   /**
    * Sanitizes search query to prevent XSS attacks
    * Removes potentially dangerous characters and patterns
-   * FIXED P1-4: Added try-catch for Unicode normalization errors
    * @param {string} query - Search query to sanitize
    * @returns {string} - Sanitized query
    */
   function sanitizeSearchQuery(query) {
     if (!query) return '';
 
-    // FIXED P1-4: Wrap Unicode normalization in try-catch to handle malformed input
+    // P1-2 FIX: Use logger instead of console.error to prevent memory leaks
     let sanitized;
     try {
       // Convert to string and apply Unicode normalization (NFC)
@@ -156,8 +155,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       // fullwidth characters (＜＞) or other Unicode equivalents
       // could be used to bypass security checks
       sanitized = String(query).normalize('NFC');
-    } catch (error) {
-      console.error('[XSS Protection] Unicode normalization failed:', error);
+    } catch (err) {
+      logError('[XSS Protection] Unicode normalization failed:', err);
       // Safe fallback: return empty string to prevent malformed input processing
       return '';
     }
@@ -195,14 +194,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   /**
    * Normalizes a string for case-insensitive search
    * Applies Unicode normalization (NFC) to prevent bypass attacks
-   * FIXED P1-4: Added try-catch for Unicode normalization errors
    * @param {string} str - String to normalize
    * @returns {string} - Normalized string
    */
   function normalizeString(str) {
     if (!str) return '';
 
-    // FIXED P1-3: Wrap Unicode normalization in try-catch with sanitization fallback
+    // P1-2 FIX: Use logger instead of console.error to prevent memory leaks
     try {
       // Apply Unicode NFC normalization first
       // This ensures consistent representation of characters
@@ -211,9 +209,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       // NFC converts to the single composed form
       const normalized = String(str).normalize('NFC');
       return normalized.toLowerCase().trim();
-    } catch (error) {
-      console.error('[Unicode] Normalization failed:', error);
-      // FIXED P1-3: Safe fallback with additional XSS protection
+    } catch (err) {
+      logError('[Unicode] Normalization failed:', err);
+      // Safe fallback with additional XSS protection
       // Remove potentially dangerous characters before processing
       const sanitized = String(str).replace(/[<>'"&]/g, '');
       return sanitized.toLowerCase().trim();
@@ -326,9 +324,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         if (result?.items) {
-          // FIXED P2-6: Use push(...) instead of concat for better performance
-          // Avoids creating intermediate array copies on each iteration
-          allItems.push(...result.items);
+          // P2-4 FIX: Use loop instead of spread to avoid stack overflow
+          // push(...) can cause stack overflow with large arrays (>100k elements)
+          for (const item of result.items) {
+            allItems.push(item);
+          }
         }
 
         hasMore = Boolean(result?.hasMore);
@@ -373,7 +373,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       hiddenVideosState.items = filteredItems.slice(startIndex, endIndex);
       hiddenVideosState.hasMore = endIndex < filteredItems.length;
     } catch (error) {
-      if (DEBUG) console.error('Search failed:', error);
+      logError('[Search] Search failed:', error);
       // MEMORY LEAK FIX: Clear old event listeners before setting new content
       videosContainer.replaceChildren();
       // Display error message to user
@@ -982,9 +982,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         buffer += decoder.decode(value, { stream: !done });
 
         // Log progress for large files
-        if (DEBUG && totalBytes > 5 * 1024 * 1024) {
+        if (totalBytes > 5 * 1024 * 1024) {
           const progress = Math.round((bytesRead / totalBytes) * 100);
-          console.log(`Reading file: ${progress}% (${formatBytes(bytesRead)}/${formatBytes(totalBytes)})`);
+          debug(`Reading file: ${progress}% (${formatBytes(bytesRead)}/${formatBytes(totalBytes)})`);
         }
 
         // Yield to UI thread periodically to prevent freeze
@@ -1022,9 +1022,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const exporter = new ChunkedJSONExporter({
         chunkSize: IMPORT_EXPORT_CONFIG.EXPORT_CHUNK_SIZE,
         onProgress: (progress) => {
-          if (DEBUG) {
-            console.log(`Export progress: ${progress.stage} ${progress.progress}%`);
-          }
+          debug(`Export progress: ${progress.stage} ${progress.progress}%`);
           // Update button text with progress for large exports
           if (exportData.count > 10000 && progress.stage === 'exporting') {
             exportBtn.textContent = `Exporting ${progress.progress}%...`;
@@ -1075,7 +1073,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       );
 
     } catch (error) {
-      if (DEBUG) console.error('Export failed:', error);
+      logError('[Export] Export failed:', error);
       showNotification(`Export failed: ${error.message}`, NotificationType.ERROR);
     } finally {
       // Restore button state
@@ -1148,7 +1146,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
     } catch (error) {
-      if (DEBUG) console.error('Import preparation failed:', error);
+      logError('[Import] Import preparation failed:', error);
       showNotification(`Import failed: ${error.message}`, NotificationType.ERROR);
     } finally {
       // Reset file input
@@ -1435,7 +1433,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }, 500);
 
     } catch (error) {
-      if (DEBUG) console.error('Import execution failed:', error);
+      logError('[Import] Import execution failed:', error);
 
       progressDiv.style.display = 'none';
       showNotification(`Import failed: ${error.message}`, NotificationType.ERROR);
@@ -1543,9 +1541,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadHiddenVideos();
       }).catch((error) => {
         if (!error.message?.includes('context invalidated')) {
-          if (DEBUG) console.error('Failed to refresh hidden videos after event:', error);
+          logError('[Event] Failed to refresh hidden videos after event:', error);
         }
       });
     }
+  });
+
+  // P2-7 FIX: Cleanup AbortController on page unload to prevent memory leaks
+  window.addEventListener('beforeunload', () => {
+    abortController.abort();
+    clearSearchMemory();
   });
 });
