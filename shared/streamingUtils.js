@@ -423,7 +423,7 @@ export class ChunkedJSONExporter {
 
 /**
  * FIXED P3-1: Format bytes to human-readable string with edge case handling
- * Handles negative numbers, infinity, and NaN gracefully
+ * Handles negative numbers, infinity, NaN, and fractional bytes gracefully
  * @param {number} bytes - Number of bytes
  * @param {number} decimals - Decimal places (default: 2)
  * @returns {string} - Formatted string
@@ -438,9 +438,15 @@ export function formatBytes(bytes, decimals = 2) {
   const dm = decimals < 0 ? 0 : decimals;
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
 
+  // Calculate size index
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  // FIXED: Clamp index to valid array bounds (0 to sizes.length-1)
+  // Handles fractional bytes (< 1) where i would be negative
+  // and very large values where i might exceed array length
+  const clampedIndex = Math.max(0, Math.min(i, sizes.length - 1));
+
+  return parseFloat((bytes / Math.pow(k, clampedIndex)).toFixed(dm)) + ' ' + sizes[clampedIndex];
 }
 
 /**
