@@ -50,10 +50,16 @@ async function performFullInitialization(trigger = 'unknown') {
       // This prevents race condition during rapid SW restart
       await Promise.all([
         startKeepAlive().catch((error) => {
-          console.error('Failed to start keep-alive alarm:', error);
+          logError('Background', error, {
+            operation: 'startKeepAlive',
+            message: 'Failed to start keep-alive alarm'
+          });
         }),
         startFallbackProcessing().catch((error) => {
-          console.error('Failed to start fallback processing alarm:', error);
+          logError('Background', error, {
+            operation: 'startFallbackProcessing',
+            message: 'Failed to start fallback processing alarm'
+          });
         })
       ]);
     } catch (error) {

@@ -4,6 +4,7 @@
  */
 
 import { IMPORT_EXPORT_CONFIG } from './constants.js';
+import { warn } from './logger.js';
 
 /**
  * Streaming JSON parser for large files
@@ -136,7 +137,7 @@ export class StreamingRecordParser {
 
       // FIXED P2-1/P2-9: Warn if metadata doesn't match actual records
       if (data.count && typeof data.count === 'number' && data.count !== data.records.length) {
-        console.warn(
+        warn(
           `[StreamingParser] Metadata mismatch: count=${data.count} vs actual=${data.records.length}. ` +
           `Using actual length for validation.`
         );
