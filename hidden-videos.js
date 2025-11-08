@@ -81,10 +81,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   // FIXED P3-1: Use config instead of hardcoded value
   const videosPerPage = UI_CONFIG.VIDEOS_PER_PAGE;
 
-  // AbortController for managing all event listeners
+  // FIXED P3-12: AbortController for managing all event listeners
   // This allows us to remove all listeners at once during cleanup
+  // Note: For UI pages (not content scripts), listeners are automatically cleaned
+  // when the page unloads, but AbortController is still best practice for:
+  // - Explicit cleanup control
+  // - Memory leak prevention in long-running pages
+  // - Testing and development scenarios
   const abortController = new AbortController();
   const signal = abortController.signal;
+
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', () => {
+    abortController.abort();
+    clearSearchMemory(); // Clear search-related memory
+  });
 
   /**
    * Detects if the current device is mobile
@@ -184,8 +195,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // U+FEFF: Zero Width No-Break Space (BOM)
     sanitized = sanitized.replace(/[\u200B-\u200D\uFEFF]/g, '');
 
-    // Normalize fullwidth ASCII characters (U+FF01-U+FF5E) to standard ASCII
+    // VERIFIED P1-7: Normalize fullwidth ASCII characters (U+FF01-U+FF5E) to standard ASCII
     // This converts fullwidth versions: ＜ → <, ＞ → >, （ → (, etc.
+    // Defense against XSS via Unicode normalization bypass:
+    //   Input:  ＜script＞alert(1)＜/script＞ (fullwidth characters)
+    //   Step 1: → <script>alert(1)</script> (normalized to ASCII)
+    //   Step 2: → scriptalert1/script (line 201 removes < > characters)
     // IMPORTANT: This range does NOT include CJK characters (Japanese/Chinese/Korean):
     // - Japanese Hiragana: U+3040-U+309F (あいうえお)
     // - Japanese Katakana: U+30A0-U+30FF (アイウエオ)

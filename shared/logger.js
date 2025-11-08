@@ -83,8 +83,12 @@ export function createLogger(namespace) {
   };
 }
 
+// FIXED: Export logDebug as alias for debug for backward compatibility
+export const logDebug = debug;
+
 export default {
   debug,
+  logDebug, // Backward compatibility alias
   error,
   warn,
   info,

@@ -4,7 +4,7 @@ import { STORAGE_KEYS, DEFAULT_SETTINGS, SERVICE_WORKER_CONFIG } from './shared/
 import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 import { processFallbackStorage } from './background/indexedDb.js';
 import { getFallbackStats } from './background/quotaManager.js';
-import { logError } from './shared/errorHandler.js';
+import { logError, classifyError, ErrorType } from './shared/errorHandler.js';
 import { info, warn, debug } from './shared/logger.js';
 
 // CRITICAL: Register message listener IMMEDIATELY at top level (synchronously)
@@ -281,11 +281,22 @@ chrome.runtime.onStartup.addListener(() => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('youtube.com')) {
-    // FIXED P1-6: Added debug logging instead of empty catch
+    // FIXED P1-6: Classify errors to distinguish expected vs unexpected failures
     ensurePromise(chrome.tabs.sendMessage(tabId, { action: 'pageUpdated' })).catch((error) => {
       // Expected errors: tab closed, content script not ready
-      // FIXED P3-1: Use logger instead of direct console.debug
-      debug('Failed to send pageUpdated to tab:', tabId, error.message);
+      const errorType = classifyError(error);
+      if (errorType === ErrorType.TRANSIENT || error.message?.includes('Receiving end does not exist')) {
+        // Transient errors are expected (tab closed, content script not loaded yet)
+        debug('Expected transient error sending pageUpdated:', error.message);
+      } else {
+        // Unexpected errors should be logged for investigation
+        logError('Background', error, {
+          operation: 'tabs.sendMessage',
+          action: 'pageUpdated',
+          tabId,
+          unexpected: true
+        });
+      }
     });
   }
 });
