@@ -444,3 +444,37 @@ export const SELECTOR_HEALTH_CONFIG = {
   // Would trigger alerts only after sustained failure pattern is established
   FAILURE_NOTIFICATION_THRESHOLD: 5
 };
+
+// FIXED P3-4: UI/UX timing constants
+// Extracted hardcoded magic numbers for better maintainability and documentation
+export const UI_TIMING = {
+  // Search debounce delay (300ms)
+  // Balance between responsiveness and reducing unnecessary API calls
+  // Short enough for good UX, long enough to avoid excessive filtering
+  SEARCH_DEBOUNCE_MS: 300,
+
+  // Keep-alive alarm interval (20000ms = 20 seconds)
+  // Prevents service worker from being terminated by Chrome
+  // Set just below Chrome's 30-second inactivity threshold
+  KEEP_ALIVE_INTERVAL_MS: 20000,
+
+  // Maximum delete count per operation (1000000 = 1 million)
+  // Safety limit to prevent accidental deletion of entire database
+  // High enough for batch operations, low enough to prevent catastrophic errors
+  MAX_DELETE_COUNT: 1000000,
+
+  // Pending request timeout (30000ms = 30 seconds)
+  // Timeout for background fetch operations to prevent memory leaks
+  // Long enough for slow networks, short enough to prevent indefinite hangs
+  PENDING_REQUEST_TIMEOUT_MS: 30000,
+
+  // Database reset max wait time (10000ms = 10 seconds)
+  // Maximum time to wait for active operations before forcing database reset
+  // Balances data integrity with need to proceed with reset
+  DB_RESET_MAX_WAIT_MS: 10000,
+
+  // Batch processing yield delay (10ms)
+  // Small delay between batches to allow UI thread to process events
+  // Prevents UI blocking during large batch operations
+  BATCH_YIELD_MS: 10
+};
