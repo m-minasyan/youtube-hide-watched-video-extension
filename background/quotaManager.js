@@ -106,7 +106,8 @@ function recordGlobalNotification() {
 
   // FIXED P2-2: Limit array size to prevent memory leak
   // Keep only last 100 timestamps (enough for rate limiting)
-  if (globalNotificationTimestamps.length > 100) {
+  // BUGFIX: Use while loop to handle multiple excess elements
+  while (globalNotificationTimestamps.length > 100) {
     globalNotificationTimestamps.shift();
   }
 }
@@ -1109,9 +1110,11 @@ async function saveToEmergencyBackup(data) {
       });
     }
 
+    // BUGFIX: Recalculate space after rotation to prevent exceeding limit
+    const spaceAfterRotation = MAX_EMERGENCY_RECORDS - emergencyData.length;
+    const recordsToAdd = records.slice(0, Math.min(records.length, spaceAfterRotation));
+
     // Add records with loop to avoid stack overflow on large arrays
-    // With rotation, we now have guaranteed space
-    const recordsToAdd = records.slice(0, Math.min(records.length, MAX_EMERGENCY_RECORDS));
     for (const record of recordsToAdd) {
       emergencyData.push(record);
     }

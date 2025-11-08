@@ -130,6 +130,13 @@ async function migrateLegacyHiddenVideos() {
     chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS)
   ]);
   const legacyProgress = progressResult[STORAGE_KEYS.MIGRATION_PROGRESS] || {};
+
+  // FIXED P1-8: Check if previous batch was interrupted during processing
+  if (legacyProgress.batchInProgress) {
+    console.warn('[Migration] Detected interrupted batch, restarting from same position');
+    // Indices remain at same position - batch will be reprocessed (safe with upsert)
+  }
+
   const localEntries = extractLegacyEntries(localResult[STORAGE_KEYS.HIDDEN_VIDEOS]);
   const syncEntriesRaw = extractLegacyEntries(syncResult[STORAGE_KEYS.HIDDEN_VIDEOS]);
   const localMap = new Map(localEntries.map(([videoId]) => [videoId, true]));
