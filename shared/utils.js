@@ -10,19 +10,20 @@ export function ensurePromise(value) {
 }
 
 /**
- * Wraps a chrome.storage operation with a timeout to prevent indefinite hanging
- * @param {Promise} promise - The chrome.storage promise to wrap
+ * Generic timeout wrapper for any promise
+ * P1-5 FIX: Exported for use in handleImportRecords and other operations
+ * @param {Promise} promise - The promise to wrap
  * @param {number} timeoutMs - Timeout in milliseconds
  * @param {string} operationName - Name of the operation for error messages
  * @returns {Promise} - Promise that rejects if timeout is exceeded
  */
-export function withStorageTimeout(promise, timeoutMs, operationName = 'Storage operation') {
+export function withTimeout(promise, timeoutMs, operationName = 'Operation') {
   return Promise.race([
     promise,
     new Promise((_, reject) => {
       const timeoutId = setTimeout(() => {
         const error = new Error(`${operationName} timeout after ${timeoutMs}ms`);
-        error.name = 'StorageTimeoutError';
+        error.name = 'TimeoutError';
         error.timeout = true;
         reject(error);
       }, timeoutMs);
@@ -31,6 +32,17 @@ export function withStorageTimeout(promise, timeoutMs, operationName = 'Storage 
       promise.finally(() => clearTimeout(timeoutId));
     })
   ]);
+}
+
+/**
+ * Wraps a chrome.storage operation with a timeout to prevent indefinite hanging
+ * @param {Promise} promise - The chrome.storage promise to wrap
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {string} operationName - Name of the operation for error messages
+ * @returns {Promise} - Promise that rejects if timeout is exceeded
+ */
+export function withStorageTimeout(promise, timeoutMs, operationName = 'Storage operation') {
+  return withTimeout(promise, timeoutMs, operationName);
 }
 
 /**

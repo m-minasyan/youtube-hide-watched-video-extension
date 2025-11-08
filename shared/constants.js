@@ -147,10 +147,9 @@ export const SELECTOR_STRINGS = {
 // In development: true, In production: false
 // For webpack builds: __DEV__ is defined by DefinePlugin
 // For direct browser loads (popup.js): check if process exists before accessing
-// FIXED P2-5: Explicit boolean conversion to prevent truthy strings
-// Previously __DEV__ as string "false" would be truthy
+// P3-6 FIX: Use explicit 'development' check to avoid empty string edge case
 export const DEBUG = typeof __DEV__ !== 'undefined' ? Boolean(__DEV__) :
-  (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production') || false;
+  (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development');
 
 // DOM Cache Configuration
 export const CACHE_CONFIG = {
@@ -289,17 +288,14 @@ export const IMPORT_EXPORT_CONFIG = {
   PROGRESS_UPDATE_THROTTLE: 100
 };
 
-// FIXED P3-1: UI Configuration (previously hardcoded)
+// UI Configuration
 export const UI_CONFIG = {
   // Hidden videos manager pagination
   VIDEOS_PER_PAGE: 12,
 
   // Search limits by device type
   MAX_SEARCH_ITEMS_MOBILE: 500,
-  MAX_SEARCH_ITEMS_DESKTOP: 1000,
-
-  // Quota manager cleanup (quotaManager.js specific)
-  AGGRESSIVE_BATCH_SIZE: 50 // Used in aggressive cleanup mode
+  MAX_SEARCH_ITEMS_DESKTOP: 1000
 };
 
 // FIXED P3-12: Delay constants (previously hardcoded)
@@ -330,6 +326,10 @@ export const QUOTA_CONFIG = {
   // Maximum records to store in fallback storage
   // INCREASED from 1000 to 5000 to prevent data loss during high-volume operations
   MAX_FALLBACK_RECORDS: 5000,
+
+  // P3-1 FIX: Moved from UI_CONFIG to QUOTA_CONFIG for better organization
+  // Batch size for aggressive fallback processing
+  AGGRESSIVE_BATCH_SIZE: 50,
 
   // Notification cooldown (5 minutes)
   NOTIFICATION_COOLDOWN_MS: 5 * 60 * 1000,

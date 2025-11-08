@@ -89,18 +89,9 @@ export class StreamingJSONParser {
 
     } catch (error) {
       this.onError(error);
-      // Preserve original error stack trace
-      // FIXED P2-3: Check error.cause support (Chrome 93+/Firefox 91+)
-      // Use fallback property for older browsers
+      // P2-3 FIX: Use consistent originalError property for compatibility
       const wrappedError = new Error(`Failed to parse JSON: ${error.message}`);
-
-      if ('cause' in Error.prototype || typeof wrappedError.cause !== 'undefined') {
-        wrappedError.cause = error;
-      } else {
-        // Fallback for browsers without error.cause support
-        wrappedError.originalError = error;
-      }
-
+      wrappedError.originalError = error;
       throw wrappedError;
     }
   }

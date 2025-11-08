@@ -10,7 +10,7 @@ import {
   deleteOldestHiddenVideos
 } from './indexedDb.js';
 import { getCacheStats } from './indexedDbCache.js';
-import { ensurePromise, queryYoutubeTabs } from '../shared/utils.js';
+import { ensurePromise, queryYoutubeTabs, withTimeout } from '../shared/utils.js';
 import { IMPORT_EXPORT_CONFIG } from '../shared/constants.js';
 import { debug, error, warn, info } from '../shared/logger.js';
 
@@ -131,9 +131,9 @@ async function migrateLegacyHiddenVideos() {
   ]);
   const legacyProgress = progressResult[STORAGE_KEYS.MIGRATION_PROGRESS] || {};
 
-  // FIXED P1-8: Check if previous batch was interrupted during processing
+  // Check if previous batch was interrupted during processing
   if (legacyProgress.batchInProgress) {
-    console.warn('[Migration] Detected interrupted batch, restarting from same position');
+    warn('[Migration] Detected interrupted batch, restarting from same position');
     // Indices remain at same position - batch will be reprocessed (safe with upsert)
   }
 
@@ -190,8 +190,11 @@ async function processLegacyBatch(entries, progressKey, timestampSeed, progressS
   while (index < entries.length) {
     const slice = entries.slice(index, index + BATCH_SIZE);
     const records = [];
+    // P2-8 FIX: Use Date.now() for proper timestamps instead of timestampSeed arithmetic
+    // timestampSeed + offset creates invalid timestamps (seconds ahead, not milliseconds)
+    const batchTimestamp = Date.now();
     slice.forEach(([videoId, raw], offset) => {
-      const record = normalizeLegacyRecord(videoId, raw, timestampSeed + index + offset);
+      const record = normalizeLegacyRecord(videoId, raw, batchTimestamp + offset);
       if (record) {
         records.push(record);
       }
@@ -689,9 +692,14 @@ async function handleImportRecords(message) {
         );
       }
 
-      // Upsert this batch
+      // P1-5 FIX: Add timeout protection for upsertHiddenVideos
+      // Prevents Service Worker termination on large batches
       if (recordsToUpsert.length > 0) {
-        await upsertHiddenVideos(recordsToUpsert);
+        await withTimeout(
+          upsertHiddenVideos(recordsToUpsert),
+          30000, // 30 second timeout per batch
+          `Import batch ${Math.floor(i / IMPORT_BATCH_SIZE) + 1}`
+        );
       }
 
       totalProcessed += batch.length;

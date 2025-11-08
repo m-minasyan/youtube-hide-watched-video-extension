@@ -5,6 +5,7 @@ import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 import { processFallbackStorage } from './background/indexedDb.js';
 import { getFallbackStats } from './background/quotaManager.js';
 import { logError } from './shared/errorHandler.js';
+import { info, warn } from './shared/logger.js';
 
 // CRITICAL: Register message listener IMMEDIATELY at top level (synchronously)
 // This must happen before any async operations to avoid race conditions where
@@ -145,16 +146,23 @@ async function processFallbackStorageIfNeeded() {
     const stats = await getFallbackStats();
 
     if (stats.recordCount > 0) {
-      console.log(`Processing ${stats.recordCount} records from fallback storage...`);
+      info(`Processing ${stats.recordCount} records from fallback storage...`);
 
-      const result = await processFallbackStorage();
+      // P1-3 FIX: Add try-catch for processFallbackStorage to prevent unhandled rejection
+      try {
+        const result = await processFallbackStorage();
 
-      console.log('Fallback processing result:', result);
-
-      if (result.success && result.processed > 0) {
-        console.log(`Successfully processed ${result.processed} records. ${result.remaining} remaining.`);
-      } else if (result.remaining > 0) {
-        console.log(`Fallback processing incomplete. ${result.remaining} records still pending.`);
+        if (result.success && result.processed > 0) {
+          info(`Successfully processed ${result.processed} records. ${result.remaining} remaining.`);
+        } else if (result.remaining > 0) {
+          warn(`Fallback processing incomplete. ${result.remaining} records still pending.`);
+        }
+      } catch (processingError) {
+        logError('Background', processingError, {
+          operation: 'processFallbackStorage',
+          recordCount: stats.recordCount,
+          message: 'Failed to process fallback storage'
+        });
       }
     }
   } catch (error) {
