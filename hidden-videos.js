@@ -91,11 +91,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const abortController = new AbortController();
   const signal = abortController.signal;
 
-  // Cleanup on page unload
+  // FIXED: Cleanup on page unload - use signal and once for proper cleanup
   window.addEventListener('beforeunload', () => {
     abortController.abort();
     clearSearchMemory(); // Clear search-related memory
-  });
+  }, { once: true });
 
   /**
    * Detects if the current device is mobile
