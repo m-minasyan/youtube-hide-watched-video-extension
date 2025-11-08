@@ -128,13 +128,25 @@ export function logError(context, err, metadata = {}) {
     metadata
   };
 
-  // FIXED P2-10: Remove expired entries before adding new one
   const now = Date.now();
-  while (errorLog.length > 0 && (now - errorLog[errorLog.length - 1].timestamp) > ERROR_LOG_TTL) {
-    errorLog.pop();
+
+  // FIXED P2-10: Remove expired entries from the end (oldest entries)
+  // errorLog structure: [newest, ..., oldest]
+  while (errorLog.length > 0) {
+    const oldestEntry = errorLog[errorLog.length - 1];
+    const age = now - oldestEntry.timestamp;
+
+    if (age > ERROR_LOG_TTL) {
+      errorLog.pop(); // Remove expired entry
+    } else {
+      break; // Remaining entries are newer, stop checking
+    }
   }
 
+  // Add new entry to front
   errorLog.unshift(entry);
+
+  // Enforce max size
   if (errorLog.length > MAX_LOG_SIZE) {
     errorLog.pop();
   }

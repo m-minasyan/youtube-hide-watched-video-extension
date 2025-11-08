@@ -147,10 +147,11 @@ export const SELECTOR_STRINGS = {
 // In development: true, In production: false
 // For webpack builds: __DEV__ is defined by DefinePlugin
 // For direct browser loads (popup.js): check if process exists before accessing
-// FIXED P1-4: Added type check for process.env.NODE_ENV to prevent unsafe fallback
+// FIXED P1-5: Validate process.env is an object before accessing properties
 export const DEBUG = typeof __DEV__ !== 'undefined' ? Boolean(__DEV__) :
   (typeof process !== 'undefined' &&
-   process.env &&
+   typeof process.env === 'object' &&
+   process.env !== null &&
    typeof process.env.NODE_ENV === 'string' &&
    process.env.NODE_ENV === 'development');
 
