@@ -147,9 +147,12 @@ export const SELECTOR_STRINGS = {
 // In development: true, In production: false
 // For webpack builds: __DEV__ is defined by DefinePlugin
 // For direct browser loads (popup.js): check if process exists before accessing
-// P3-6 FIX: Use explicit 'development' check to avoid empty string edge case
+// FIXED P1-4: Added type check for process.env.NODE_ENV to prevent unsafe fallback
 export const DEBUG = typeof __DEV__ !== 'undefined' ? Boolean(__DEV__) :
-  (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development');
+  (typeof process !== 'undefined' &&
+   process.env &&
+   typeof process.env.NODE_ENV === 'string' &&
+   process.env.NODE_ENV === 'development');
 
 // DOM Cache Configuration
 export const CACHE_CONFIG = {
