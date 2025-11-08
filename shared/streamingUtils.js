@@ -5,6 +5,48 @@
 
 import { IMPORT_EXPORT_CONFIG } from './constants.js';
 import { warn } from './logger.js';
+import { classifyError, ErrorType } from './errorHandler.js';
+
+/**
+ * FIXED P1-1: Validates JSON depth to prevent DoS attacks via deeply nested objects
+ * Malicious JSON with 100k+ nesting levels can cause stack overflow and browser crash
+ * @param {*} obj - Object to validate
+ * @param {number} maxDepth - Maximum allowed nesting depth (default: 100)
+ * @param {number} currentDepth - Current depth (used for recursion)
+ * @throws {Error} If object nesting exceeds maxDepth
+ */
+function validateJSONDepth(obj, maxDepth = 100, currentDepth = 0) {
+  if (currentDepth > maxDepth) {
+    throw new Error(
+      `JSON nesting exceeds maximum depth of ${maxDepth}. ` +
+      `This could be a malicious file designed to crash the browser.`
+    );
+  }
+
+  if (obj && typeof obj === 'object') {
+    // Handle both arrays and objects
+    const values = Array.isArray(obj) ? obj : Object.values(obj);
+    for (const value of values) {
+      if (value && typeof value === 'object') {
+        validateJSONDepth(value, maxDepth, currentDepth + 1);
+      }
+    }
+  }
+}
+
+/**
+ * FIXED P1-1: Safely parses JSON with depth validation
+ * Prevents DoS attacks from deeply nested JSON structures
+ * @param {string} text - JSON text to parse
+ * @param {number} maxDepth - Maximum allowed nesting depth
+ * @returns {*} Parsed JSON object
+ * @throws {Error} If parsing fails or depth exceeds limit
+ */
+function parseJSONSafely(text, maxDepth = 100) {
+  const data = JSON.parse(text);
+  validateJSONDepth(data, maxDepth);
+  return data;
+}
 
 /**
  * Streaming JSON parser for large files
@@ -93,9 +135,10 @@ export class StreamingJSONParser {
         message: 'Parsing JSON...'
       });
 
-      // Parse the complete buffer
+      // FIXED P1-1: Parse with depth validation to prevent DoS attacks
+      // Malicious files with deeply nested objects (100k+ levels) can crash the browser
       // We still need to parse all at once, but at least reading was chunked
-      const data = JSON.parse(buffer);
+      const data = parseJSONSafely(buffer, 100);
 
       // FIXED P2-1/P2-9: Removed redundant metadata validation
       // Metadata can be forged, so we only validate actual records.length
@@ -188,6 +231,9 @@ export class StreamingRecordParser {
         errors: []
       };
 
+      // FIXED P2-2: Track failed batches for retry mechanism
+      const failedBatches = [];
+
       for (let i = 0; i < batches; i++) {
         const start = i * this.batchSize;
         const end = Math.min(start + this.batchSize, totalRecords);
@@ -206,10 +252,30 @@ export class StreamingRecordParser {
           }
 
         } catch (batchError) {
+          // FIXED P2-2: Classify error and handle accordingly
+          const errorType = classifyError(batchError);
+
+          // Track failed batch for potential retry
+          failedBatches.push({
+            index: i,
+            startIndex: start,
+            count: batch.length,
+            error: batchError.message,
+            errorType
+          });
+
           results.errors.push({
             batch: i,
             error: batchError.message
           });
+
+          // FIXED P2-2: Stop processing on quota exceeded errors
+          // User needs to free up space before continuing
+          if (errorType === ErrorType.QUOTA_EXCEEDED) {
+            warn(`[Import] Quota exceeded at batch ${i}, stopping import`);
+            break;
+          }
+          // Continue processing other batches for non-critical errors
         }
 
         processedRecords = end;
@@ -235,13 +301,23 @@ export class StreamingRecordParser {
         message: 'Import complete'
       });
 
+      // FIXED P2-2: Return failed batches info for retry support
       return {
         metadata: {
           version: data.version,
           exportDate: data.exportDate,
           totalRecords: data.count
         },
-        results
+        results: {
+          ...results,
+          failedBatches: failedBatches.length,
+          canRetry: failedBatches.length > 0,
+          retryData: failedBatches.map(fb => ({
+            startIndex: fb.startIndex,
+            count: fb.count,
+            errorType: fb.errorType
+          }))
+        }
       };
 
     } catch (error) {
@@ -346,18 +422,31 @@ export class ChunkedJSONExporter {
 }
 
 /**
- * Format bytes to human-readable string
+ * FIXED P3-1: Format bytes to human-readable string with edge case handling
+ * Handles negative numbers, infinity, NaN, and fractional bytes gracefully
+ * @param {number} bytes - Number of bytes
+ * @param {number} decimals - Decimal places (default: 2)
+ * @returns {string} - Formatted string
  */
 export function formatBytes(bytes, decimals = 2) {
+  // FIXED P3-1: Handle invalid/edge case inputs
+  if (!Number.isFinite(bytes)) return 'Invalid';
+  if (bytes < 0) return '-' + formatBytes(-bytes, decimals);
   if (bytes === 0) return '0 Bytes';
 
   const k = 1024;
   const dm = decimals < 0 ? 0 : decimals;
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
 
+  // Calculate size index
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  // FIXED: Clamp index to valid array bounds (0 to sizes.length-1)
+  // Handles fractional bytes (< 1) where i would be negative
+  // and very large values where i might exceed array length
+  const clampedIndex = Math.max(0, Math.min(i, sizes.length - 1));
+
+  return parseFloat((bytes / Math.pow(k, clampedIndex)).toFixed(dm)) + ' ' + sizes[clampedIndex];
 }
 
 /**

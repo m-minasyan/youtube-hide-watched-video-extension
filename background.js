@@ -17,6 +17,9 @@ ensureMessageListenerRegistered();
 let hiddenVideosInitializationPromise = null;
 let fullInitializationPromise = null; // FIXED P1-1: Promise-based approach prevents race condition
 let keepAliveStarted = false; // Prevents duplicate keep-alive alarm creation
+// FIXED P2-3: Atomic flag to prevent race condition during alarm creation
+let createKeepAliveInProgress = false;
+let createFallbackProcessingInProgress = false;
 const KEEP_ALIVE_ALARM = 'keep-alive';
 const FALLBACK_PROCESSING_ALARM = 'process-fallback-storage';
 
@@ -106,36 +109,57 @@ async function performFullInitialization(trigger = 'unknown') {
 // because the service worker is designed to be ephemeral - all state is persisted
 // in IndexedDB and the worker restarts quickly when needed.
 async function startKeepAlive() {
-  // Check if alarm already exists to prevent duplicates after Service Worker restart
-  // The in-memory keepAliveStarted flag is not reliable as it resets on SW restart
-  const existingAlarm = await chrome.alarms.get(KEEP_ALIVE_ALARM);
-  if (existingAlarm) {
-    keepAliveStarted = true; // Sync in-memory flag with actual alarm state
-    return; // Already exists, prevent duplicate
+  // FIXED P2-3: Atomic check-and-set to prevent race condition
+  // If another call is creating the alarm, wait for it to complete
+  if (createKeepAliveInProgress) {
+    debug('[KeepAlive] Alarm creation in progress, waiting...');
+    // Wait for in-progress creation (poll every 50ms, max 5 seconds)
+    for (let i = 0; i < 100; i++) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      if (!createKeepAliveInProgress) break;
+    }
+    return;
   }
 
-  // FIXED P1-2: Set flag AFTER successful creation with error handling
-  // Use await with Promise wrapper to handle callback-based chrome.alarms API
-  await new Promise((resolve, reject) => {
-    chrome.alarms.create(KEEP_ALIVE_ALARM, {
-      periodInMinutes: SERVICE_WORKER_CONFIG.KEEP_ALIVE_INTERVAL / 60000 // 1 minute (Chrome API minimum)
-    }, () => {
-      if (chrome.runtime.lastError) {
-        // Alarm creation failed - keep flag as false
-        keepAliveStarted = false;
-        logError('Background', chrome.runtime.lastError, {
-          operation: 'startKeepAlive',
-          fatal: true,
-          message: 'Failed to create keep-alive alarm'
-        });
-        reject(chrome.runtime.lastError);
-      } else {
-        // Success - set flag to true only after confirmation
-        keepAliveStarted = true;
-        resolve();
-      }
+  // Set atomic flag
+  createKeepAliveInProgress = true;
+
+  try {
+    // Check if alarm already exists to prevent duplicates after Service Worker restart
+    // The in-memory keepAliveStarted flag is not reliable as it resets on SW restart
+    const existingAlarm = await chrome.alarms.get(KEEP_ALIVE_ALARM);
+    if (existingAlarm) {
+      keepAliveStarted = true; // Sync in-memory flag with actual alarm state
+      debug('[KeepAlive] Alarm already exists, skipping creation');
+      return; // Already exists, prevent duplicate
+    }
+
+    // FIXED P1-2: Set flag AFTER successful creation with error handling
+    // Use await with Promise wrapper to handle callback-based chrome.alarms API
+    await new Promise((resolve, reject) => {
+      chrome.alarms.create(KEEP_ALIVE_ALARM, {
+        periodInMinutes: SERVICE_WORKER_CONFIG.KEEP_ALIVE_INTERVAL / 60000 // 1 minute (Chrome API minimum)
+      }, () => {
+        if (chrome.runtime.lastError) {
+          // Alarm creation failed - keep flag as false
+          keepAliveStarted = false;
+          logError('Background', chrome.runtime.lastError, {
+            operation: 'startKeepAlive',
+            fatal: true,
+            message: 'Failed to create keep-alive alarm'
+          });
+          reject(chrome.runtime.lastError);
+        } else {
+          // Success - set flag to true only after confirmation
+          keepAliveStarted = true;
+          resolve();
+        }
+      });
     });
-  });
+  } finally {
+    // Always clear the in-progress flag
+    createKeepAliveInProgress = false;
+  }
 }
 
 function stopKeepAlive() {
@@ -146,16 +170,34 @@ function stopKeepAlive() {
 // Fallback storage processing
 // Periodically processes fallback storage to retry failed quota operations
 async function startFallbackProcessing() {
-  // Check if alarm already exists to prevent duplicates after Service Worker restart
-  const existingAlarm = await chrome.alarms.get(FALLBACK_PROCESSING_ALARM);
-  if (existingAlarm) {
-    return; // Already exists, prevent duplicate
+  // FIXED P2-3: Atomic check-and-set to prevent race condition
+  if (createFallbackProcessingInProgress) {
+    debug('[FallbackProcessing] Alarm creation in progress, waiting...');
+    // Wait for in-progress creation
+    for (let i = 0; i < 100; i++) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      if (!createFallbackProcessingInProgress) break;
+    }
+    return;
   }
 
-  // Check every 5 minutes if there's data in fallback storage
-  chrome.alarms.create(FALLBACK_PROCESSING_ALARM, {
-    periodInMinutes: 5
-  });
+  createFallbackProcessingInProgress = true;
+
+  try {
+    // Check if alarm already exists to prevent duplicates after Service Worker restart
+    const existingAlarm = await chrome.alarms.get(FALLBACK_PROCESSING_ALARM);
+    if (existingAlarm) {
+      debug('[FallbackProcessing] Alarm already exists, skipping creation');
+      return; // Already exists, prevent duplicate
+    }
+
+    // Check every 5 minutes if there's data in fallback storage
+    chrome.alarms.create(FALLBACK_PROCESSING_ALARM, {
+      periodInMinutes: 5
+    });
+  } finally {
+    createFallbackProcessingInProgress = false;
+  }
 }
 
 function stopFallbackProcessing() {
