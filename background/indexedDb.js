@@ -283,39 +283,37 @@ export function closeDbSync() {
     return;
   }
 
-  // If there are active operations, let them complete gracefully
-  // The finally block in withStore() will close the database automatically
+  // If there are active operations, force-close immediately
+  // FIXED P1-4: Removed setTimeout - Chrome does NOT wait for it in onSuspend
+  // Service Worker can be terminated before setTimeout fires, leaving DB connections open
   if (activeOperations > 0) {
-    // FIXED P1-4: Note - logError is SYNCHRONOUS (calls console.error internally)
-    // Safe to use in closeDbSync which must be synchronous for onSuspend
-    logError('IndexedDB', new Error('Graceful shutdown initiated - waiting for active operations'), {
+    logError('IndexedDB', new Error('Force-closing database with active operations'), {
       operation: 'closeDbSync',
       activeOperations,
-      shutdownRequested: true
+      shutdownRequested: true,
+      warning: 'Active operations will be interrupted'
     });
 
-    // P2-5 FIX: Increased timeout from 100ms to 500ms for slower devices
-    // This prevents database from staying open indefinitely while allowing
-    // more time for operations to complete naturally on constrained devices
-    setTimeout(() => {
-      if (resolvedDb && shutdownRequested) {
-        try {
-          resolvedDb.close();
-          logError('IndexedDB', new Error('Database force-closed after timeout'), {
-            operation: 'closeDbSync',
-            forceClose: true,
-            activeOperationsAtForce: activeOperations
-          });
-        } catch (error) {
-          // Ignore errors during force close
-        } finally {
-          dbPromise = null;
-          resolvedDb = null;
-          clearBackgroundCache();
-        }
+    // Force-close immediately and SYNCHRONOUSLY
+    // This may interrupt active operations, but it's better than leaving connections open
+    // which would block the database on next startup
+    if (resolvedDb) {
+      try {
+        resolvedDb.close();
+        logError('IndexedDB', new Error('Database force-closed with active operations'), {
+          operation: 'closeDbSync',
+          forceClose: true,
+          activeOperationsAtForce: activeOperations
+        });
+      } catch (error) {
+        // Ignore errors during force close
       }
-    }, 500); // P2-5: 500ms grace period for slow devices
+    }
 
+    // Clear state immediately
+    dbPromise = null;
+    resolvedDb = null;
+    clearBackgroundCache();
     return;
   }
 
@@ -428,10 +426,25 @@ async function withStore(mode, handler, operationContext = null) {
             }
 
             try {
-              const value = await handlerPromise;
+              // FIXED P2-3: Add timeout to prevent hung handler after transaction complete
+              // Transaction is already committed, but handler may have async cleanup
+              const value = await Promise.race([
+                handlerPromise,
+                new Promise((_, rej) =>
+                  setTimeout(() => rej(new Error('Handler timeout after transaction complete')), 5000)
+                )
+              ]);
               resolve(value);
             } catch (error) {
               // Handler failed after transaction completed
+              // Transaction cannot be aborted at this point - data is already saved
+              if (error.message === 'Handler timeout after transaction complete') {
+                logError('IndexedDB', error, {
+                  operation: 'withStore',
+                  phase: 'post-commit-handler-timeout',
+                  warning: 'Transaction already committed - handler cleanup timed out'
+                });
+              }
               reject(error);
             }
           };
@@ -535,8 +548,10 @@ async function withStore(mode, handler, operationContext = null) {
                   performingAdditionalCleanup: true
                 });
 
-                // Progressive cleanup - delete more records each retry
-                const additionalCleanup = quotaResult.recordsDeleted * 0.5; // 50% more each time
+                // FIXED P2-4: Multiplicative cleanup strategy instead of additive
+                // Doubles cleanup each retry: 100 -> 200 -> 400 (much more effective)
+                // Old strategy: 100 -> 150 -> 175 (too slow for large deficits)
+                const additionalCleanup = quotaResult.recordsDeleted * Math.pow(2, attempt);
                 await deleteOldestHiddenVideos(Math.floor(additionalCleanup));
               } else if (retryErrorType !== ErrorType.QUOTA_EXCEEDED) {
                 // Different error - throw immediately
@@ -581,12 +596,14 @@ async function withStore(mode, handler, operationContext = null) {
     logError('IndexedDB', error, { operation: 'withStore', mode, fatal: true });
     throw error;
   } finally {
-    // FIXED P1-3: Synchronous decrement prevents SW termination race
+    // FIXED P1-1: Synchronous decrement prevents SW termination race
     // Must complete before Chrome can terminate Service Worker
-    const currentOps = decrementOperations();
+    decrementOperations();
 
-    // If shutdown was requested and no operations are active, close the database
-    if (shutdownRequested && currentOps === 0) {
+    // CRITICAL: Re-read activeOperations atomically to prevent race condition
+    // Don't use return value from decrementOperations() - it's a stale snapshot!
+    // Between decrement and this check, another operation may have incremented
+    if (shutdownRequested && activeOperations === 0) {
       // Use resolvedDb for synchronous cleanup to prevent race condition
       // where Chrome terminates Service Worker before async operations complete
       if (resolvedDb) {

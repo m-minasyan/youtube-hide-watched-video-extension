@@ -8,6 +8,7 @@ import { applyStateToEyeButton } from '../ui/eyeButton.js';
 import { addEyeButtons } from '../ui/eyeButtonManager.js';
 import { applyIndividualHiding } from '../hiding/individualHiding.js';
 import { onVisibilityChange } from '../utils/visibilityTracker.js';
+import { isValidVideoId } from '../../shared/utils.js';
 
 export function handleHiddenVideosEvent(event) {
   if (!event || !event.type) return;
@@ -15,7 +16,19 @@ export function handleHiddenVideosEvent(event) {
     applyCacheUpdate(event.record.videoId, event.record);
     // Use programmatic filtering to prevent CSS selector injection
     document.querySelectorAll(`.${CSS_CLASSES.EYE_BUTTON}`).forEach((button) => {
-      if (button.dataset.videoId === event.record.videoId) {
+      const videoId = button.dataset.videoId;
+
+      // FIXED P2-7: Validate videoId before comparison to prevent XSS
+      // Malicious extensions could inject buttons with malicious videoId
+      if (!isValidVideoId(videoId)) {
+        error('[EventHandler] Invalid videoId in button dataset:', {
+          videoId,
+          buttonHTML: button.outerHTML.substring(0, 100)
+        });
+        return; // Skip this button
+      }
+
+      if (videoId === event.record.videoId) {
         applyStateToEyeButton(button, event.record.state);
       }
     });
@@ -26,7 +39,18 @@ export function handleHiddenVideosEvent(event) {
     applyCacheUpdate(event.videoId, null);
     // Use programmatic filtering to prevent CSS selector injection
     document.querySelectorAll(`.${CSS_CLASSES.EYE_BUTTON}`).forEach((button) => {
-      if (button.dataset.videoId === event.videoId) {
+      const videoId = button.dataset.videoId;
+
+      // FIXED P2-7: Validate videoId before comparison to prevent XSS
+      if (!isValidVideoId(videoId)) {
+        error('[EventHandler] Invalid videoId in button dataset:', {
+          videoId,
+          buttonHTML: button.outerHTML.substring(0, 100)
+        });
+        return; // Skip this button
+      }
+
+      if (videoId === event.videoId) {
         applyStateToEyeButton(button, 'normal');
       }
     });

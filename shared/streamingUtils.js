@@ -51,6 +51,16 @@ export class StreamingJSONParser {
 
         if (value) {
           bytesRead += value.length;
+
+          // FIXED P1-2: Streaming size validation to prevent TOCTOU race condition
+          // Re-check size during reading to prevent file replacement attack
+          if (bytesRead > maxFileSize) {
+            throw new Error(
+              `File size exceeded during read: ${formatBytes(bytesRead)} > ${formatBytes(maxFileSize)}. ` +
+              `Possible file replacement attack detected.`
+            );
+          }
+
           buffer += decoder.decode(value, { stream: !done });
 
           // Report progress
