@@ -701,21 +701,32 @@ async function saveToFallbackStorage(records) {
     return { success: true, message: 'No records to save' };
   }
 
-  // FIXED P1-2: Wait for existing lock to complete using while loop instead of recursion
-  // This prevents TOCTOU race condition and stack overflow from deep recursion
+  // FIXED P1-2 (SELF-REVIEW): Proper atomic lock assignment to prevent race condition
+  // Wait for existing lock, then create and assign new lock atomically
   while (fallbackLock) {
     await fallbackLock;
   }
 
-  // Create new lock promise and assign IMMEDIATELY before any async operations
-  const lockPromise = (async () => {
-    try {
-      const result = await withStorageTimeout(
+  // Create promise with exposed resolve/reject for atomic lock assignment
+  let lockResolve, lockReject;
+  const lockPromise = new Promise((resolve, reject) => {
+    lockResolve = resolve;
+    lockReject = reject;
+  });
+
+  // CRITICAL: Assign lock IMMEDIATELY before any async work starts
+  // This prevents race condition where two calls could both pass the while check
+  fallbackLock = lockPromise;
+
+  // Now perform the actual storage operation
+  try {
+    const result = await (async () => {
+      const storageResult = await withStorageTimeout(
         chrome.storage.local.get(FALLBACK_STORAGE_KEY),
         ERROR_CONFIG.STORAGE_TIMEOUT,
         'chrome.storage.local.get(FALLBACK_STORAGE_KEY)'
       );
-      const fallbackData = result[FALLBACK_STORAGE_KEY] || [];
+      const fallbackData = storageResult[FALLBACK_STORAGE_KEY] || [];
 
       // 🎯 Check pressure BEFORE adding records
       const newRecords = Array.isArray(records) ? records : [records];
@@ -763,31 +774,27 @@ async function saveToFallbackStorage(records) {
         totalInFallback: fallbackData.length,
         pressureLevel: pressureCheck.level
       };
+    })();
 
-    } catch (error) {
-      logError('QuotaManager', error, {
-        operation: 'saveToFallbackStorage',
-        recordCount: records.length,
-        fatal: true
-      });
+    // Resolve the lock promise with result
+    lockResolve(result);
+    return result;
 
-      return {
-        success: false,
-        message: 'Failed to save to fallback storage',
-        error: error.message
-      };
-    }
-  })();
-
-  // FIXED P2-2: Assign lock IMMEDIATELY after creation, before await
-  // This ensures concurrent calls will wait on this lock
-  fallbackLock = lockPromise;
-
-  try {
-    return await lockPromise;
   } catch (error) {
-    // Ensure error is propagated after cleanup
-    throw error;
+    // Reject the lock promise with error
+    lockReject(error);
+
+    logError('QuotaManager', error, {
+      operation: 'saveToFallbackStorage',
+      recordCount: records.length,
+      fatal: true
+    });
+
+    return {
+      success: false,
+      message: 'Failed to save to fallback storage',
+      error: error.message
+    };
   } finally {
     // Always clear lock, even on rejection
     fallbackLock = null;
