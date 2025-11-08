@@ -52,6 +52,8 @@ import {
 } from './shared/streamingUtils.js';
 // FIXED P3-4: Import logger instead of using console.log directly
 import { debug, error as logError, warn } from './shared/logger.js';
+// FIXED P3-4: Import UI timing constants
+import { UI_TIMING } from './shared/constants.js';
 
 /**
  * Debounce function to limit the rate of function calls
@@ -806,7 +808,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     hiddenVideosState.pageCursors = [null];
 
     await loadHiddenVideos();
-  }, 300); // 300ms debounce delay
+  }, UI_TIMING.SEARCH_DEBOUNCE_MS); // FIXED P3-4: Use constant instead of magic number
 
   // Search input event
   searchInput.addEventListener('input', (e) => {
@@ -1552,4 +1554,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     abortController.abort();
     clearSearchMemory();
   });
+
+  // FIXED P1-3: Add pagehide event for more reliable memory cleanup
+  // pagehide is more reliable than beforeunload in SPAs and mobile browsers
+  // It fires even during bfcache (back-forward cache) navigation
+  window.addEventListener('pagehide', () => {
+    abortController.abort();
+    clearSearchMemory();
+    // Also clear items array to prevent memory leaks
+    hiddenVideosState.items = [];
+    hiddenVideosState.allItems = [];
+  }, { capture: true });
 });

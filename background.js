@@ -68,6 +68,23 @@ async function performFullInitialization(trigger = 'unknown') {
         trigger,
         message: 'Failed to perform full initialization'
       });
+
+      // FIXED P2-3: Show error badge to user when initialization fails
+      // This provides visual feedback that extension is not working correctly
+      try {
+        chrome.action.setBadgeText({ text: '!' });
+        chrome.action.setBadgeBackgroundColor({ color: '#f00' });
+        chrome.action.setTitle({
+          title: 'YouTube Hide Watched - Initialization Error (click for details)'
+        });
+      } catch (badgeError) {
+        // Badge API might not be available in all contexts
+        logError('Background', badgeError, {
+          operation: 'setBadge',
+          message: 'Failed to set error badge'
+        });
+      }
+
       // Stop alarms if initialization fails
       stopKeepAlive();
       stopFallbackProcessing();

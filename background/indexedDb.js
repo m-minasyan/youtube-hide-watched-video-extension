@@ -1,6 +1,6 @@
 import { retryOperation, logError, classifyError, ErrorType } from '../shared/errorHandler.js';
 import { getCachedRecord, setCachedRecord, invalidateCache, clearBackgroundCache } from './indexedDbCache.js';
-import { INDEXEDDB_CONFIG, QUOTA_CONFIG } from '../shared/constants.js';
+import { INDEXEDDB_CONFIG, QUOTA_CONFIG, UI_TIMING } from '../shared/constants.js'; // FIXED P3-4: Import UI_TIMING
 import { handleQuotaExceeded, getFromFallbackStorage, removeFromFallbackStorage } from './quotaManager.js';
 import { isValidVideoId } from '../shared/utils.js';
 
@@ -389,6 +389,9 @@ async function withStore(mode, handler, operationContext = null) {
           let handlerPromise;
           let handlerRejected = false;
           let handlerError = null;
+          // FIXED P2-1: Add isAborted flag to prevent race condition
+          // between tx.onabort and tx.oncomplete handlers
+          let isAborted = false;
 
           // Wrap handler call to catch synchronous errors
           try {
@@ -418,6 +421,13 @@ async function withStore(mode, handler, operationContext = null) {
           });
 
           tx.oncomplete = async () => {
+            // FIXED P2-1: Check isAborted flag to prevent execution after abort
+            if (isAborted) {
+              // Transaction was aborted - oncomplete shouldn't execute
+              // This can happen in race conditions, just return
+              return;
+            }
+
             // If handler was rejected, reject promise even if transaction completed
             // (shouldn't happen if abort() worked, but defensive programming)
             if (handlerRejected) {
@@ -452,6 +462,9 @@ async function withStore(mode, handler, operationContext = null) {
           tx.onerror = () => reject(tx.error);
 
           tx.onabort = () => {
+            // FIXED P2-1: Set isAborted flag to prevent oncomplete from executing
+            isAborted = true;
+
             // If handler was rejected, use that error instead of generic abort error
             if (handlerRejected) {
               reject(handlerError);
@@ -1003,7 +1016,8 @@ export async function getHiddenVideosStats() {
 
 export async function deleteOldestHiddenVideos(count) {
   if (!Number.isFinite(count) || count <= 0) return;
-  const target = Math.min(Math.floor(count), 1000000);
+  // FIXED P3-4: Use constant instead of magic number
+  const target = Math.min(Math.floor(count), UI_TIMING.MAX_DELETE_COUNT);
   const deletedIds = [];
 
   await withStore('readwrite', (store) => withProgressiveCursorTimeout(
@@ -1070,6 +1084,29 @@ async function attemptDatabaseReset() {
         operation: 'reset',
         reason: 'corruption'
       });
+
+      // FIXED P1-1: Wait for all active operations to complete before reset
+      // This prevents race conditions where operations try to use dbPromise
+      // while it's being set to null during reset
+      // FIXED P3-4: Use constant instead of magic number
+      const MAX_WAIT_TIME = UI_TIMING.DB_RESET_MAX_WAIT_MS;
+      const startTime = Date.now();
+      while (activeOperations > 0 && (Date.now() - startTime) < MAX_WAIT_TIME) {
+        logError('IndexedDB', new Error('Waiting for active operations to complete before reset'), {
+          operation: 'reset',
+          activeOperations,
+          waitedMs: Date.now() - startTime
+        });
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      if (activeOperations > 0) {
+        logError('IndexedDB', new Error('Proceeding with reset despite active operations'), {
+          operation: 'reset',
+          activeOperations,
+          warning: 'Some operations may fail'
+        });
+      }
 
       // Close existing connection
       if (dbPromise) {

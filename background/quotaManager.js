@@ -190,9 +190,71 @@ function calculateCleanupCount(estimatedNeededBytes) {
 }
 
 /**
- * Checks fallback storage pressure level and determines actions
- * @param {number} currentCount - Current number of records in fallback
- * @returns {Promise<Object>} - Status and recommended actions
+ * FIXED P3-2: Enhanced JSDoc with detailed tier documentation
+ *
+ * Checks fallback storage pressure level and triggers appropriate actions based on utilization
+ *
+ * FALLBACK STORAGE TIERS:
+ * =======================
+ * Fallback storage uses a tiered approach to handle increasing pressure:
+ *
+ * 🟢 NORMAL (0-80%):
+ *    - No action needed
+ *    - New records accepted normally
+ *    - Background processing continues
+ *
+ * 🟡 WARNING (80-90%):
+ *    - Triggers aggressive cleanup of main IndexedDB (5x normal cleanup)
+ *    - Deletes 2x more records than currently in fallback storage
+ *    - New records still accepted
+ *    - User notification shown (rate-limited)
+ *
+ * 🟠 CRITICAL (90-95%):
+ *    - Blocks new write operations to prevent overflow
+ *    - Processes ALL fallback records aggressively
+ *    - Deletes 3x more records from main DB
+ *    - Shows critical warning notification
+ *    - New records REJECTED (allowNewRecords: false)
+ *
+ * 🔴 EMERGENCY (95-100%):
+ *    - Triggers automatic emergency export to file
+ *    - Downloads backup file to user's computer
+ *    - Deletes 5x more records from main DB
+ *    - Shows emergency notification with instructions
+ *    - New records REJECTED
+ *
+ * 🛑 MAX (100%):
+ *    - All operations rejected
+ *    - Manual intervention required
+ *    - User must clear database or import exported file after cleanup
+ *
+ * DESIGN RATIONALE:
+ * =================
+ * Fallback storage limit (2000 records) is intentionally lower than IndexedDB
+ * to prevent chrome.storage.local quota issues. The tiered approach provides
+ * multiple safety nets before hitting the hard limit.
+ *
+ * NOTIFICATIONS:
+ * =============
+ * - All tiers use global rate limiting (max 3 notifications per 5 minutes)
+ * - Per-tier rate limiting prevents spam within each level
+ * - Exponential backoff applied to repeated notifications
+ *
+ * @param {number} currentCount - Current number of records in fallback storage
+ *
+ * @returns {Promise<Object>} Pressure status object
+ * @returns {string} result.level - Pressure level: 'normal', 'warning', 'critical', 'emergency', 'max'
+ * @returns {string} result.action - Action taken: 'none', 'aggressive_cleanup', 'block_operations', 'emergency_export', 'reject'
+ * @returns {boolean} result.allowNewRecords - Whether new records can be added to fallback
+ * @returns {number} result.utilization - Utilization ratio (0-1)
+ *
+ * @example
+ * const pressure = await checkFallbackPressure(1500);
+ * // pressure = { level: 'warning', action: 'aggressive_cleanup', allowNewRecords: true, utilization: 0.75 }
+ *
+ * @example
+ * const pressure = await checkFallbackPressure(1900);
+ * // pressure = { level: 'critical', action: 'block_operations', allowNewRecords: false, utilization: 0.95 }
  */
 async function checkFallbackPressure(currentCount) {
   const utilization = currentCount / QUOTA_CONFIG.MAX_FALLBACK_RECORDS;
@@ -430,10 +492,54 @@ async function handleFallbackEmergency(currentCount) {
 }
 
 /**
- * Aggressively processes fallback storage
- * Tries to process ALL records with retry limit to prevent infinite loops
- * FIXED P1-5: Added per-record retry tracking to prevent infinite retry loops
- * @returns {Promise<Object>} Result with processed count
+ * FIXED P3-2: Enhanced JSDoc with detailed documentation
+ *
+ * Aggressively processes fallback storage records with memory-efficient batch processing
+ *
+ * ALGORITHM:
+ * ==========
+ * Processes fallback records in batches to move data from chrome.storage.local
+ * back to IndexedDB when quota becomes available. Uses splice() for in-place
+ * array modification to avoid memory copies.
+ *
+ * MEMORY OPTIMIZATION:
+ * ====================
+ * - Processes in batches of AGGRESSIVE_BATCH_SIZE (default: 100) to limit memory footprint
+ * - Uses splice() for in-place array modification to avoid creating array copies
+ * - Yields to event loop between batches (10ms delay) to prevent UI blocking
+ * - Memory usage: O(batch_size) instead of O(total_records)
+ *
+ * CIRCUIT BREAKER:
+ * ===============
+ * - Stops after MAX_CONSECUTIVE_FAILURES (3) to prevent infinite retry loops
+ * - Per-record retry tracking prevents individual bad records from causing infinite loops
+ * - Skips records that exceed MAX_RECORD_RETRIES (5) attempts
+ *
+ * EDGE CASES:
+ * ===========
+ * 1. Persistent quota errors: Stops after 3 consecutive failures
+ * 2. Bad/corrupted records: Skips after 5 retry attempts per record
+ * 3. Empty fallback storage: Returns immediately with success
+ * 4. Partial batch failure: Continues with next batch (non-fatal error handling)
+ *
+ * ERROR RECOVERY:
+ * ==============
+ * - Consecutive failures reset to 0 on any successful batch
+ * - Failed batches are re-queued to front of fallback storage
+ * - Permanently failed records are logged but not re-queued
+ * - Returns partial success metrics (processed, remaining, skipped)
+ *
+ * @returns {Promise<Object>} Result object
+ * @returns {boolean} result.success - Overall success status
+ * @returns {number} result.processed - Number of successfully processed records
+ * @returns {number} result.remaining - Number of records still in fallback storage
+ * @returns {number} result.skipped - Number of records that permanently failed
+ *
+ * @throws {Error} Only throws on critical errors (unlikely - designed to be resilient)
+ *
+ * @example
+ * const result = await processFallbackStorageAggressively();
+ * // result = { success: true, processed: 150, remaining: 50, skipped: 2 }
  */
 async function processFallbackStorageAggressively() {
   let fallbackRecords = await getFromFallbackStorage();
