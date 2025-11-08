@@ -102,6 +102,18 @@ function canShowGlobalNotification() {
  * Limits array size to prevent unbounded growth
  */
 function recordGlobalNotification() {
+  // FIXED P1-5: Hard cap to prevent unbounded growth from bugs in rate limiting logic
+  // If array grows beyond 1000, it indicates a serious bug - reset immediately
+  if (globalNotificationTimestamps.length >= 1000) {
+    logError('QuotaManager', new Error('Notification array overflow detected - possible bug'), {
+      operation: 'recordGlobalNotification',
+      arrayLength: globalNotificationTimestamps.length,
+      possibleBug: true,
+      action: 'emergency_reset'
+    });
+    globalNotificationTimestamps.length = 0; // Emergency reset
+  }
+
   globalNotificationTimestamps.push(Date.now());
 
   // P1-4 FIX: Use splice instead of while+shift for O(1) performance
@@ -1127,9 +1139,25 @@ async function saveToEmergencyBackup(data) {
     const spaceAfterRotation = MAX_EMERGENCY_RECORDS - emergencyData.length;
     const recordsToAdd = records.slice(0, Math.min(records.length, spaceAfterRotation));
 
-    // Add records with loop to avoid stack overflow on large arrays
-    for (const record of recordsToAdd) {
-      emergencyData.push(record);
+    // FIXED P1-6: Validate recordsToAdd is an array before iteration
+    // Prevents crash if data corruption occurs during quota handling
+    if (!Array.isArray(recordsToAdd)) {
+      logError('QuotaManager', new Error('Emergency backup received non-array data'), {
+        operation: 'saveToEmergencyBackup',
+        dataType: typeof recordsToAdd,
+        dataValue: JSON.stringify(recordsToAdd).substring(0, 100),
+        action: 'converting_to_array'
+      });
+      // Defensive: convert to array or use original records
+      const safeRecordsToAdd = Array.isArray(records) ? records.slice(0, spaceAfterRotation) : [];
+      for (const record of safeRecordsToAdd) {
+        emergencyData.push(record);
+      }
+    } else {
+      // Add records with loop to avoid stack overflow on large arrays
+      for (const record of recordsToAdd) {
+        emergencyData.push(record);
+      }
     }
 
     // Save back to storage

@@ -397,14 +397,16 @@ function validateRecord(record) {
     if (!Number.isFinite(record.updatedAt)) {
       errors.push('Invalid updatedAt timestamp');
     } else {
-      // Validate timestamp is reasonable (not negative, not too far in future)
+      // FIXED P1-3: Strict timestamp validation to prevent IndexedDB index corruption
+      // Only allow timestamps up to 24 hours in future to prevent malicious timestamp injection
+      // Allowing 10 years enables attacks with identical future timestamps that degrade index performance
       const now = Date.now();
-      const tenYearsInFuture = now + (10 * 365 * 24 * 60 * 60 * 1000);
+      const oneDayInFuture = now + (24 * 60 * 60 * 1000);
 
       if (record.updatedAt < 0) {
         errors.push('updatedAt timestamp cannot be negative');
-      } else if (record.updatedAt > tenYearsInFuture) {
-        errors.push('updatedAt timestamp is too far in the future');
+      } else if (record.updatedAt > oneDayInFuture) {
+        errors.push('updatedAt timestamp is too far in the future (max: 24 hours from now)');
       }
     }
   }
@@ -446,6 +448,26 @@ function validateImportData(data) {
   const maxSizeBytes = IMPORT_EXPORT_CONFIG.MAX_IMPORT_SIZE_MB * 1024 * 1024;
   if (estimatedSizeBytes > maxSizeBytes) {
     errors.push(`Import data too large. Maximum: ${IMPORT_EXPORT_CONFIG.MAX_IMPORT_SIZE_MB}MB, estimated: ${(estimatedSizeBytes / 1024 / 1024).toFixed(2)}MB`);
+  }
+
+  // FIXED P1-3: Detect duplicate timestamp attacks
+  // Malicious imports with many identical timestamps can degrade IndexedDB byStateUpdatedAt index to O(n)
+  // Count timestamp frequency to detect this attack pattern
+  const timestampCounts = new Map();
+  data.records.forEach(record => {
+    if (record && Number.isFinite(record.updatedAt)) {
+      const count = timestampCounts.get(record.updatedAt) || 0;
+      timestampCounts.set(record.updatedAt, count + 1);
+    }
+  });
+
+  const maxDuplicates = timestampCounts.size > 0 ? Math.max(...timestampCounts.values()) : 0;
+  if (maxDuplicates > 1000) {
+    errors.push(
+      `Suspicious timestamp pattern detected: ${maxDuplicates} records with identical timestamp. ` +
+      `This could indicate a malicious file designed to corrupt database indexes. ` +
+      `Maximum allowed duplicates: 1000.`
+    );
   }
 
   // Validate individual records
