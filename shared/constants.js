@@ -60,12 +60,18 @@ export const CSS_CLASSES = {
   HAS_EYE_BUTTON: 'yt-hwv-has-eye-button'
 };
 
-// Selectors (content script specific)
+// Selectors (content script specific - maintained for backward compatibility)
+// Note: SELECTOR_CHAINS should be preferred for new code
 export const SELECTORS = {
   PROGRESS_BAR: [
-    '.ytd-thumbnail-overlay-resume-playback-renderer',
+    '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
     '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
-    '.ytp-progress-bar-played'
+    '.ytd-thumbnail-overlay-resume-playback-renderer',
+    'ytd-thumbnail-overlay-resume-playback-renderer div[style*="width"]',
+    'yt-thumbnail-overlay-resume-playback-renderer div[style*="width"]',
+    '.ytm-thumbnail-overlay-resume-playback-renderer',
+    '.ytp-progress-bar-played',
+    '[class*="progress"][class*="bar"][style*="width"]'
   ],
   SHORTS_CONTAINERS: [
     'ytd-reel-shelf-renderer',
@@ -82,7 +88,11 @@ export const SELECTORS = {
   ],
   THUMBNAILS: [
     'yt-thumbnail-view-model:not(.yt-hwv-has-eye-button)',
-    'ytd-thumbnail:not(.yt-hwv-has-eye-button)'
+    'ytd-thumbnail:not(.yt-hwv-has-eye-button)',
+    'ytm-thumbnail:not(.yt-hwv-has-eye-button)',
+    'ytd-rich-item-renderer yt-thumbnail-view-model:not(.yt-hwv-has-eye-button)',
+    'ytd-video-renderer yt-thumbnail-view-model:not(.yt-hwv-has-eye-button)',
+    '[class*="thumbnail"]:not(.yt-hwv-has-eye-button):not(img)'
   ],
   VIDEO_CONTAINERS: [
     'ytd-rich-item-renderer',
@@ -242,17 +252,32 @@ export const SELECTOR_CHAINS = {
   ],
 
   PROGRESS_BAR: [
-    // Modern selectors
-    '.ytd-thumbnail-overlay-resume-playback-renderer',
+    // Modern YouTube Wiz selectors - highest priority
     '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
     '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
-    // Legacy selectors
-    '.ytp-progress-bar-played',
+    // Standard overlay selectors
+    '.ytd-thumbnail-overlay-resume-playback-renderer',
+    'ytd-thumbnail-overlay-resume-playback-renderer #progress',
+    'ytd-thumbnail-overlay-resume-playback-renderer div[style*="width"]',
+    // Component-based selectors
     'yt-thumbnail-overlay-resume-playback-renderer',
+    'yt-thumbnail-overlay-resume-playback-renderer #progress',
+    'yt-thumbnail-overlay-resume-playback-renderer div[style*="width"]',
+    // Mobile selectors
     '.ytm-thumbnail-overlay-resume-playback-renderer',
-    // Generic fallbacks
-    '[class*="progress"][class*="bar"]',
-    '[class*="watched"]'
+    'ytm-thumbnail-overlay-resume-playback-renderer #progress',
+    'ytm-thumbnail-overlay-resume-playback-renderer div[style*="width"]',
+    // Video player progress bar
+    '.ytp-progress-bar-played',
+    // Generic fallbacks with inline styles (what we actually check)
+    'ytd-thumbnail div[id*="progress"][style*="width"]',
+    'yt-thumbnail div[id*="progress"][style*="width"]',
+    '[class*="thumbnail-overlay"][class*="resume"] div[style*="width"]',
+    '[class*="thumbnail-overlay"][class*="playback"] div[style*="width"]',
+    // Broad attribute-based fallbacks
+    '[class*="progress"][class*="bar"][style*="width"]',
+    'div[aria-label*="watched"][style*="width"]',
+    'div[aria-label*="progress"][style*="width"]'
   ],
 
   VIDEO_THUMBNAIL: [
@@ -289,8 +314,33 @@ export const SELECTOR_CHAINS = {
   ],
 
   THUMBNAILS: [
+    // Modern view-model based thumbnails (YouTube 2025+)
     'yt-thumbnail-view-model:not(.yt-hwv-has-eye-button)',
-    'ytd-thumbnail:not(.yt-hwv-has-eye-button)'
+    // Legacy thumbnail elements
+    'ytd-thumbnail:not(.yt-hwv-has-eye-button)',
+    // Mobile thumbnails
+    'ytm-thumbnail:not(.yt-hwv-has-eye-button)',
+    // Thumbnail within video containers
+    'ytd-rich-item-renderer yt-thumbnail-view-model:not(.yt-hwv-has-eye-button)',
+    'ytd-video-renderer yt-thumbnail-view-model:not(.yt-hwv-has-eye-button)',
+    'ytd-grid-video-renderer yt-thumbnail-view-model:not(.yt-hwv-has-eye-button)',
+    'ytd-compact-video-renderer yt-thumbnail-view-model:not(.yt-hwv-has-eye-button)',
+    // Lockup-based thumbnails
+    'yt-lockup-view-model yt-thumbnail-view-model:not(.yt-hwv-has-eye-button)',
+    // Fallback to legacy in containers
+    'ytd-rich-item-renderer ytd-thumbnail:not(.yt-hwv-has-eye-button)',
+    'ytd-video-renderer ytd-thumbnail:not(.yt-hwv-has-eye-button)',
+    'ytd-grid-video-renderer ytd-thumbnail:not(.yt-hwv-has-eye-button)',
+    'ytd-compact-video-renderer ytd-thumbnail:not(.yt-hwv-has-eye-button)',
+    // Direct thumbnail image containers
+    '.ytThumbnailViewModelImage:not(.yt-hwv-has-eye-button)',
+    'a.yt-simple-endpoint.ytd-thumbnail:not(.yt-hwv-has-eye-button)',
+    'a[href*="/watch"] yt-thumbnail-view-model:not(.yt-hwv-has-eye-button)',
+    'a[href*="/shorts"] yt-thumbnail-view-model:not(.yt-hwv-has-eye-button)',
+    // Generic class-based fallbacks
+    '[class*="thumbnail"]:not(.yt-hwv-has-eye-button):not(img)',
+    'a[href*="/watch"] [class*="thumbnail"]:not(.yt-hwv-has-eye-button):not(img)',
+    'a[href*="/shorts"] [class*="thumbnail"]:not(.yt-hwv-has-eye-button):not(img)'
   ]
 };
 
