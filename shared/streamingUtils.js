@@ -93,10 +93,13 @@ export class StreamingJSONParser {
       // size check and actual read where file could be swapped. This is more secure than
       // stream API which has multiple async steps where file replacement could occur.
       //
-      // Trade-off: arrayBuffer() loads entire file into memory at once, but:
-      // - We already limit file size via MAX_IMPORT_SIZE_MB (typically 50-100 MB)
-      // - Modern browsers handle this efficiently with memory pressure management
-      // - Security benefit outweighs the slight memory overhead
+      // Trade-offs analyzed:
+      // 1. Memory: arrayBuffer() loads entire file at once, but we limit size to MAX_IMPORT_SIZE_MB
+      // 2. Progress UX: No intermediate progress events (jumps from 10% to 50%)
+      //    - SELF-REVIEW NOTE: Previous stream API showed 0-50% progress incrementally
+      //    - However, files are typically small and read quickly (<1 second for 50MB)
+      //    - Security benefit of atomic read outweighs UX degradation
+      // 3. Security: Eliminates TOCTOU vulnerability - this is the priority
       //
       // Report initial progress
       this.onProgress({

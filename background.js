@@ -61,12 +61,19 @@ async function performFullInitialization(trigger = 'unknown') {
     try {
       await initializeHiddenVideos();
 
-      // CODE REVIEW FIX (P2-4): Wait for ALL alarm setup without swallowing errors
-      // If critical alarms fail to start, initialization should fail
-      // This prevents extension running without essential keep-alive protection
+      // CODE REVIEW FIX (P2-4): Wait for alarm setup with proper error handling
+      // SELF-REVIEW FIX: startKeepAlive is critical (MUST succeed), but fallbackProcessing is optional
+      // - startKeepAlive: CRITICAL - prevents Service Worker suspension, initialization fails if it fails
+      // - startFallbackProcessing: OPTIONAL - retries failed writes, but extension works without it
       await Promise.all([
-        startKeepAlive(),
-        startFallbackProcessing()
+        startKeepAlive(),  // No .catch() - failure propagates and blocks initialization
+        startFallbackProcessing().catch((error) => {
+          logError('Background', error, {
+            operation: 'startFallbackProcessing',
+            message: 'Failed to start fallback processing alarm (non-critical, continuing...)'
+          });
+          // Don't throw - this alarm is optional
+        })
       ]);
     } catch (error) {
       logError('Background', error, {

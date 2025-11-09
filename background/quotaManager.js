@@ -12,7 +12,7 @@
 import { logError } from '../shared/errorHandler.js';
 import { debug, error, warn, info } from '../shared/logger.js';
 // P3-5 FIX: Removed UI_CONFIG import (AGGRESSIVE_BATCH_SIZE moved to QUOTA_CONFIG)
-import { QUOTA_CONFIG, ERROR_CONFIG, UI_TIMING } from '../shared/constants.js';
+import { QUOTA_CONFIG, ERROR_CONFIG, UI_TIMING, VALIDATION_LIMITS } from '../shared/constants.js';
 import { withStorageTimeout } from '../shared/utils.js';
 // FIXED P2-1: Import deleteOldestHiddenVideos and upsertHiddenVideos at top level
 // Previously these were dynamically imported 3 times, causing code duplication
@@ -73,7 +73,9 @@ let isCleaningUp = false;
 // CODE REVIEW FIX (P1-4): Global lock for quota handling to prevent concurrent cleanup
 // Prevents race condition where multiple transactions hit quota simultaneously and
 // both call deleteOldestHiddenVideos, resulting in excessive data deletion
+// SELF-REVIEW FIX: Store result of last operation to return to concurrent callers
 let quotaHandlingLock = null;
+let lastQuotaHandlingResult = null;
 
 // FIXED P2-4: Global notification rate limiter
 // Tracks timestamps of recent notifications across all types
@@ -150,12 +152,12 @@ function recordGlobalNotification() {
     globalNotificationTimestamps.shift();
   }
 
+  // SELF-REVIEW FIX: Use constant from VALIDATION_LIMITS instead of hardcoded value
   // Stricter cap at 50 entries (reduced from 100) to minimize memory usage
   // Even with aggressive spam, 50 entries = 50 * 8 bytes = 400 bytes maximum
-  const MAX_NOTIFICATION_ENTRIES = 50;
-  if (globalNotificationTimestamps.length >= MAX_NOTIFICATION_ENTRIES) {
+  if (globalNotificationTimestamps.length >= VALIDATION_LIMITS.MAX_NOTIFICATION_ENTRIES) {
     // Remove oldest 25% of entries to avoid frequent cleanup operations
-    const removeCount = Math.ceil(MAX_NOTIFICATION_ENTRIES * 0.25);
+    const removeCount = Math.ceil(VALIDATION_LIMITS.MAX_NOTIFICATION_ENTRIES * 0.25);
     globalNotificationTimestamps.splice(0, removeCount);
   }
 
@@ -804,14 +806,14 @@ async function saveToFallbackStorage(records) {
   }
 
   // CODE REVIEW FIX (P2-5): Wait for existing lock with timeout to prevent deadlock
+  // SELF-REVIEW FIX: Use constant from VALIDATION_LIMITS instead of hardcoded value
   // If lock takes longer than 30 seconds, it's likely stuck - abort and log error
-  const LOCK_TIMEOUT_MS = 30000;
   if (fallbackLock) {
     try {
       await Promise.race([
         fallbackLock,
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Fallback lock timeout')), LOCK_TIMEOUT_MS)
+          setTimeout(() => reject(new Error('Fallback lock timeout')), VALIDATION_LIMITS.FALLBACK_LOCK_TIMEOUT_MS)
         )
       ]);
     } catch (timeoutError) {
@@ -1789,21 +1791,25 @@ async function handleCleanupFailure(error, cleanupCount, fallbackResult) {
 export async function handleQuotaExceeded(error, cleanupFunction, operationContext = {}) {
   // CODE REVIEW FIX (P1-4): Wait for existing quota handling to complete
   // Prevents concurrent quota operations from deleting too much data
+  // SELF-REVIEW FIX: Return actual result from previous operation instead of always success
   if (quotaHandlingLock) {
-    logError('QuotaManager', new Error('Quota handling already in progress, waiting...'), {
-      operation: 'handleQuotaExceeded',
-      waiting: true
-    });
+    debug('[QuotaManager] Quota handling already in progress, waiting...');
     await quotaHandlingLock;
 
-    // After wait, return success - the previous operation handled the quota issue
-    return createQuotaResult({
-      success: true,
-      cleanupPerformed: false,
-      recommendation: 'quota_handled_by_concurrent_operation',
-      message: 'Quota was handled by concurrent operation'
+    // Return the actual result from the previous operation
+    // This ensures concurrent calls see the real outcome (success or failure)
+    return lastQuotaHandlingResult || createQuotaResult({
+      success: false,
+      error: 'Previous quota handling completed but result unavailable',
+      recommendation: 'retry_operation'
     });
   }
+
+  // Helper to cache result for concurrent callers
+  const returnWithCache = (result) => {
+    lastQuotaHandlingResult = result;
+    return result;
+  };
 
   const startTime = Date.now();
 
@@ -1853,12 +1859,12 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
 
     // Handle fallback rejection (storage critically full)
     if (!fallbackResult.success && fallbackResult.rejected) {
-      return await handleFallbackRejection(fallbackResult, data);
+      return returnWithCache(await handleFallbackRejection(fallbackResult, data));
     }
 
     // Handle other fallback failures
     if (!fallbackResult.success) {
-      return await handleFallbackError();
+      return returnWithCache(await handleFallbackError());
     }
 
     // Perform cleanup with recursion protection
@@ -1866,9 +1872,9 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
       await performCleanupOperation(cleanupFunction, cleanupCount);
       const cleanupTime = Date.now() - startTime;
 
-      return await handleCleanupSuccess(cleanupCount, cleanupTime, fallbackResult);
+      return returnWithCache(await handleCleanupSuccess(cleanupCount, cleanupTime, fallbackResult));
     } catch (cleanupError) {
-      return await handleCleanupFailure(cleanupError, cleanupCount, fallbackResult);
+      return returnWithCache(await handleCleanupFailure(cleanupError, cleanupCount, fallbackResult));
     }
   } catch (error) {
     logError('QuotaManager', error, {
@@ -1876,11 +1882,11 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
       fatal: true
     });
 
-    return createQuotaResult({
+    return returnWithCache(createQuotaResult({
       success: false,
       error: error.message,
       recommendation: 'system_error'
-    });
+    }));
   } finally {
     // CODE REVIEW FIX (P1-4): Always release lock to prevent deadlock
     // Even if operation fails, lock must be released so subsequent operations can proceed
