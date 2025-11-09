@@ -218,9 +218,8 @@ function stopFallbackProcessing() {
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === KEEP_ALIVE_ALARM) {
     // Ping to keep worker alive
-    chrome.runtime.getPlatformInfo(() => {
-      // No-op, just keep alive
-    });
+    chrome.runtime.getPlatformInfo(() => {});
+
   } else if (alarm.name === FALLBACK_PROCESSING_ALARM) {
     // Process fallback storage
     processFallbackStorageIfNeeded().catch((error) => {
