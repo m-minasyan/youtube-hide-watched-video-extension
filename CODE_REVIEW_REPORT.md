@@ -48,24 +48,51 @@ finally {
 
 ---
 
-### ✅ P1-2: CSP Violation Risk
-**Status:** FIXED (Commit b4f905b)
-**Files:** `manifest.json`, `hidden-videos.js`, `hidden-videos.html`, `hidden-videos.css`
+### 🚧 P1-2: CSP Violation Risk
+**Status:** PARTIALLY FIXED (Requires Massive Refactoring)
+**Files:** `manifest.json`, `hidden-videos.js`, `hidden-videos.html`, `hidden-videos.css`, `popup.js`
 
 **Issue:**
 - `'unsafe-inline'` in CSP `style-src` creates CSS injection attack vector
 - `DOMParser` used for HTML parsing creates unnecessary execution context
+- **Critical Discovery:** Code extensively uses `element.style.xxx` throughout (30+ locations)
 
-**Resolution:**
+**Partial Resolution (Completed):**
 1. ✅ Replaced `DOMParser` with `<template>` element in `createSafeHTML()`
 2. ✅ Added `.display-none` utility class in CSS
 3. ✅ Removed all 5 inline `style="display: none;"` attributes from HTML
-4. ✅ Removed `'unsafe-inline'` from CSP
+4. ❌ **CANNOT remove `'unsafe-inline'` without breaking functionality**
+
+**Blockers for Full Resolution:**
+- `hidden-videos.js`: 20+ uses of `.style.display`, `.style.background`, `.style.padding`, etc.
+- `popup.js`: 6 uses of `.style.display`, `.style.maxHeight`, `.style.opacity`
+- **Total refactoring needed:** Replace all `element.style.xxx` with CSS class toggles
+
+**Examples of Required Changes:**
+```javascript
+// Current (requires 'unsafe-inline'):
+loadingIndicator.style.display = 'flex';
+clearSearchBtn.style.display = 'none';
+mark.style.background = 'var(--accent-color)';
+
+// Required refactoring (CSP-safe):
+loadingIndicator.classList.add('display-flex');
+clearSearchBtn.classList.remove('display-flex');
+mark.classList.add('search-highlight');
+```
 
 **Impact:**
-- Eliminates CSS injection attack vector
-- Stricter security compliance for Chrome Web Store
-- Zero functional changes - all features work identically
+- ✅ `createSafeHTML()` now safer with template element
+- ✅ HTML cleaned of static inline styles
+- ⚠️ `'unsafe-inline'` MUST remain until JavaScript refactored
+- 🚧 Technical debt: ~30 locations need class-based refactoring
+
+**Recommendation:**
+Keep `'unsafe-inline'` for now. Create separate epic for CSP hardening:
+1. Add CSS classes for all dynamic states (.loading, .hidden, .highlight, etc.)
+2. Replace all `element.style.xxx` with `classList.add/remove()`
+3. Test thoroughly (affects core UX flows)
+4. Then remove `'unsafe-inline'` safely
 
 ---
 

@@ -30,8 +30,9 @@
 }
 
 /* FIXED P1-2: Universal utility class for hiding elements (replaces inline style="display: none") */
+/* NOTE: No !important to allow JavaScript .style.display override */
 .display-none {
-  display: none !important;
+  display: none;
 }
 
 body {
