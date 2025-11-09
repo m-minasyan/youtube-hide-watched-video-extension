@@ -1304,16 +1304,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     const validationInfo = document.getElementById('import-validation-info');
     const confirmBtn = document.getElementById('confirm-import-btn');
 
-    // Show error message
-    validationInfo.innerHTML = `
-      <div class="validation-error">
-        <h3>Import Validation Failed</h3>
-        <ul>
-          ${errors.map(err => `<li>${escapeHtml(err)}</li>`).join('')}
-        </ul>
-        <p>Please check your file and try again.</p>
-      </div>
-    `;
+    // 3RD SELF-REVIEW FIX: Replace innerHTML with safe DOM creation
+    const errorContainer = document.createElement('div');
+    errorContainer.className = 'validation-error';
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Import Validation Failed';
+
+    const errorList = document.createElement('ul');
+    errors.forEach(err => {
+      const li = document.createElement('li');
+      li.textContent = err; // Safe: textContent handles any HTML
+      errorList.appendChild(li);
+    });
+
+    const message = document.createElement('p');
+    message.textContent = 'Please check your file and try again.';
+
+    errorContainer.appendChild(heading);
+    errorContainer.appendChild(errorList);
+    errorContainer.appendChild(message);
+
+    validationInfo.replaceChildren(errorContainer);
 
     // Hide options and disable import
     document.querySelector('.import-options').style.display = 'none';
@@ -1333,32 +1345,62 @@ document.addEventListener('DOMContentLoaded', async () => {
     const currentTotal = Number(validation.currentTotal) || 0;
     const projectedTotal = Number(validation.projectedTotal) || 0;
 
-    // Show validation info
-    validationInfo.innerHTML = `
-      <div class="validation-success">
-        <h3>Import Preview</h3>
-        <div class="stats-preview">
-          <div class="stat-item">
-            <span class="stat-label">Valid Records:</span>
-            <span class="stat-value">${validRecordCount}</span>
-          </div>
-          ${invalidRecordCount > 0 ? `
-          <div class="stat-item warning">
-            <span class="stat-label">Invalid Records (will be skipped):</span>
-            <span class="stat-value">${invalidRecordCount}</span>
-          </div>
-          ` : ''}
-          <div class="stat-item">
-            <span class="stat-label">Current Total:</span>
-            <span class="stat-value">${currentTotal}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">After Import (max):</span>
-            <span class="stat-value">${projectedTotal}</span>
-          </div>
-        </div>
-      </div>
-    `;
+    // 3RD SELF-REVIEW FIX: Replace innerHTML with safe DOM creation
+    const successContainer = document.createElement('div');
+    successContainer.className = 'validation-success';
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Import Preview';
+
+    const statsPreview = document.createElement('div');
+    statsPreview.className = 'stats-preview';
+
+    // Valid Records stat
+    const validStat = document.createElement('div');
+    validStat.className = 'stat-item';
+    validStat.innerHTML = '<span class="stat-label">Valid Records:</span>';
+    const validValue = document.createElement('span');
+    validValue.className = 'stat-value';
+    validValue.textContent = String(validRecordCount);
+    validStat.appendChild(validValue);
+    statsPreview.appendChild(validStat);
+
+    // Invalid Records stat (conditional)
+    if (invalidRecordCount > 0) {
+      const invalidStat = document.createElement('div');
+      invalidStat.className = 'stat-item warning';
+      invalidStat.innerHTML = '<span class="stat-label">Invalid Records (will be skipped):</span>';
+      const invalidValue = document.createElement('span');
+      invalidValue.className = 'stat-value';
+      invalidValue.textContent = String(invalidRecordCount);
+      invalidStat.appendChild(invalidValue);
+      statsPreview.appendChild(invalidStat);
+    }
+
+    // Current Total stat
+    const currentStat = document.createElement('div');
+    currentStat.className = 'stat-item';
+    currentStat.innerHTML = '<span class="stat-label">Current Total:</span>';
+    const currentValue = document.createElement('span');
+    currentValue.className = 'stat-value';
+    currentValue.textContent = String(currentTotal);
+    currentStat.appendChild(currentValue);
+    statsPreview.appendChild(currentStat);
+
+    // Projected Total stat
+    const projectedStat = document.createElement('div');
+    projectedStat.className = 'stat-item';
+    projectedStat.innerHTML = '<span class="stat-label">After Import (max):</span>';
+    const projectedValue = document.createElement('span');
+    projectedValue.className = 'stat-value';
+    projectedValue.textContent = String(projectedTotal);
+    projectedStat.appendChild(projectedValue);
+    statsPreview.appendChild(projectedStat);
+
+    successContainer.appendChild(heading);
+    successContainer.appendChild(statsPreview);
+
+    validationInfo.replaceChildren(successContainer);
 
     // Show options and enable import
     document.querySelector('.import-options').style.display = 'block';

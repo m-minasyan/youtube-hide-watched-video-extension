@@ -806,16 +806,22 @@ async function saveToFallbackStorage(records) {
 
   // CODE REVIEW FIX (P2-5): Wait for existing lock with timeout to prevent deadlock
   // SELF-REVIEW FIX: Use constant from VALIDATION_LIMITS instead of hardcoded value
+  // 3RD SELF-REVIEW FIX: Properly cleanup setTimeout to prevent timer leak
   // If lock takes longer than 30 seconds, it's likely stuck - abort and log error
   if (fallbackLock) {
+    let timeoutId;
     try {
       await Promise.race([
         fallbackLock,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Fallback lock timeout')), VALIDATION_LIMITS.FALLBACK_LOCK_TIMEOUT_MS)
-        )
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Fallback lock timeout')), VALIDATION_LIMITS.FALLBACK_LOCK_TIMEOUT_MS);
+        })
       ]);
+      // Success - clear timeout to prevent it from firing
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
     } catch (timeoutError) {
+      // Timeout or lock error - clear timeout
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
       logError('QuotaManager', timeoutError, {
         operation: 'saveToFallbackStorage',
         lockTimeout: true,
