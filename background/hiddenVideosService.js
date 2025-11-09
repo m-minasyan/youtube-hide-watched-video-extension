@@ -785,7 +785,10 @@ async function handleImportRecords(message) {
     // FIXED P3-1: Show progress every 30 seconds to prevent Service Worker termination
     const timeSinceLastUpdate = Date.now() - lastProgressUpdate;
     if (timeSinceLastUpdate > 30000) { // 30 seconds
-      debug(`[Import] Progress: ${totalProcessed}/${validRecords.length} records processed (${Math.round(totalProcessed/validRecords.length*100)}%)`);
+      const progress = validRecords.length > 0
+        ? Math.round(totalProcessed / validRecords.length * 100)
+        : 0;
+      debug(`[Import] Progress: ${totalProcessed}/${validRecords.length} records processed (${progress}%)`);
       lastProgressUpdate = Date.now();
     }
 

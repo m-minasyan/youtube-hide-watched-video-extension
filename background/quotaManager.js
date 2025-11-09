@@ -1616,13 +1616,15 @@ async function handleFallbackRejection(fallbackResult, data) {
   }
 
   // Emergency backup also failed - truly critical
-  // FIXED P1-5: Fourth-tier protection - force auto-export without user prompt
+  // FIXED P1-5 & P2-3: Fourth-tier protection - emergency export with user consent
   // This is the last line of defense against data loss
+  const recordCount = Array.isArray(data) ? data.length : 1;
+
   try {
     const criticalData = {
       exportType: 'critical_auto_backup',
       exportDate: new Date().toISOString(),
-      warning: 'CRITICAL: All storage tiers exhausted. Automatic emergency export.',
+      warning: 'CRITICAL: All storage tiers exhausted. Emergency export required.',
       records: Array.isArray(data) ? data : [data]
     };
 
@@ -1633,10 +1635,9 @@ async function handleFallbackRejection(fallbackResult, data) {
 
     try {
       // FIXED P2-3: Show notification BEFORE download to get user attention
-      const recordCount = Array.isArray(data) ? data.length : 1;
       await showCriticalNotification({
         title: '🆘 EMERGENCY EXPORT REQUIRED',
-        message: `Storage critically full! Click OK to save ${recordCount} video(s) to prevent data loss.`
+        message: `Storage critically full! Save ${recordCount} video(s) now to prevent data loss. A save dialog will open - please choose where to save the backup file.`
       });
 
       // FIXED P2-3: Require user consent (saveAs: true)
@@ -1658,22 +1659,14 @@ async function handleFallbackRejection(fallbackResult, data) {
   } catch (autoExportError) {
     logError('QuotaManager', autoExportError, {
       operation: 'critical_auto_export',
-      fatal: true
+      fatal: true,
+      recordCount: recordCount
     });
   }
 
-  // P3-4 FIX: Shortened error message to fit notification UI (< 120 chars)
-  const recordCount = Array.isArray(data) ? data.length : 1;
-  const errorMessage = `Storage full! ${recordCount} video(s) auto-saved to Downloads. Clear old videos now to prevent data loss.`;
-
-  await showCriticalNotification({
-    title: '🛑 Storage Critical',
-    message: errorMessage
-  });
-
   // Log error for bug reports (always logged, even in production)
   error('[CRITICAL] All storage tiers exhausted:', {
-    dataLoss: Array.isArray(data) ? data.length : 1,
+    dataLoss: recordCount,
     fallbackResult,
     emergencyResult
   });
