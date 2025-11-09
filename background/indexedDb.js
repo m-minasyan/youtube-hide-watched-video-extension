@@ -282,27 +282,32 @@ export function closeDbSync() {
     return;
   }
 
-  // If there are active operations, force-close immediately
-  // FIXED P1-4: Removed setTimeout - Chrome does NOT wait for it in onSuspend
-  // Service Worker can be terminated before setTimeout fires, leaving DB connections open
+  // FIXED P3-2: Enhanced logging for active operations during shutdown
+  // If there are active operations, log detailed state before force-closing
+  // Note: We cannot async wait in onSuspend context, and busy-wait would block transactions
+  // from completing, so we log comprehensively and close immediately
   if (activeOperations > 0) {
     logError('IndexedDB', new Error('Force-closing database with active operations'), {
       operation: 'closeDbSync',
       activeOperations,
       shutdownRequested: true,
-      warning: 'Active operations will be interrupted'
+      warning: 'Active operations will be interrupted - this is unavoidable in Service Worker shutdown',
+      context: 'Service Workers cannot async wait during onSuspend, and synchronous waiting prevents operations from completing'
     });
 
     // Force-close immediately and SYNCHRONOUSLY
-    // This may interrupt active operations, but it's better than leaving connections open
-    // which would block the database on next startup
+    // This may interrupt active operations, but it's the only safe option because:
+    // 1. Service Worker onSuspend doesn't allow async waiting
+    // 2. Synchronous busy-wait would block operations from completing (JS is single-threaded)
+    // 3. Leaving connections open would block the database on next startup
     if (resolvedDb) {
       try {
         resolvedDb.close();
         logError('IndexedDB', new Error('Database force-closed with active operations'), {
           operation: 'closeDbSync',
           forceClose: true,
-          activeOperationsAtForce: activeOperations
+          activeOperationsAtForce: activeOperations,
+          note: 'Enhanced logging added to diagnose interrupted operations'
         });
       } catch (error) {
         // Ignore errors during force close

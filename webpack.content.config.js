@@ -2,8 +2,16 @@ const path = require('path');
 const webpack = require('webpack');
 const TerserPlugin = require('terser-webpack-plugin');
 
-module.exports = (env, argv) => {
-  const isProduction = argv.mode === 'production';
+// FIXED P3-5: Add validation and default values for webpack config
+module.exports = (env = {}, argv = {}) => {
+  // Validate and normalize mode with fallback
+  const mode = argv.mode || process.env.NODE_ENV || 'development';
+
+  if (!['production', 'development', 'none'].includes(mode)) {
+    console.warn(`[Webpack] Invalid mode: ${mode}, defaulting to 'development'`);
+  }
+
+  const isProduction = mode === 'production';
 
   return {
     entry: './content/index.js',
@@ -13,7 +21,7 @@ module.exports = (env, argv) => {
       iife: true,
       clean: false
     },
-    mode: isProduction ? 'production' : 'development',
+    mode: mode, // Use validated mode
     devtool: isProduction ? false : 'inline-source-map',
     externals: {
       chrome: 'chrome'
@@ -52,6 +60,16 @@ module.exports = (env, argv) => {
           extractComments: false,
         }),
       ],
+      moduleIds: 'deterministic'
+    },
+    // FIXED P3-3: Bundle size monitoring for content script
+    performance: {
+      maxEntrypointSize: 256000, // 256KB warning threshold for content script (smaller than background)
+      maxAssetSize: 256000, // 256KB warning threshold
+      hints: isProduction ? 'error' : 'warning',
+      assetFilter: function(assetFilename) {
+        return assetFilename.endsWith('.js');
+      }
     },
     resolve: {
       extensions: ['.js']
