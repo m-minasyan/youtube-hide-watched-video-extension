@@ -32,9 +32,6 @@ export function debug(...args) {
   }
 }
 
-// FIXED P3-4: Removed deprecated logDebug() function
-// All code has been migrated to use debug() instead
-
 /**
  * Log error information (ALWAYS logged, even in production)
  * Critical errors must be logged to debug production issues
