@@ -3,19 +3,20 @@
  * Prevents UI freeze and memory issues by processing data in chunks
  */
 
-import { IMPORT_EXPORT_CONFIG } from './constants.js';
+import { IMPORT_EXPORT_CONFIG, VALIDATION_LIMITS } from './constants.js';
 import { warn } from './logger.js';
 import { classifyError, ErrorType } from './errorHandler.js';
 
 /**
  * FIXED P1-1: Validates JSON depth to prevent DoS attacks via deeply nested objects
  * Malicious JSON with 100k+ nesting levels can cause stack overflow and browser crash
+ * 2ND SELF-REVIEW FIX: Use VALIDATION_LIMITS.MAX_JSON_DEPTH instead of hardcoded 100
  * @param {*} obj - Object to validate
- * @param {number} maxDepth - Maximum allowed nesting depth (default: 100)
+ * @param {number} maxDepth - Maximum allowed nesting depth (default from VALIDATION_LIMITS)
  * @param {number} currentDepth - Current depth (used for recursion)
  * @throws {Error} If object nesting exceeds maxDepth
  */
-function validateJSONDepth(obj, maxDepth = 100, currentDepth = 0) {
+function validateJSONDepth(obj, maxDepth = VALIDATION_LIMITS.MAX_JSON_DEPTH, currentDepth = 0) {
   if (currentDepth > maxDepth) {
     throw new Error(
       `JSON nesting exceeds maximum depth of ${maxDepth}. ` +
@@ -37,12 +38,13 @@ function validateJSONDepth(obj, maxDepth = 100, currentDepth = 0) {
 /**
  * FIXED P1-1: Safely parses JSON with depth validation
  * Prevents DoS attacks from deeply nested JSON structures
+ * 2ND SELF-REVIEW FIX: Use VALIDATION_LIMITS.MAX_JSON_DEPTH instead of hardcoded 100
  * @param {string} text - JSON text to parse
- * @param {number} maxDepth - Maximum allowed nesting depth
+ * @param {number} maxDepth - Maximum allowed nesting depth (default from VALIDATION_LIMITS)
  * @returns {*} Parsed JSON object
  * @throws {Error} If parsing fails or depth exceeds limit
  */
-function parseJSONSafely(text, maxDepth = 100) {
+function parseJSONSafely(text, maxDepth = VALIDATION_LIMITS.MAX_JSON_DEPTH) {
   const data = JSON.parse(text);
   validateJSONDepth(data, maxDepth);
   return data;
@@ -148,7 +150,8 @@ export class StreamingJSONParser {
       // FIXED P1-1: Parse with depth validation to prevent DoS attacks
       // Malicious files with deeply nested objects (100k+ levels) can crash the browser
       // We still need to parse all at once, but at least reading was chunked
-      const data = parseJSONSafely(buffer, 100);
+      // 2ND SELF-REVIEW FIX: Use default maxDepth from VALIDATION_LIMITS (no need to pass explicitly)
+      const data = parseJSONSafely(buffer);
 
       // FIXED P2-1/P2-9: Removed redundant metadata validation
       // Metadata can be forged, so we only validate actual records.length

@@ -73,9 +73,8 @@ let isCleaningUp = false;
 // CODE REVIEW FIX (P1-4): Global lock for quota handling to prevent concurrent cleanup
 // Prevents race condition where multiple transactions hit quota simultaneously and
 // both call deleteOldestHiddenVideos, resulting in excessive data deletion
-// SELF-REVIEW FIX: Store result of last operation to return to concurrent callers
-let quotaHandlingLock = null;
-let lastQuotaHandlingResult = null;
+// SELF-REVIEW FIX: Store result WITH the lock to prevent result overwrite race condition
+let quotaHandlingLock = null; // Stores { promise, result } object
 
 // FIXED P2-4: Global notification rate limiter
 // Tracks timestamps of recent notifications across all types
@@ -84,18 +83,18 @@ const globalNotificationTimestamps = [];
 // FIXED P3-8: Per-type notification cooldown to prevent spam of same notification type
 // Maps notification type to last shown timestamp
 // CODE REVIEW FIX (P2-1): Enhanced with time-based cleanup to prevent unbounded growth
+// 2ND SELF-REVIEW FIX: Use constants from VALIDATION_LIMITS to avoid duplication
 const lastNotificationByType = new Map();
-const PER_TYPE_COOLDOWN_MS = 60000; // 1 minute cooldown per type
-const PER_TYPE_CLEANUP_WINDOW_MS = 5 * 60 * 1000; // Cleanup entries older than 5 minutes
+const PER_TYPE_COOLDOWN_MS = 60000; // 1 minute cooldown per type (not in VALIDATION_LIMITS - not security-critical)
 
 /**
  * CODE REVIEW FIX (P2-1): Cleans up old notification type entries to prevent Map growth
- * Removes entries older than PER_TYPE_CLEANUP_WINDOW_MS (5 minutes)
+ * Removes entries older than VALIDATION_LIMITS.PER_TYPE_CLEANUP_WINDOW_MS (5 minutes)
  * This prevents unbounded Map growth when notification types are dynamic
  */
 function cleanupOldNotificationTypes() {
   const now = Date.now();
-  const cutoff = now - PER_TYPE_CLEANUP_WINDOW_MS;
+  const cutoff = now - VALIDATION_LIMITS.PER_TYPE_CLEANUP_WINDOW_MS;
 
   for (const [type, timestamp] of lastNotificationByType.entries()) {
     if (timestamp < cutoff) {
@@ -1791,25 +1790,20 @@ async function handleCleanupFailure(error, cleanupCount, fallbackResult) {
 export async function handleQuotaExceeded(error, cleanupFunction, operationContext = {}) {
   // CODE REVIEW FIX (P1-4): Wait for existing quota handling to complete
   // Prevents concurrent quota operations from deleting too much data
-  // SELF-REVIEW FIX: Return actual result from previous operation instead of always success
+  // CRITICAL FIX (2nd self-review): Store result atomically with lock to prevent overwrite
   if (quotaHandlingLock) {
     debug('[QuotaManager] Quota handling already in progress, waiting...');
-    await quotaHandlingLock;
+    const lockToWaitFor = quotaHandlingLock; // Capture current lock state
+    await lockToWaitFor.promise;
 
-    // Return the actual result from the previous operation
-    // This ensures concurrent calls see the real outcome (success or failure)
-    return lastQuotaHandlingResult || createQuotaResult({
+    // Return the result that was captured WITH this specific lock
+    // This prevents race where a new operation overwrites the result before we read it
+    return lockToWaitFor.result || createQuotaResult({
       success: false,
       error: 'Previous quota handling completed but result unavailable',
       recommendation: 'retry_operation'
     });
   }
-
-  // Helper to cache result for concurrent callers
-  const returnWithCache = (result) => {
-    lastQuotaHandlingResult = result;
-    return result;
-  };
 
   const startTime = Date.now();
 
@@ -1818,11 +1812,24 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
     context: operationContext
   });
 
-  // Create and store the lock promise
+  // Create lock object that will store both promise and result
   let lockResolve;
-  quotaHandlingLock = new Promise((resolve) => {
+  const lockPromise = new Promise((resolve) => {
     lockResolve = resolve;
   });
+
+  // CRITICAL: Store lock as object with promise and result slot
+  const currentLock = {
+    promise: lockPromise,
+    result: null  // Will be filled before releasing lock
+  };
+  quotaHandlingLock = currentLock;
+
+  // Helper to cache result in the lock object (atomic with lock)
+  const returnWithCache = (result) => {
+    currentLock.result = result;  // Store in THIS lock's result
+    return result;
+  };
 
   try {
     // CODE REVIEW FIX (P1-2): Validate operationContext and data before use
