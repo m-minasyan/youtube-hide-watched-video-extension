@@ -535,3 +535,31 @@ export const UI_TIMING = {
   // Prevents UI blocking during large batch operations
   BATCH_YIELD_MS: 10
 };
+
+// CODE REVIEW FIX (P3-1): Validation and security limits
+// Consolidated magic numbers for better maintainability
+export const VALIDATION_LIMITS = {
+  // Maximum notification entries in global rate limiter
+  // Prevents unbounded memory growth from notification spam
+  MAX_NOTIFICATION_ENTRIES: 50,
+
+  // Maximum JSON nesting depth for import validation
+  // Prevents DoS attacks via deeply nested JSON (stack overflow)
+  MAX_JSON_DEPTH: 100,
+
+  // Maximum quota retry depth
+  // Prevents infinite recursion in quota handling
+  MAX_QUOTA_RETRY_DEPTH: 2,
+
+  // Maximum notification types tracked
+  // Prevents Map growth from dynamic notification type generation
+  MAX_NOTIFICATION_TYPES: 50,
+
+  // Fallback lock timeout (30 seconds)
+  // Prevents deadlock if lock is never released
+  FALLBACK_LOCK_TIMEOUT_MS: 30000,
+
+  // Per-type cleanup window (5 minutes)
+  // Removes notification type entries older than this threshold
+  PER_TYPE_CLEANUP_WINDOW_MS: 5 * 60 * 1000
+};

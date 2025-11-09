@@ -419,10 +419,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       hiddenVideosState.hasMore = endIndex < filteredItems.length;
     } catch (error) {
       logError('[Search] Search failed:', error);
-      // MEMORY LEAK FIX: Clear old event listeners before setting new content
-      videosContainer.replaceChildren();
-      // Display error message to user
-      videosContainer.innerHTML = `
+      // CODE REVIEW FIX (P2-2): Use createSafeHTML instead of innerHTML
+      // Even though this is static content, using DOMParser is safer and follows best practices
+      const errorContent = createSafeHTML(`
         <div class="empty-state">
           <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
@@ -432,7 +431,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           <h3>Search failed</h3>
           <p>Unable to load search results. Please try again.</p>
         </div>
-      `;
+      `);
+      videosContainer.replaceChildren(errorContent);
       // Reset state on error
       hiddenVideosState.items = [];
       hiddenVideosState.hasMore = false;
@@ -516,6 +516,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  /**
+   * CODE REVIEW FIX (P2-2): Safely creates DOM from HTML string without innerHTML
+   * Uses DOMParser to parse HTML in isolated context, then extracts elements safely
+   * This prevents potential XSS even with static content and follows security best practices
+   *
+   * @param {string} htmlString - HTML string to parse (must be trusted static content)
+   * @returns {DocumentFragment} - Safe DOM fragment
+   */
+  function createSafeHTML(htmlString) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlString, 'text/html');
+    const fragment = document.createDocumentFragment();
+
+    // Extract all body children into fragment
+    while (doc.body.firstChild) {
+      fragment.appendChild(doc.body.firstChild);
+    }
+
+    return fragment;
   }
 
   /**
@@ -735,35 +756,64 @@ document.addEventListener('DOMContentLoaded', async () => {
       videosContainer.replaceChildren();
 
       if (isSearching) {
-        // Show "no search results" message
-        // SECURITY: Query is already sanitized when stored in state,
-        // but we escape it again for innerHTML defense-in-depth
-        const escapedQuery = escapeHtml(hiddenVideosState.searchQuery);
-        videosContainer.innerHTML = `
-          <div class="search-no-results">
-            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="8"></circle>
-              <path d="m21 21-4.35-4.35"></path>
-            </svg>
-            <h3>No results found</h3>
-            <p>No videos match your search: <span class="search-term">"${escapedQuery}"</span></p>
-            <p style="margin-top: 8px; font-size: 13px;">Try a different search term or clear the search.</p>
-          </div>
-        `;
+        // CODE REVIEW FIX (P2-2): Create DOM safely without innerHTML
+        const container = document.createElement('div');
+        container.className = 'search-no-results';
+
+        // SVG icon
+        const svg = createSafeHTML(`
+          <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.35-4.35"></path>
+          </svg>
+        `);
+
+        const heading = document.createElement('h3');
+        heading.textContent = 'No results found';
+
+        const p1 = document.createElement('p');
+        p1.textContent = 'No videos match your search: ';
+        const searchTerm = document.createElement('span');
+        searchTerm.className = 'search-term';
+        searchTerm.textContent = `"${hiddenVideosState.searchQuery}"`; // Safe: textContent
+        p1.appendChild(searchTerm);
+
+        const p2 = document.createElement('p');
+        p2.style.marginTop = '8px';
+        p2.style.fontSize = '13px';
+        p2.textContent = 'Try a different search term or clear the search.';
+
+        container.appendChild(svg);
+        container.appendChild(heading);
+        container.appendChild(p1);
+        container.appendChild(p2);
+
+        videosContainer.appendChild(container);
       } else {
-        // Show normal empty state
-        videosContainer.innerHTML = `
-          <div class="empty-state">
-            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
-              <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
-              <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
-              <line x1="2" y1="2" x2="22" y2="22"/>
-            </svg>
-            <h3>${filter === 'all' ? 'No hidden videos' : `No ${filter} videos`}</h3>
-            <p>${filter === 'all' ? 'Videos you hide will appear here' : `No videos are currently ${filter}`}</p>
-          </div>
-        `;
+        // CODE REVIEW FIX (P2-2): Create empty state safely
+        const container = document.createElement('div');
+        container.className = 'empty-state';
+
+        const svg = createSafeHTML(`
+          <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
+            <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
+            <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
+            <line x1="2" y1="2" x2="22" y2="22"/>
+          </svg>
+        `);
+
+        const heading = document.createElement('h3');
+        heading.textContent = filter === 'all' ? 'No hidden videos' : `No ${filter} videos`;
+
+        const paragraph = document.createElement('p');
+        paragraph.textContent = filter === 'all' ? 'Videos you hide will appear here' : `No videos are currently ${filter}`;
+
+        container.appendChild(svg);
+        container.appendChild(heading);
+        container.appendChild(paragraph);
+
+        videosContainer.appendChild(container);
       }
       updateSearchResultsStatus();
       return;
@@ -1254,16 +1304,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     const validationInfo = document.getElementById('import-validation-info');
     const confirmBtn = document.getElementById('confirm-import-btn');
 
-    // Show error message
-    validationInfo.innerHTML = `
-      <div class="validation-error">
-        <h3>Import Validation Failed</h3>
-        <ul>
-          ${errors.map(err => `<li>${escapeHtml(err)}</li>`).join('')}
-        </ul>
-        <p>Please check your file and try again.</p>
-      </div>
-    `;
+    // 3RD SELF-REVIEW FIX: Replace innerHTML with safe DOM creation
+    const errorContainer = document.createElement('div');
+    errorContainer.className = 'validation-error';
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Import Validation Failed';
+
+    const errorList = document.createElement('ul');
+    errors.forEach(err => {
+      const li = document.createElement('li');
+      li.textContent = err; // Safe: textContent handles any HTML
+      errorList.appendChild(li);
+    });
+
+    const message = document.createElement('p');
+    message.textContent = 'Please check your file and try again.';
+
+    errorContainer.appendChild(heading);
+    errorContainer.appendChild(errorList);
+    errorContainer.appendChild(message);
+
+    validationInfo.replaceChildren(errorContainer);
 
     // Hide options and disable import
     document.querySelector('.import-options').style.display = 'none';
@@ -1283,32 +1345,78 @@ document.addEventListener('DOMContentLoaded', async () => {
     const currentTotal = Number(validation.currentTotal) || 0;
     const projectedTotal = Number(validation.projectedTotal) || 0;
 
-    // Show validation info
-    validationInfo.innerHTML = `
-      <div class="validation-success">
-        <h3>Import Preview</h3>
-        <div class="stats-preview">
-          <div class="stat-item">
-            <span class="stat-label">Valid Records:</span>
-            <span class="stat-value">${validRecordCount}</span>
-          </div>
-          ${invalidRecordCount > 0 ? `
-          <div class="stat-item warning">
-            <span class="stat-label">Invalid Records (will be skipped):</span>
-            <span class="stat-value">${invalidRecordCount}</span>
-          </div>
-          ` : ''}
-          <div class="stat-item">
-            <span class="stat-label">Current Total:</span>
-            <span class="stat-value">${currentTotal}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">After Import (max):</span>
-            <span class="stat-value">${projectedTotal}</span>
-          </div>
-        </div>
-      </div>
-    `;
+    // 3RD SELF-REVIEW FIX: Replace innerHTML with safe DOM creation
+    const successContainer = document.createElement('div');
+    successContainer.className = 'validation-success';
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Import Preview';
+
+    const statsPreview = document.createElement('div');
+    statsPreview.className = 'stats-preview';
+
+    // Valid Records stat
+    const validStat = document.createElement('div');
+    validStat.className = 'stat-item';
+    // 4TH SELF-REVIEW FIX: Replace innerHTML with createElement for consistency
+    const validLabel = document.createElement('span');
+    validLabel.className = 'stat-label';
+    validLabel.textContent = 'Valid Records:';
+    validStat.appendChild(validLabel);
+    const validValue = document.createElement('span');
+    validValue.className = 'stat-value';
+    validValue.textContent = String(validRecordCount);
+    validStat.appendChild(validValue);
+    statsPreview.appendChild(validStat);
+
+    // Invalid Records stat (conditional)
+    if (invalidRecordCount > 0) {
+      const invalidStat = document.createElement('div');
+      invalidStat.className = 'stat-item warning';
+      // 4TH SELF-REVIEW FIX: Replace innerHTML with createElement for consistency
+      const invalidLabel = document.createElement('span');
+      invalidLabel.className = 'stat-label';
+      invalidLabel.textContent = 'Invalid Records (will be skipped):';
+      invalidStat.appendChild(invalidLabel);
+      const invalidValue = document.createElement('span');
+      invalidValue.className = 'stat-value';
+      invalidValue.textContent = String(invalidRecordCount);
+      invalidStat.appendChild(invalidValue);
+      statsPreview.appendChild(invalidStat);
+    }
+
+    // Current Total stat
+    const currentStat = document.createElement('div');
+    currentStat.className = 'stat-item';
+    // 4TH SELF-REVIEW FIX: Replace innerHTML with createElement for consistency
+    const currentLabel = document.createElement('span');
+    currentLabel.className = 'stat-label';
+    currentLabel.textContent = 'Current Total:';
+    currentStat.appendChild(currentLabel);
+    const currentValue = document.createElement('span');
+    currentValue.className = 'stat-value';
+    currentValue.textContent = String(currentTotal);
+    currentStat.appendChild(currentValue);
+    statsPreview.appendChild(currentStat);
+
+    // Projected Total stat
+    const projectedStat = document.createElement('div');
+    projectedStat.className = 'stat-item';
+    // 4TH SELF-REVIEW FIX: Replace innerHTML with createElement for consistency
+    const projectedLabel = document.createElement('span');
+    projectedLabel.className = 'stat-label';
+    projectedLabel.textContent = 'After Import (max):';
+    projectedStat.appendChild(projectedLabel);
+    const projectedValue = document.createElement('span');
+    projectedValue.className = 'stat-value';
+    projectedValue.textContent = String(projectedTotal);
+    projectedStat.appendChild(projectedValue);
+    statsPreview.appendChild(projectedStat);
+
+    successContainer.appendChild(heading);
+    successContainer.appendChild(statsPreview);
+
+    validationInfo.replaceChildren(successContainer);
 
     // Show options and enable import
     document.querySelector('.import-options').style.display = 'block';

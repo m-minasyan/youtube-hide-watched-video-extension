@@ -47,14 +47,22 @@ export class UnifiedCacheManager {
 
   /**
    * Evicts least recently used entries when cache exceeds maxSize
+   *
+   * CODE REVIEW FIX (P2-6): Race condition safety analysis
+   * This function is synchronous, so the isEvicting flag is safe from race conditions
+   * in JavaScript's single-threaded execution model. The check-then-set pattern is atomic
+   * because no async operations occur between lines 52 and 55.
+   *
+   * If this function were async, we would need Promise-based locking instead.
    */
   evictLRUEntries() {
+    // Early exit with atomic check - safe because function is synchronous
     if (this.cache.size <= this.maxSize || this.isEvicting) return;
 
     try {
       this.isEvicting = true;
 
-      // Re-check size after acquiring lock
+      // Re-check size after acquiring lock (defense in depth)
       if (this.cache.size <= this.maxSize) return;
 
       // Sort by access time (oldest first)
