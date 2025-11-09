@@ -576,24 +576,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
-   * CODE REVIEW FIX (P2-2): Safely creates DOM from HTML string without innerHTML
-   * Uses DOMParser to parse HTML in isolated context, then extracts elements safely
+   * FIXED P1-2: Safely creates DOM from HTML string using template element
+   * Uses <template> instead of DOMParser for better CSP compatibility
    * This prevents potential XSS even with static content and follows security best practices
    *
    * @param {string} htmlString - HTML string to parse (must be trusted static content)
    * @returns {DocumentFragment} - Safe DOM fragment
    */
   function createSafeHTML(htmlString) {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(htmlString, 'text/html');
-    const fragment = document.createDocumentFragment();
-
-    // Extract all body children into fragment
-    while (doc.body.firstChild) {
-      fragment.appendChild(doc.body.firstChild);
-    }
-
-    return fragment;
+    // FIXED P1-2: Use template element instead of DOMParser
+    // This is safer and doesn't require DOMParser which can execute scripts in some contexts
+    const template = document.createElement('template');
+    template.innerHTML = htmlString.trim(); // Trim to handle whitespace properly
+    return template.content.cloneNode(true);
   }
 
   /**

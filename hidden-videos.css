@@ -29,6 +29,11 @@
   box-sizing: border-box;
 }
 
+/* FIXED P1-2: Universal utility class for hiding elements (replaces inline style="display: none") */
+.display-none {
+  display: none !important;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   background: var(--bg-primary);
