@@ -126,8 +126,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   /**
    * FIXED P2-2: Checks if memory usage is safe with cross-browser support
    * Uses actual memory API when available, falls back to heuristic estimation
-   * @param {number} thresholdMB - Memory threshold in megabytes (default: 100MB)
-   * @returns {Object} - { isSafe: boolean, usedMB: number, method: string }
+   * @param {number} thresholdMB - Memory threshold in megabytes (default: 100MB for Chromium)
+   * @returns {Object} - { isSafe: boolean, usedMB: number, method: string, threshold: number }
    */
   function checkMemorySafety(thresholdMB = 100) {
     const memoryUsage = estimateMemoryUsage();
@@ -140,16 +140,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (typeof performance !== 'undefined' && performance.memory && performance.memory.usedJSHeapSize) {
       // Actual memory API available (Chromium)
       method = 'performance.memory';
-      effectiveThreshold = thresholdMB;
+      effectiveThreshold = thresholdMB; // Use passed threshold (default 100MB)
     } else {
       // Heuristic estimation (Firefox, Safari)
       method = 'heuristic';
-      // For heuristic, use item count limit instead of MB threshold
-      // 10MB = 10 * 1024 * 1024 bytes = 10,485,760 bytes
-      // At 500 bytes per item = ~20,971 items maximum
-      const maxItems = 20000; // Conservative limit for non-Chromium browsers
+      // For heuristic, calculate equivalent threshold based on item count
+      // We want to allow similar amount of data as Chromium's threshold
+      // 100MB worth of items at 500 bytes each = 200,000 items (very generous)
+      // But we also respect UI_CONFIG limits (1000 desktop, 500 mobile)
+      // So use a safety margin: allow up to 50MB worth of items for heuristic mode
+      const maxItems = 100000; // 50MB / 500 bytes = 100,000 items (safety margin below 100MB)
       const maxEstimatedBytes = maxItems * 500;
-      effectiveThreshold = maxEstimatedBytes / (1024 * 1024); // Convert to MB for consistent return value
+      effectiveThreshold = maxEstimatedBytes / (1024 * 1024); // ~47.6 MB for heuristic
     }
 
     const isSafe = usedMB < effectiveThreshold;
