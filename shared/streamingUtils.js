@@ -128,6 +128,15 @@ export class StreamingJSONParser {
         }
       }
 
+      // FIXED P1-3: Final validation to prevent TOCTOU file replacement attack
+      // Verify that bytes read matches original size to detect file swap during read
+      if (bytesRead !== this.originalSize) {
+        throw new Error(
+          `File size mismatch after read: expected ${formatBytes(this.originalSize)}, ` +
+          `got ${formatBytes(bytesRead)}. Possible file replacement attack detected.`
+        );
+      }
+
       // Report parsing stage
       this.onProgress({
         stage: 'parsing',

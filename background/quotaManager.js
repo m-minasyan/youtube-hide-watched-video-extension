@@ -208,9 +208,25 @@ function calculateCleanupCount(estimatedNeededBytes) {
     return QUOTA_CONFIG.MIN_CLEANUP_COUNT;
   }
 
+  // FIXED P2-6: Validate ESTIMATED_RECORD_SIZE configuration value
+  // Even though it's defined in constants.js, validate at runtime to prevent division by zero
+  const recordSize = QUOTA_CONFIG.ESTIMATED_RECORD_SIZE;
+  if (!Number.isFinite(recordSize) || recordSize <= 0) {
+    logError('QuotaManager', new Error('Invalid ESTIMATED_RECORD_SIZE configuration'), {
+      value: recordSize,
+      operation: 'calculateCleanupCount',
+      usingDefault: 200
+    });
+    // Use safe fallback value
+    return Math.max(
+      QUOTA_CONFIG.MIN_CLEANUP_COUNT,
+      Math.min(QUOTA_CONFIG.MAX_CLEANUP_COUNT, Math.ceil(estimatedNeededBytes / 200))
+    );
+  }
+
   // Calculate records needed with safety margin
   const recordsNeeded = Math.ceil(
-    (estimatedNeededBytes / QUOTA_CONFIG.ESTIMATED_RECORD_SIZE) * QUOTA_CONFIG.CLEANUP_SAFETY_MARGIN
+    (estimatedNeededBytes / recordSize) * QUOTA_CONFIG.CLEANUP_SAFETY_MARGIN
   );
 
   // FIXED P2-6: Additional safety check for infinity
@@ -588,12 +604,26 @@ async function processFallbackStorageAggressively() {
   // P1-1 FIX: Add retry limit to prevent infinite loop on persistent errors
   const MAX_CONSECUTIVE_FAILURES = 3;
   const MAX_RECORD_RETRIES = 5; // FIXED P1-5: Maximum retries per record
+  const MAX_TOTAL_ATTEMPTS = 1000; // FIXED P2-15: Absolute cap on total operations
   const AGGRESSIVE_BATCH_SIZE = QUOTA_CONFIG.AGGRESSIVE_BATCH_SIZE;
   let processedCount = 0;
   let consecutiveFailures = 0;
   let skippedRecords = 0; // FIXED P1-5: Track permanently failed records
+  let totalAttempts = 0; // FIXED P2-15: Track total operation attempts
 
   while (fallbackRecords.length > 0) {
+    // FIXED P2-15: Check total attempts to prevent excessive processing time
+    if (totalAttempts >= MAX_TOTAL_ATTEMPTS) {
+      logError('QuotaManager', new Error('Maximum total attempts reached'), {
+        operation: 'processFallbackStorageAggressively',
+        totalAttempts,
+        processedCount,
+        remainingRecords: fallbackRecords.length,
+        stopping: true
+      });
+      break;
+    }
+    totalAttempts++;
     // P1-1 FIX: Break if too many consecutive failures
     if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
       logError('QuotaManager', new Error('Maximum consecutive failures reached'), {
@@ -1229,7 +1259,23 @@ async function showQuotaNotification(options = {}) {
     // FIXED P2-4: Record notification for global rate limiting
     recordGlobalNotification();
 
-    // FIXED P3-8: Record per-type notification timestamp
+    // FIXED P3-8: Record per-type notification timestamp with size limit
+    // Prevent unbounded Map growth by limiting to 50 notification types
+    const MAX_NOTIFICATION_TYPES = 50;
+    if (lastNotificationByType.size >= MAX_NOTIFICATION_TYPES && !lastNotificationByType.has(notificationType)) {
+      // Find and remove oldest entry to make space
+      let oldestType = null;
+      let oldestTime = Infinity;
+      for (const [type, time] of lastNotificationByType.entries()) {
+        if (time < oldestTime) {
+          oldestTime = time;
+          oldestType = type;
+        }
+      }
+      if (oldestType) {
+        lastNotificationByType.delete(oldestType);
+      }
+    }
     lastNotificationByType.set(notificationType, Date.now());
 
     await logQuotaEvent({
@@ -1437,9 +1483,28 @@ async function saveToEmergencyBackup(data) {
         saveAs: true
       });
 
-      // FIXED P2-8: Clear emergency backup after successful export
+      // FIXED P2-8: Clear emergency backup after successful export with retry
       // This prevents wasting storage with orphaned backup data
-      await chrome.storage.local.remove(EMERGENCY_BACKUP_KEY);
+      try {
+        await chrome.storage.local.remove(EMERGENCY_BACKUP_KEY);
+      } catch (removeError) {
+        // Retry once after a short delay
+        logError('QuotaManager', removeError, {
+          operation: 'emergency_backup_cleanup',
+          retrying: true
+        });
+        try {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          await chrome.storage.local.remove(EMERGENCY_BACKUP_KEY);
+        } catch (retryError) {
+          logError('QuotaManager', retryError, {
+            operation: 'emergency_backup_cleanup_failed',
+            warning: 'Emergency backup not cleared, will retry on next export',
+            keepingData: true
+          });
+          // Don't throw - export succeeded, cleanup failure is not critical
+        }
+      }
 
       await logQuotaEvent({
         type: 'emergency_backup_cleared',

@@ -72,10 +72,21 @@ async function broadcastHiddenVideosEvent(event) {
     // Chrome has internal rate limits (~1000 calls/minute)
     const BATCH_SIZE = 10;
     const MAX_CONSECUTIVE_FAILURES = 3;
+    const MAX_BROADCAST_TIME = 10000; // 10 seconds max for entire broadcast
+    const BROADCAST_START = Date.now();
     const failedBroadcasts = [];
     let consecutiveFailures = 0;
 
     for (let i = 0; i < tabs.length; i += BATCH_SIZE) {
+      // FIXED P2-12: Check total broadcast timeout to prevent indefinite execution
+      if (Date.now() - BROADCAST_START > MAX_BROADCAST_TIME) {
+        warn('[HiddenVideosService] Broadcast timeout reached, stopping early', {
+          processedTabs: i,
+          totalTabs: tabs.length,
+          elapsedMs: Date.now() - BROADCAST_START
+        });
+        break;
+      }
       const batch = tabs.slice(i, i + BATCH_SIZE);
 
       const batchResults = await Promise.allSettled(

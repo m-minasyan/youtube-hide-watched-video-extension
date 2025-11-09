@@ -3,6 +3,7 @@ import { getCachedRecord, setCachedRecord, invalidateCache, clearBackgroundCache
 import { INDEXEDDB_CONFIG, QUOTA_CONFIG, UI_TIMING } from '../shared/constants.js'; // FIXED P3-4: Import UI_TIMING
 import { handleQuotaExceeded, getFromFallbackStorage, removeFromFallbackStorage } from './quotaManager.js';
 import { isValidVideoId } from '../shared/utils.js';
+import { warn } from '../shared/logger.js';
 
 const DB_NAME = 'ythwvHiddenVideos';
 const DB_VERSION = 1;
@@ -378,6 +379,17 @@ async function withStore(mode, handler, operationContext = null) {
       throw new Error('Database is shutting down');
     }
 
+    // FIXED P2-14: Check if database reset is in progress
+    // Prevents new operations from starting during reset, avoiding race conditions
+    if (dbResetInProgress) {
+      logError('IndexedDB', new Error('Operation rejected - database reset in progress'), {
+        operation: 'withStore',
+        mode,
+        dbResetInProgress: true
+      });
+      throw new Error('Database reset in progress');
+    }
+
     const db = await openDb();
     return await retryOperation(
       () => withTimeout(
@@ -545,6 +557,11 @@ async function withStore(mode, handler, operationContext = null) {
           const maxRetries = Math.max(1, Math.min(10, QUOTA_CONFIG.MAX_RETRY_ATTEMPTS || 3));
           let lastError = error;
 
+          // FIXED P2-3: Track total cleanup across all retries to prevent excessive deletion
+          // Prevents nested retries from deleting more than 2x MAX_CLEANUP_COUNT total
+          const maxTotalCleanup = QUOTA_CONFIG.MAX_CLEANUP_COUNT * 2; // 10,000 total budget
+          let totalCleaned = quotaResult.recordsDeleted || 0;
+
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
               // Pass increased quota retry depth to prevent nested loops
@@ -559,11 +576,24 @@ async function withStore(mode, handler, operationContext = null) {
 
               // If still quota exceeded, perform additional cleanup
               if (retryErrorType === ErrorType.QUOTA_EXCEEDED && attempt < maxRetries) {
+                // FIXED P2-3: Check total cleanup budget before performing more cleanup
+                const remainingBudget = maxTotalCleanup - totalCleaned;
+                if (remainingBudget <= 0) {
+                  warn('[IndexedDB] Total cleanup budget exhausted, stopping retries', {
+                    operation: 'quota_retry',
+                    attempt,
+                    totalCleaned,
+                    maxBudget: maxTotalCleanup
+                  });
+                  break; // Exit retry loop - budget exhausted
+                }
+
                 logError('IndexedDB', retryError, {
                   operation: 'quota_retry',
                   attempt,
                   quotaRetryDepth,
-                  performingAdditionalCleanup: true
+                  performingAdditionalCleanup: true,
+                  remainingBudget
                 });
 
                 // FIXED P2-4: Conservative multiplicative cleanup strategy
@@ -572,18 +602,26 @@ async function withStore(mode, handler, operationContext = null) {
                 const additionalCleanup = quotaResult.recordsDeleted * Math.pow(1.5, attempt);
                 const cappedCleanup = Math.min(
                   Math.floor(additionalCleanup),
-                  QUOTA_CONFIG.MAX_CLEANUP_COUNT // Cap at 5000 to prevent excessive deletion
+                  QUOTA_CONFIG.MAX_CLEANUP_COUNT, // Cap at 5000 per retry
+                  remainingBudget // Don't exceed total budget
                 );
+
+                if (cappedCleanup <= 0) {
+                  warn('[IndexedDB] No cleanup budget remaining, stopping retries');
+                  break;
+                }
 
                 logError('IndexedDB', new Error('Performing progressive cleanup'), {
                   operation: 'quota_retry',
                   attempt,
                   initialCleanup: quotaResult.recordsDeleted,
                   additionalCleanup: cappedCleanup,
-                  totalDeleted: quotaResult.recordsDeleted + cappedCleanup
+                  totalDeleted: totalCleaned + cappedCleanup,
+                  budgetRemaining: remainingBudget - cappedCleanup
                 });
 
                 await deleteOldestHiddenVideos(cappedCleanup);
+                totalCleaned += cappedCleanup;
               } else if (retryErrorType !== ErrorType.QUOTA_EXCEEDED) {
                 // Different error - throw immediately
                 throw retryError;

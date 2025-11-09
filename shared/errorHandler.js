@@ -130,14 +130,20 @@ export function logError(context, err, metadata = {}) {
 
   const now = Date.now();
 
-  // FIXED P2-10: Remove expired entries from the end (oldest entries)
+  // FIXED P2-10: Amortized cleanup - remove expired entries in batches
+  // This prevents single logError call from doing O(n) work for n expired entries
+  // Instead, we clean up to 10 entries per call for amortized O(1) performance
   // errorLog structure: [newest, ..., oldest]
-  while (errorLog.length > 0) {
+  const CLEANUP_BATCH_SIZE = 10;
+  let cleanedCount = 0;
+
+  while (errorLog.length > 0 && cleanedCount < CLEANUP_BATCH_SIZE) {
     const oldestEntry = errorLog[errorLog.length - 1];
     const age = now - oldestEntry.timestamp;
 
     if (age > ERROR_LOG_TTL) {
       errorLog.pop(); // Remove expired entry
+      cleanedCount++;
     } else {
       break; // Remaining entries are newer, stop checking
     }
