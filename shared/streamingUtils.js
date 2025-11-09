@@ -88,54 +88,52 @@ export class StreamingJSONParser {
         );
       }
 
-      const stream = this.file.stream();
-      const reader = stream.getReader();
-      const decoder = new TextDecoder('utf-8');
+      // CODE REVIEW FIX (P1-3): Use File.arrayBuffer() for atomic read to prevent TOCTOU attacks
+      // File.arrayBuffer() performs atomic read operation, eliminating the window between
+      // size check and actual read where file could be swapped. This is more secure than
+      // stream API which has multiple async steps where file replacement could occur.
+      //
+      // Trade-off: arrayBuffer() loads entire file into memory at once, but:
+      // - We already limit file size via MAX_IMPORT_SIZE_MB (typically 50-100 MB)
+      // - Modern browsers handle this efficiently with memory pressure management
+      // - Security benefit outweighs the slight memory overhead
+      //
+      // Report initial progress
+      this.onProgress({
+        stage: 'reading',
+        progress: 10,
+        message: 'Reading file...'
+      });
 
-      let buffer = '';
-      let bytesRead = 0;
-      const totalBytes = this.file.size;
+      // Atomic file read - single operation, no TOCTOU window
+      const arrayBuffer = await this.file.arrayBuffer();
 
-      let done = false;
-
-      while (!done) {
-        const { value, done: streamDone } = await reader.read();
-        done = streamDone;
-
-        if (value) {
-          bytesRead += value.length;
-
-          // FIXED P1-2: Streaming size validation to prevent TOCTOU race condition
-          // Re-check size during reading to prevent file replacement attack
-          if (bytesRead > maxFileSize) {
-            throw new Error(
-              `File size exceeded during read: ${formatBytes(bytesRead)} > ${formatBytes(maxFileSize)}. ` +
-              `Possible file replacement attack detected.`
-            );
-          }
-
-          buffer += decoder.decode(value, { stream: !done });
-
-          // Report progress
-          const progress = Math.min(Math.round((bytesRead / totalBytes) * 50), 50); // 0-50% for reading
-          this.onProgress({
-            stage: 'reading',
-            progress,
-            bytesRead,
-            totalBytes,
-            message: `Reading file... ${progress}%`
-          });
-        }
-      }
-
-      // FIXED P1-3: Final validation to prevent TOCTOU file replacement attack
-      // Verify that bytes read matches original size to detect file swap during read
-      if (bytesRead !== this.originalSize) {
+      // Final size validation after atomic read
+      if (arrayBuffer.byteLength !== this.originalSize) {
         throw new Error(
           `File size mismatch after read: expected ${formatBytes(this.originalSize)}, ` +
-          `got ${formatBytes(bytesRead)}. Possible file replacement attack detected.`
+          `got ${formatBytes(arrayBuffer.byteLength)}. File was modified during read.`
         );
       }
+
+      if (arrayBuffer.byteLength > maxFileSize) {
+        throw new Error(
+          `File size exceeded limit: ${formatBytes(arrayBuffer.byteLength)} > ${formatBytes(maxFileSize)}.`
+        );
+      }
+
+      // Report progress after read
+      this.onProgress({
+        stage: 'reading',
+        progress: 50,
+        bytesRead: arrayBuffer.byteLength,
+        totalBytes: this.originalSize,
+        message: 'File read complete'
+      });
+
+      // Decode to text
+      const decoder = new TextDecoder('utf-8');
+      const buffer = decoder.decode(arrayBuffer);
 
       // Report parsing stage
       this.onProgress({

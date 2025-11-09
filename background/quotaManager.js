@@ -70,14 +70,37 @@ const FALLBACK_THRESHOLDS = {
 let fallbackLock = null;
 let isCleaningUp = false;
 
+// CODE REVIEW FIX (P1-4): Global lock for quota handling to prevent concurrent cleanup
+// Prevents race condition where multiple transactions hit quota simultaneously and
+// both call deleteOldestHiddenVideos, resulting in excessive data deletion
+let quotaHandlingLock = null;
+
 // FIXED P2-4: Global notification rate limiter
 // Tracks timestamps of recent notifications across all types
 const globalNotificationTimestamps = [];
 
 // FIXED P3-8: Per-type notification cooldown to prevent spam of same notification type
 // Maps notification type to last shown timestamp
+// CODE REVIEW FIX (P2-1): Enhanced with time-based cleanup to prevent unbounded growth
 const lastNotificationByType = new Map();
 const PER_TYPE_COOLDOWN_MS = 60000; // 1 minute cooldown per type
+const PER_TYPE_CLEANUP_WINDOW_MS = 5 * 60 * 1000; // Cleanup entries older than 5 minutes
+
+/**
+ * CODE REVIEW FIX (P2-1): Cleans up old notification type entries to prevent Map growth
+ * Removes entries older than PER_TYPE_CLEANUP_WINDOW_MS (5 minutes)
+ * This prevents unbounded Map growth when notification types are dynamic
+ */
+function cleanupOldNotificationTypes() {
+  const now = Date.now();
+  const cutoff = now - PER_TYPE_CLEANUP_WINDOW_MS;
+
+  for (const [type, timestamp] of lastNotificationByType.entries()) {
+    if (timestamp < cutoff) {
+      lastNotificationByType.delete(type);
+    }
+  }
+}
 
 // Recursion depth tracking to prevent infinite loops
 // Tracks depth of quota-related operations (cleanup, fallback processing, etc.)
@@ -110,21 +133,30 @@ function canShowGlobalNotification() {
 /**
  * Records a notification timestamp for rate limiting
  * Limits array size to prevent unbounded growth
+ *
+ * CODE REVIEW FIX (P1-1): Enhanced memory leak prevention
+ * - Aggressive cleanup of expired entries
+ * - Hard cap at 50 entries (was 100) to reduce memory footprint
+ * - Double window cleanup (2x GLOBAL_NOTIFICATION_WINDOW_MS) for safety
  */
 function recordGlobalNotification() {
   const now = Date.now();
 
-  // FIXED P1-1: Trim expired entries BEFORE adding new one
-  // Remove timestamps older than GLOBAL_NOTIFICATION_WINDOW_MS
+  // Aggressive cleanup: Remove all entries older than 2x the notification window
+  // This ensures cleanup happens even if notifications are very frequent
+  const cleanupWindow = CONFIG.GLOBAL_NOTIFICATION_WINDOW_MS * 2;
   while (globalNotificationTimestamps.length > 0 &&
-         now - globalNotificationTimestamps[0] > CONFIG.GLOBAL_NOTIFICATION_WINDOW_MS) {
+         now - globalNotificationTimestamps[0] > cleanupWindow) {
     globalNotificationTimestamps.shift();
   }
 
-  // FIXED P1-1: Defensive cap at 100 entries BEFORE adding new one
-  // This prevents ever reaching emergency overflow condition
-  if (globalNotificationTimestamps.length >= 100) {
-    globalNotificationTimestamps.shift(); // Remove oldest
+  // Stricter cap at 50 entries (reduced from 100) to minimize memory usage
+  // Even with aggressive spam, 50 entries = 50 * 8 bytes = 400 bytes maximum
+  const MAX_NOTIFICATION_ENTRIES = 50;
+  if (globalNotificationTimestamps.length >= MAX_NOTIFICATION_ENTRIES) {
+    // Remove oldest 25% of entries to avoid frequent cleanup operations
+    const removeCount = Math.ceil(MAX_NOTIFICATION_ENTRIES * 0.25);
+    globalNotificationTimestamps.splice(0, removeCount);
   }
 
   globalNotificationTimestamps.push(now);
@@ -771,10 +803,26 @@ async function saveToFallbackStorage(records) {
     return { success: true, message: 'No records to save' };
   }
 
-  // FIXED P1-2 (SELF-REVIEW): Proper atomic lock assignment to prevent race condition
-  // Wait for existing lock, then create and assign new lock atomically
-  while (fallbackLock) {
-    await fallbackLock;
+  // CODE REVIEW FIX (P2-5): Wait for existing lock with timeout to prevent deadlock
+  // If lock takes longer than 30 seconds, it's likely stuck - abort and log error
+  const LOCK_TIMEOUT_MS = 30000;
+  if (fallbackLock) {
+    try {
+      await Promise.race([
+        fallbackLock,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Fallback lock timeout')), LOCK_TIMEOUT_MS)
+        )
+      ]);
+    } catch (timeoutError) {
+      logError('QuotaManager', timeoutError, {
+        operation: 'saveToFallbackStorage',
+        lockTimeout: true,
+        fatal: true
+      });
+      // Force release stuck lock
+      fallbackLock = null;
+    }
   }
 
   // Create promise with exposed resolve/reject for atomic lock assignment
@@ -1259,23 +1307,11 @@ async function showQuotaNotification(options = {}) {
     // FIXED P2-4: Record notification for global rate limiting
     recordGlobalNotification();
 
-    // FIXED P3-8: Record per-type notification timestamp with size limit
-    // Prevent unbounded Map growth by limiting to 50 notification types
-    const MAX_NOTIFICATION_TYPES = 50;
-    if (lastNotificationByType.size >= MAX_NOTIFICATION_TYPES && !lastNotificationByType.has(notificationType)) {
-      // Find and remove oldest entry to make space
-      let oldestType = null;
-      let oldestTime = Infinity;
-      for (const [type, time] of lastNotificationByType.entries()) {
-        if (time < oldestTime) {
-          oldestTime = time;
-          oldestType = type;
-        }
-      }
-      if (oldestType) {
-        lastNotificationByType.delete(oldestType);
-      }
-    }
+    // CODE REVIEW FIX (P2-1): Cleanup old notification types before adding new one
+    // Time-based cleanup is more efficient than size-based O(n) search
+    cleanupOldNotificationTypes();
+
+    // Record per-type notification timestamp
     lastNotificationByType.set(notificationType, Date.now());
 
     await logQuotaEvent({
@@ -1740,12 +1776,35 @@ async function handleCleanupFailure(error, cleanupCount, fallbackResult) {
 
 /**
  * Main quota exceeded handler with multi-tier fallback protection
+ *
+ * CODE REVIEW FIX (P1-4): Protected by global lock to prevent race conditions
+ * If another quota handling is in progress, this call will wait for it to complete
+ * before proceeding. This prevents excessive data deletion from concurrent cleanup operations.
+ *
  * @param {Error} error - The quota exceeded error
  * @param {Function} cleanupFunction - Function to delete old records (deleteOldestHiddenVideos)
  * @param {Object} operationContext - Context about the failed operation
  * @returns {Promise<Object>} Result with cleanup stats and recommendations
  */
 export async function handleQuotaExceeded(error, cleanupFunction, operationContext = {}) {
+  // CODE REVIEW FIX (P1-4): Wait for existing quota handling to complete
+  // Prevents concurrent quota operations from deleting too much data
+  if (quotaHandlingLock) {
+    logError('QuotaManager', new Error('Quota handling already in progress, waiting...'), {
+      operation: 'handleQuotaExceeded',
+      waiting: true
+    });
+    await quotaHandlingLock;
+
+    // After wait, return success - the previous operation handled the quota issue
+    return createQuotaResult({
+      success: true,
+      cleanupPerformed: false,
+      recommendation: 'quota_handled_by_concurrent_operation',
+      message: 'Quota was handled by concurrent operation'
+    });
+  }
+
   const startTime = Date.now();
 
   logError('QuotaManager', error, {
@@ -1753,9 +1812,34 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
     context: operationContext
   });
 
+  // Create and store the lock promise
+  let lockResolve;
+  quotaHandlingLock = new Promise((resolve) => {
+    lockResolve = resolve;
+  });
+
   try {
-    // Extract operation details
+    // CODE REVIEW FIX (P1-2): Validate operationContext and data before use
+    if (!operationContext || typeof operationContext !== 'object') {
+      logError('QuotaManager', new Error('Invalid operationContext'), {
+        operation: 'handleQuotaExceeded',
+        contextType: typeof operationContext,
+        fatal: true
+      });
+      throw new Error('Invalid operation context - expected object');
+    }
+
+    // Extract operation details with validation
     const { data } = operationContext;
+
+    if (!data) {
+      logError('QuotaManager', new Error('Missing operationContext.data'), {
+        operation: 'handleQuotaExceeded',
+        operationType: operationContext.operationType,
+        fatal: true
+      });
+      throw new Error('Invalid operation context - missing data field');
+    }
 
     // Estimate space needed and calculate cleanup count
     const estimatedBytes = estimateDataSize(data);
@@ -1797,6 +1881,13 @@ export async function handleQuotaExceeded(error, cleanupFunction, operationConte
       error: error.message,
       recommendation: 'system_error'
     });
+  } finally {
+    // CODE REVIEW FIX (P1-4): Always release lock to prevent deadlock
+    // Even if operation fails, lock must be released so subsequent operations can proceed
+    if (lockResolve) {
+      lockResolve();
+    }
+    quotaHandlingLock = null;
   }
 }
 

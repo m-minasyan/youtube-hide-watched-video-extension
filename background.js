@@ -7,6 +7,18 @@ import { getFallbackStats } from './background/quotaManager.js';
 import { logError, classifyError, ErrorType } from './shared/errorHandler.js';
 import { info, warn, debug } from './shared/logger.js';
 
+// CODE REVIEW FIX (P3-8): Global error handler for unhandled promise rejections
+// Catches async errors that escape try-catch blocks to prevent silent failures
+self.addEventListener('unhandledrejection', (event) => {
+  logError('Background', event.reason, {
+    operation: 'unhandledrejection',
+    promiseRejection: true,
+    fatal: true,
+    message: 'Unhandled promise rejection in service worker'
+  });
+  // Don't call event.preventDefault() - let browser handle it for debugging
+});
+
 // CRITICAL: Register message listener IMMEDIATELY at top level (synchronously)
 // This must happen before any async operations to avoid race conditions where
 // content scripts try to send messages before the listener is registered.
@@ -49,21 +61,12 @@ async function performFullInitialization(trigger = 'unknown') {
     try {
       await initializeHiddenVideos();
 
-      // Wait for ALL alarm setup to complete before clearing promise
-      // This prevents race condition during rapid SW restart
+      // CODE REVIEW FIX (P2-4): Wait for ALL alarm setup without swallowing errors
+      // If critical alarms fail to start, initialization should fail
+      // This prevents extension running without essential keep-alive protection
       await Promise.all([
-        startKeepAlive().catch((error) => {
-          logError('Background', error, {
-            operation: 'startKeepAlive',
-            message: 'Failed to start keep-alive alarm'
-          });
-        }),
-        startFallbackProcessing().catch((error) => {
-          logError('Background', error, {
-            operation: 'startFallbackProcessing',
-            message: 'Failed to start fallback processing alarm'
-          });
-        })
+        startKeepAlive(),
+        startFallbackProcessing()
       ]);
     } catch (error) {
       logError('Background', error, {
