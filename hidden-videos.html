@@ -47,14 +47,16 @@
           placeholder="Search videos by title..."
           aria-label="Search videos by title"
         />
-        <button id="clear-search" class="clear-search-btn" style="display: none;" aria-label="Clear search">
+        <!-- FIXED P1-2: Replace inline style with CSS class for CSP compatibility -->
+        <button id="clear-search" class="clear-search-btn display-none" aria-label="Clear search">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
         </button>
       </div>
-      <div id="search-loading" class="search-loading" style="display: none;">
+      <!-- FIXED P1-2: Replace inline style with CSS class for CSP compatibility -->
+      <div id="search-loading" class="search-loading display-none">
         <div class="loading-spinner"></div>
         <span>Searching...</span>
       </div>
@@ -127,11 +129,11 @@
     </nav>
   </div>
 
-  <!-- Hidden file input for import -->
-  <input type="file" id="import-file-input" accept=".json,application/json" style="display: none;">
+  <!-- FIXED P1-2: Hidden file input for import (replace inline style with CSS class) -->
+  <input type="file" id="import-file-input" accept=".json,application/json" class="display-none">
 
-  <!-- Import confirmation modal -->
-  <div id="import-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="import-modal-title" style="display: none;">
+  <!-- FIXED P1-2: Import confirmation modal (replace inline style with CSS class) -->
+  <div id="import-modal" class="modal display-none" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
     <div class="modal-content">
       <div class="modal-header">
         <h2 id="import-modal-title">Import Hidden Videos</h2>
@@ -154,7 +156,8 @@
           </p>
         </div>
 
-        <div id="import-progress" class="import-progress" role="status" aria-live="polite" style="display: none;">
+        <!-- FIXED P1-2: Replace inline style with CSS class for CSP compatibility -->
+        <div id="import-progress" class="import-progress display-none" role="status" aria-live="polite">
           <div class="progress-header">
             <p id="import-progress-text">Importing...</p>
             <span id="import-progress-percentage" class="progress-percentage">0%</span>
