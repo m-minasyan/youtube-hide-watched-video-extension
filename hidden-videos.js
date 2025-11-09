@@ -107,6 +107,62 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
+   * FIXED P2-2: Estimates memory usage with fallback for browsers without performance.memory API
+   * Firefox and Safari don't support performance.memory, so we use heuristic estimation
+   * @returns {number} - Estimated memory usage in bytes
+   */
+  function estimateMemoryUsage() {
+    // Try to use performance.memory if available (Chromium only)
+    if (typeof performance !== 'undefined' && performance.memory && performance.memory.usedJSHeapSize) {
+      return performance.memory.usedJSHeapSize;
+    }
+
+    // Fallback: estimate based on loaded data (for Firefox, Safari, etc.)
+    const itemsLoaded = hiddenVideosState.allItems.length;
+    const estimatedBytesPerItem = 500; // Average record size
+    return itemsLoaded * estimatedBytesPerItem;
+  }
+
+  /**
+   * FIXED P2-2: Checks if memory usage is safe with cross-browser support
+   * Uses actual memory API when available, falls back to heuristic estimation
+   * @param {number} thresholdMB - Memory threshold in megabytes (default: 100MB)
+   * @returns {Object} - { isSafe: boolean, usedMB: number, method: string }
+   */
+  function checkMemorySafety(thresholdMB = 100) {
+    const memoryUsage = estimateMemoryUsage();
+    const usedMB = memoryUsage / (1024 * 1024);
+
+    // Determine threshold based on detection method
+    let effectiveThreshold = thresholdMB;
+    let method = 'unknown';
+
+    if (typeof performance !== 'undefined' && performance.memory && performance.memory.usedJSHeapSize) {
+      // Actual memory API available (Chromium)
+      method = 'performance.memory';
+      effectiveThreshold = thresholdMB;
+    } else {
+      // Heuristic estimation (Firefox, Safari)
+      method = 'heuristic';
+      // For heuristic, use item count limit instead of MB threshold
+      // 10MB = 10 * 1024 * 1024 bytes = 10,485,760 bytes
+      // At 500 bytes per item = ~20,971 items maximum
+      const maxItems = 20000; // Conservative limit for non-Chromium browsers
+      const maxEstimatedBytes = maxItems * 500;
+      effectiveThreshold = maxEstimatedBytes / (1024 * 1024); // Convert to MB for consistent return value
+    }
+
+    const isSafe = usedMB < effectiveThreshold;
+
+    return {
+      isSafe,
+      usedMB,
+      method,
+      threshold: effectiveThreshold
+    };
+  }
+
+  /**
    * FIXED P1-3: Gets maximum items for search with runtime memory safety cap
    * Mobile: 500 items (~250KB) to prevent memory issues
    * Desktop: 1000 items (~500KB) for better search coverage
@@ -379,17 +435,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       // FIXED P3-4: Use logger instead of console.log/warn
       debug(`[Memory] Loaded ${allItems.length} items (~${estimatedMemoryKB}KB) for search`);
 
-      // FIXED P1-3: Monitor actual memory usage and warn if high
-      if (performance.memory && performance.memory.usedJSHeapSize) {
-        const usedMB = performance.memory.usedJSHeapSize / (1024 * 1024);
-        if (usedMB > 100) { // >100MB used
-          warn(`[Memory] High memory usage: ${usedMB.toFixed(2)}MB`);
-          showNotification(
-            `High memory usage detected (${usedMB.toFixed(0)}MB). Consider reducing search scope or closing other tabs.`,
-            NotificationType.WARNING,
-            5000
-          );
-        }
+      // FIXED P2-2: Monitor memory usage with cross-browser support
+      // Uses performance.memory on Chromium, falls back to heuristic on Firefox/Safari
+      const memoryCheck = checkMemorySafety(100); // 100MB threshold
+      if (!memoryCheck.isSafe) {
+        warn(`[Memory] High memory usage: ${memoryCheck.usedMB.toFixed(2)}MB (method: ${memoryCheck.method})`);
+        showNotification(
+          `High memory usage detected (${memoryCheck.usedMB.toFixed(0)}MB). Consider reducing search scope or closing other tabs.`,
+          NotificationType.WARNING,
+          5000
+        );
       }
 
       // Check if we hit the limit and there are more items

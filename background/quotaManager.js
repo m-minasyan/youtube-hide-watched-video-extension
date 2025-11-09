@@ -49,8 +49,9 @@ const CONFIG = {
   // Reset threshold: 24 hours without notifications resets backoff
   NOTIFICATION_BACKOFF_RESET_MS: 24 * 60 * 60 * 1000,
 
-  // Retry delays (exponential backoff in milliseconds)
-  RETRY_DELAYS: [5000, 30000, 120000], // 5s, 30s, 2min
+  // FIXED P3-4: Use centralized retry delays from ERROR_CONFIG
+  // Retry delays for quota operations (exponential backoff in milliseconds)
+  RETRY_DELAYS: ERROR_CONFIG.QUOTA_RETRY_DELAYS, // 5s, 30s, 2min
 
   // FIXED P2-4: Global rate limiting to prevent notification spam
   // Maximum notifications per minute (across ALL types)
@@ -1631,18 +1632,25 @@ async function handleFallbackRejection(fallbackResult, data) {
     const url = URL.createObjectURL(jsonBlob);
 
     try {
-      // FIXED P1-5: Auto-download WITHOUT user prompt (saveAs: false)
-      // This ensures data is saved even if user is away
+      // FIXED P2-3: Show notification BEFORE download to get user attention
+      const recordCount = Array.isArray(data) ? data.length : 1;
+      await showCriticalNotification({
+        title: '🆘 EMERGENCY EXPORT REQUIRED',
+        message: `Storage critically full! Click OK to save ${recordCount} video(s) to prevent data loss.`
+      });
+
+      // FIXED P2-3: Require user consent (saveAs: true)
+      // This gives user control over download location and awareness of the export
       await chrome.downloads.download({
         url: url,
         filename: `youtube-CRITICAL-AUTO-${Date.now()}.json`,
-        saveAs: false, // Auto-save to Downloads folder without prompt
+        saveAs: true, // Let user choose location - ensures they're aware of the export
         conflictAction: 'uniquify'
       });
 
       await logQuotaEvent({
         type: 'critical_auto_export',
-        recordCount: Array.isArray(data) ? data.length : 1
+        recordCount: recordCount
       });
     } finally {
       URL.revokeObjectURL(url);

@@ -115,7 +115,10 @@ export const ERROR_CONFIG = {
   MAX_RETRY_DELAY: 5000,
   MESSAGE_TIMEOUT: 5000,
   MAX_ERROR_LOG_SIZE: 100,
-  STORAGE_TIMEOUT: 10000 // 10 seconds - timeout for chrome.storage operations
+  STORAGE_TIMEOUT: 10000, // 10 seconds - timeout for chrome.storage operations
+  // FIXED P3-4: Quota-specific retry delays (used by quotaManager.js)
+  // Longer delays for quota errors since they need time for cleanup/pruning
+  QUOTA_RETRY_DELAYS: [5000, 30000, 120000] // 5s, 30s, 2min (exponential backoff)
 };
 
 // Background service worker configuration

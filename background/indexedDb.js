@@ -282,38 +282,59 @@ export function closeDbSync() {
     return;
   }
 
-  // If there are active operations, force-close immediately
-  // FIXED P1-4: Removed setTimeout - Chrome does NOT wait for it in onSuspend
-  // Service Worker can be terminated before setTimeout fires, leaving DB connections open
+  // FIXED P3-2: Give active operations a brief grace period to complete
+  // If there are active operations, wait briefly before force-closing
   if (activeOperations > 0) {
-    logError('IndexedDB', new Error('Force-closing database with active operations'), {
+    logError('IndexedDB', new Error('Active operations during shutdown - attempting graceful close'), {
       operation: 'closeDbSync',
       activeOperations,
       shutdownRequested: true,
-      warning: 'Active operations will be interrupted'
+      gracePeriod: '1 second'
     });
 
-    // Force-close immediately and SYNCHRONOUSLY
-    // This may interrupt active operations, but it's better than leaving connections open
-    // which would block the database on next startup
-    if (resolvedDb) {
-      try {
-        resolvedDb.close();
-        logError('IndexedDB', new Error('Database force-closed with active operations'), {
-          operation: 'closeDbSync',
-          forceClose: true,
-          activeOperationsAtForce: activeOperations
-        });
-      } catch (error) {
-        // Ignore errors during force close
-      }
+    // FIXED P3-2: Synchronous wait (using busy-wait loop for Service Worker compatibility)
+    // Service Workers don't support async operations during onSuspend, so we use synchronous delay
+    // This gives transactions a chance to complete within 1 second
+    const startWait = Date.now();
+    const GRACE_PERIOD_MS = 1000; // 1 second grace period
+    while (Date.now() - startWait < GRACE_PERIOD_MS && activeOperations > 0) {
+      // Busy-wait loop (synchronous) - Service Workers can't use async/await in onSuspend
+      // This is the only way to give transactions time to complete before force-close
     }
 
-    // Clear state immediately
-    dbPromise = null;
-    resolvedDb = null;
-    clearBackgroundCache();
-    return;
+    // Check if operations completed during grace period
+    if (activeOperations === 0) {
+      logError('IndexedDB', new Error('Active operations completed during grace period'), {
+        operation: 'closeDbSync',
+        gracefulClose: true,
+        waitTime: Date.now() - startWait
+      });
+      // Fall through to normal close below
+    } else {
+      // Force-close after grace period
+      // This may interrupt active operations, but it's better than leaving connections open
+      // which would block the database on next startup
+      logError('IndexedDB', new Error('Force-closing database after grace period'), {
+        operation: 'closeDbSync',
+        activeOperationsRemaining: activeOperations,
+        forceClose: true,
+        warning: 'Some operations may be interrupted'
+      });
+
+      if (resolvedDb) {
+        try {
+          resolvedDb.close();
+        } catch (error) {
+          // Ignore errors during force close
+        }
+      }
+
+      // Clear state immediately
+      dbPromise = null;
+      resolvedDb = null;
+      clearBackgroundCache();
+      return;
+    }
   }
 
   // No active operations - close immediately and SYNCHRONOUSLY

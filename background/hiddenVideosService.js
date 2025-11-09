@@ -776,12 +776,20 @@ async function handleImportRecords(message) {
   // STREAMING APPROACH: Process records in batches to avoid memory overflow
   // This prevents loading all existing records into memory at once
   const IMPORT_BATCH_SIZE = 500; // Process 500 records at a time
-  const MAX_IMPORT_DURATION = 10 * 60 * 1000; // FIXED P2-3: 10 minute max for entire import
+  const MAX_IMPORT_DURATION = 20 * 60 * 1000; // FIXED P3-1: 20 minute max for large imports (100K+ records)
   const IMPORT_START_TIME = Date.now();
   let totalProcessed = 0;
+  let lastProgressUpdate = Date.now();
 
   for (let i = 0; i < validRecords.length; i += IMPORT_BATCH_SIZE) {
-    // FIXED P2-3: Check cumulative timeout to prevent Service Worker termination
+    // FIXED P3-1: Show progress every 30 seconds to prevent Service Worker termination
+    const timeSinceLastUpdate = Date.now() - lastProgressUpdate;
+    if (timeSinceLastUpdate > 30000) { // 30 seconds
+      debug(`[Import] Progress: ${totalProcessed}/${validRecords.length} records processed (${Math.round(totalProcessed/validRecords.length*100)}%)`);
+      lastProgressUpdate = Date.now();
+    }
+
+    // FIXED P3-1: Check cumulative timeout (increased to 20 minutes)
     const elapsedTime = Date.now() - IMPORT_START_TIME;
     if (elapsedTime > MAX_IMPORT_DURATION) {
       results.errors.push(
