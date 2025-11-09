@@ -1358,7 +1358,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Valid Records stat
     const validStat = document.createElement('div');
     validStat.className = 'stat-item';
-    validStat.innerHTML = '<span class="stat-label">Valid Records:</span>';
+    // 4TH SELF-REVIEW FIX: Replace innerHTML with createElement for consistency
+    const validLabel = document.createElement('span');
+    validLabel.className = 'stat-label';
+    validLabel.textContent = 'Valid Records:';
+    validStat.appendChild(validLabel);
     const validValue = document.createElement('span');
     validValue.className = 'stat-value';
     validValue.textContent = String(validRecordCount);
@@ -1369,7 +1373,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (invalidRecordCount > 0) {
       const invalidStat = document.createElement('div');
       invalidStat.className = 'stat-item warning';
-      invalidStat.innerHTML = '<span class="stat-label">Invalid Records (will be skipped):</span>';
+      // 4TH SELF-REVIEW FIX: Replace innerHTML with createElement for consistency
+      const invalidLabel = document.createElement('span');
+      invalidLabel.className = 'stat-label';
+      invalidLabel.textContent = 'Invalid Records (will be skipped):';
+      invalidStat.appendChild(invalidLabel);
       const invalidValue = document.createElement('span');
       invalidValue.className = 'stat-value';
       invalidValue.textContent = String(invalidRecordCount);
@@ -1380,7 +1388,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Current Total stat
     const currentStat = document.createElement('div');
     currentStat.className = 'stat-item';
-    currentStat.innerHTML = '<span class="stat-label">Current Total:</span>';
+    // 4TH SELF-REVIEW FIX: Replace innerHTML with createElement for consistency
+    const currentLabel = document.createElement('span');
+    currentLabel.className = 'stat-label';
+    currentLabel.textContent = 'Current Total:';
+    currentStat.appendChild(currentLabel);
     const currentValue = document.createElement('span');
     currentValue.className = 'stat-value';
     currentValue.textContent = String(currentTotal);
@@ -1390,7 +1402,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Projected Total stat
     const projectedStat = document.createElement('div');
     projectedStat.className = 'stat-item';
-    projectedStat.innerHTML = '<span class="stat-label">After Import (max):</span>';
+    // 4TH SELF-REVIEW FIX: Replace innerHTML with createElement for consistency
+    const projectedLabel = document.createElement('span');
+    projectedLabel.className = 'stat-label';
+    projectedLabel.textContent = 'After Import (max):';
+    projectedStat.appendChild(projectedLabel);
     const projectedValue = document.createElement('span');
     projectedValue.className = 'stat-value';
     projectedValue.textContent = String(projectedTotal);
