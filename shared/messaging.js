@@ -10,7 +10,7 @@ let contextInvalidated = false;
  * Check if the extension context is still valid
  * @returns {boolean} True if context is valid, false if invalidated
  */
-function isExtensionContextValid() {
+export function isExtensionContextValid() {
   if (contextInvalidated) {
     return false;
   }

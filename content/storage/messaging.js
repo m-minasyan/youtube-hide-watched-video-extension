@@ -112,7 +112,7 @@ export async function fetchHiddenVideoStates(videoIds) {
         const timeoutId = timeoutIds.get(videoId);
         if (timeoutId) {
           clearTimeout(timeoutId);
-          timeoutIds.delete(videoId);
+          timeoutIds.delete(timeoutId);
         }
       });
     });
@@ -178,16 +178,16 @@ export async function setHiddenVideoState(videoId, state, title) {
         videoId: sanitizedId,
         state
       });
+    }
 
-      // Show user notification for persistent errors (after all retries exhausted)
-      const errorType = classifyError(error);
-      // Check for DOM availability before showing notification
-      if (typeof document !== 'undefined' && document.body) {
-        const message = errorType === ErrorType.NETWORK
-          ? 'Unable to connect to extension. Please check your connection.'
-          : 'Failed to save video state. Please try again.';
-        showNotification(message, 'error', 3000);
-      }
+    // Show user notification for persistent errors (after all retries exhausted)
+    const errorType = classifyError(error);
+    // Check for DOM availability before showing notification
+    if (typeof document !== 'undefined' && document.body) {
+      const message = errorType === ErrorType.NETWORK
+        ? 'Unable to connect to extension. Please check your connection.'
+        : 'Failed to save video state. Please try again.';
+      showNotification(message, 'error', 3000);
     }
 
     // Revert optimistic update on failure
