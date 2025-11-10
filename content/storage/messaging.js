@@ -10,7 +10,7 @@ import {
   deletePendingRequest,
   clearPendingRequests as clearPendingRequestsCache
 } from './cache.js';
-import { sendHiddenVideosMessage } from '../../shared/messaging.js';
+import { sendHiddenVideosMessage, isExtensionContextValid } from '../../shared/messaging.js';
 import { logError, classifyError, ErrorType } from '../../shared/errorHandler.js';
 import { showNotification } from '../../shared/notifications.js';
 
@@ -65,10 +65,14 @@ export async function fetchHiddenVideoStates(videoIds) {
       });
       return records;
     }).catch((error) => {
-      logError('ContentMessaging', error, {
-        operation: 'fetchHiddenVideoStates',
-        videoCount: missing.length
-      });
+      // Don't log context invalidation errors - this is expected during extension reload
+      const errorMsg = error?.message?.toLowerCase() || '';
+      if (!errorMsg.includes('context invalidated')) {
+        logError('ContentMessaging', error, {
+          operation: 'fetchHiddenVideoStates',
+          videoCount: missing.length
+        });
+      }
 
       // Cache null values for failed fetches to prevent repeated failures
       missing.forEach((videoId) => {
@@ -131,11 +135,15 @@ export async function setHiddenVideoState(videoId, state, title) {
     applyCacheUpdate(sanitizedId, null);
     return null;
   } catch (error) {
-    logError('ContentMessaging', error, {
-      operation: 'setHiddenVideoState',
-      videoId: sanitizedId,
-      state
-    });
+    // Don't log context invalidation errors - this is expected during extension reload
+    const errorMsg = error?.message?.toLowerCase() || '';
+    if (!errorMsg.includes('context invalidated')) {
+      logError('ContentMessaging', error, {
+        operation: 'setHiddenVideoState',
+        videoId: sanitizedId,
+        state
+      });
+    }
 
     // Show user notification for persistent errors (after all retries exhausted)
     const errorType = classifyError(error);
