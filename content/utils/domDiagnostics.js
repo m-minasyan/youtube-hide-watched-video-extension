@@ -1,6 +1,6 @@
 import { SELECTOR_CHAINS } from '../../shared/constants.js';
 import { getAllSelectorStats } from './domSelectorHealth.js';
-import { debug } from './logger.js';
+import { debug } from '../../shared/logger.js';
 
 /**
  * Generate comprehensive DOM diagnostic report
