@@ -88,10 +88,16 @@ export async function fetchHiddenVideoStates(videoIds) {
       });
       return records;
     }).catch((error) => {
-      logError('ContentMessaging', error, {
-        operation: 'fetchHiddenVideoStates',
-        videoCount: missing.length
-      });
+      // Don't log errors for context invalidation - this is expected during extension reload
+      const errorType = classifyError(error);
+      const isContextInvalidated = error.message?.includes('context invalidated');
+
+      if (errorType !== ErrorType.PERMANENT || !isContextInvalidated) {
+        logError('ContentMessaging', error, {
+          operation: 'fetchHiddenVideoStates',
+          videoCount: missing.length
+        });
+      }
 
       // Cache null values for failed fetches to prevent repeated failures
       missing.forEach((videoId) => {
@@ -166,16 +172,22 @@ export async function setHiddenVideoState(videoId, state, title) {
     applyCacheUpdate(sanitizedId, null);
     return null;
   } catch (error) {
-    logError('ContentMessaging', error, {
-      operation: 'setHiddenVideoState',
-      videoId: sanitizedId,
-      state
-    });
+    // Classify error first
+    const errorType = classifyError(error);
+    const isContextInvalidated = error.message?.includes('context invalidated');
+
+    // Don't log errors for context invalidation - this is expected during extension reload
+    if (errorType !== ErrorType.PERMANENT || !isContextInvalidated) {
+      logError('ContentMessaging', error, {
+        operation: 'setHiddenVideoState',
+        videoId: sanitizedId,
+        state
+      });
+    }
 
     // Show user notification for persistent errors (after all retries exhausted)
-    const errorType = classifyError(error);
-    // Check for DOM availability before showing notification
-    if (typeof document !== 'undefined' && document.body) {
+    // But skip notification for context invalidation errors
+    if (!isContextInvalidated && typeof document !== 'undefined' && document.body) {
       const message = errorType === ErrorType.NETWORK
         ? 'Unable to connect to extension. Please check your connection.'
         : 'Failed to save video state. Please try again.';
