@@ -184,7 +184,7 @@ header {
 }
 
 .search-loading {
-  /* display property removed - controlled by JavaScript and .display-none class */
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
@@ -193,6 +193,11 @@ header {
   font-size: 13px;
   color: var(--text-secondary);
   margin-top: 8px;
+}
+
+/* Higher specificity to override .search-loading when hidden */
+.search-loading.display-none {
+  display: none !important;
 }
 
 .loading-spinner {
@@ -430,23 +435,29 @@ header {
   flex-shrink: 0;
 }
 
-.video-thumbnail.error {
+/* Placeholder for failed thumbnail loads (applied to div, not img) */
+.video-thumbnail-placeholder {
+  width: 120px;
+  height: 67px;
   background: var(--bg-secondary);
+  border-radius: 4px;
+  flex-shrink: 0;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.video-thumbnail.error::before {
+.video-thumbnail-placeholder::before {
   content: '';
   position: absolute;
   width: 32px;
   height: 32px;
   background: var(--text-secondary);
   opacity: 0.3;
-  mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>');
-  -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>');
+  /* Video camera icon using SVG data URI with proper encoding */
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='23 7 16 12 23 17 23 7'%3E%3C/polygon%3E%3Crect x='1' y='5' width='15' height='14' rx='2' ry='2'%3E%3C/rect%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='23 7 16 12 23 17 23 7'%3E%3C/polygon%3E%3Crect x='1' y='5' width='15' height='14' rx='2' ry='2'%3E%3C/rect%3E%3C/svg%3E");
   mask-size: contain;
   -webkit-mask-size: contain;
   mask-repeat: no-repeat;

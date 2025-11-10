@@ -691,8 +691,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     thumbnail.alt = 'Video thumbnail';
     thumbnail.className = 'video-thumbnail';
     thumbnail.onerror = function() {
-      this.classList.add('error');
-      this.removeAttribute('src');
+      // Replace img with div placeholder when thumbnail fails to load
+      // This is necessary because <img> elements don't support ::before pseudo-elements
+      const placeholder = document.createElement('div');
+      placeholder.className = 'video-thumbnail-placeholder';
+      placeholder.setAttribute('role', 'img');
+      placeholder.setAttribute('aria-label', 'Video thumbnail unavailable');
+      this.parentNode.replaceChild(placeholder, this);
     };
 
     // Create video details
