@@ -242,7 +242,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function refreshStats() {
-    const result = await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.GET_STATS);
+    // FIXED: Use 60s timeout for stats on large databases (100K+ records)
+    // Stats uses cursor scan which can be slow on large databases
+    const result = await sendHiddenVideosMessage(
+      HIDDEN_VIDEO_MESSAGES.GET_STATS,
+      {},
+      60000 // 60 seconds for large database stats
+    );
     hiddenVideoStats = {
       total: result?.total || 0,
       dimmed: result?.dimmed || 0,

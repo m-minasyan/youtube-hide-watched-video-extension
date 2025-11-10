@@ -13,6 +13,30 @@ let dbPromise = null;
 let dbResetInProgress = false;
 let dbResetPromise = null;
 
+/**
+ * Wraps a promise with a timeout to prevent indefinite hanging
+ * @param {Promise} promise - The promise to wrap
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {string} operationName - Name of the operation for error messages
+ * @returns {Promise} - Promise that rejects if timeout is exceeded
+ */
+function withTimeout(promise, timeoutMs, operationName = 'Operation') {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      const timeoutId = setTimeout(() => {
+        const error = new Error(`${operationName} timeout after ${timeoutMs}ms`);
+        error.name = 'TimeoutError';
+        error.timeout = true;
+        reject(error);
+      }, timeoutMs);
+
+      // Clean up timeout if promise resolves first
+      promise.finally(() => clearTimeout(timeoutId));
+    })
+  ]);
+}
+
 function openDb() {
   if (dbPromise) return dbPromise;
 
@@ -235,27 +259,33 @@ async function getHiddenVideosByIdsCursor(ids) {
   const idSet = new Set(ids);
   const result = {};
 
-  await withStore('readonly', (store) => new Promise((resolve, reject) => {
-    const request = store.openCursor();
+  // FIXED: Add 60s timeout for cursor scan on large databases (100K+ records)
+  // This is called during import with "Keep Newer" strategy to find existing records
+  await withStore('readonly', (store) => withTimeout(
+    new Promise((resolve, reject) => {
+      const request = store.openCursor();
 
-    request.onsuccess = (event) => {
-      const cursor = event.target.result;
-      if (!cursor) {
-        resolve();
-        return;
-      }
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (!cursor) {
+          resolve();
+          return;
+        }
 
-      if (idSet.has(cursor.value.videoId)) {
-        result[cursor.value.videoId] = cursor.value;
-        // Cache the fetched record
-        setCachedRecord(cursor.value.videoId, cursor.value);
-      }
+        if (idSet.has(cursor.value.videoId)) {
+          result[cursor.value.videoId] = cursor.value;
+          // Cache the fetched record
+          setCachedRecord(cursor.value.videoId, cursor.value);
+        }
 
-      cursor.continue();
-    };
+        cursor.continue();
+      };
 
-    request.onerror = () => reject(request.error);
-  }));
+      request.onerror = () => reject(request.error);
+    }),
+    60000, // 60 seconds for large database cursor scan
+    'Cursor scan for video IDs'
+  ));
 
   return result;
 }
@@ -296,69 +326,75 @@ export async function getHiddenVideosPage(options = {}) {
   const { state = null, cursor = null, limit = 100 } = options;
   const pageSize = Math.max(1, Math.min(limit, 500));
   const limitPlusOne = pageSize + 1;
-  return withStore('readonly', (store) => new Promise((resolve, reject) => {
-    const items = [];
-    let hasMore = false;
-    let nextCursor = null;
-    let resolved = false;
-    const skip = cursor && cursor.videoId ? cursor : null;
-    let skipping = Boolean(skip);
-    const direction = 'prev';
-    function finish(payload) {
-      if (resolved) return;
-      resolved = true;
-      resolve(payload);
-    }
-    function fail(error) {
-      if (resolved) return;
-      resolved = true;
-      reject(error);
-    }
-    let request;
-    if (state) {
-      const index = store.index(STATE_UPDATED_AT_INDEX);
-      const lower = [state, 0];
-      const upper = [state, Number.MAX_SAFE_INTEGER];
-      const range = IDBKeyRange.bound(lower, upper);
-      request = index.openCursor(range, direction);
-    } else {
-      const index = store.index(UPDATED_AT_INDEX);
-      request = index.openCursor(null, direction);
-    }
-    request.onsuccess = (event) => {
-      const cursorObject = event.target.result;
-      if (!cursorObject) {
-        finish({ items, hasMore, nextCursor });
-        return;
+  // FIXED: Add 30s timeout for pagination cursor on large databases
+  // Usually fast, but can be slow when skipping many records on large databases
+  return withStore('readonly', (store) => withTimeout(
+    new Promise((resolve, reject) => {
+      const items = [];
+      let hasMore = false;
+      let nextCursor = null;
+      let resolved = false;
+      const skip = cursor && cursor.videoId ? cursor : null;
+      let skipping = Boolean(skip);
+      const direction = 'prev';
+      function finish(payload) {
+        if (resolved) return;
+        resolved = true;
+        resolve(payload);
       }
-      const value = cursorObject.value;
-      if (skipping) {
-        const matchesState = !skip || !skip.state || value.state === skip.state;
-        if (matchesState && value.updatedAt === skip.updatedAt && value.videoId === skip.videoId) {
-          skipping = false;
+      function fail(error) {
+        if (resolved) return;
+        resolved = true;
+        reject(error);
+      }
+      let request;
+      if (state) {
+        const index = store.index(STATE_UPDATED_AT_INDEX);
+        const lower = [state, 0];
+        const upper = [state, Number.MAX_SAFE_INTEGER];
+        const range = IDBKeyRange.bound(lower, upper);
+        request = index.openCursor(range, direction);
+      } else {
+        const index = store.index(UPDATED_AT_INDEX);
+        request = index.openCursor(null, direction);
+      }
+      request.onsuccess = (event) => {
+        const cursorObject = event.target.result;
+        if (!cursorObject) {
+          finish({ items, hasMore, nextCursor });
+          return;
+        }
+        const value = cursorObject.value;
+        if (skipping) {
+          const matchesState = !skip || !skip.state || value.state === skip.state;
+          if (matchesState && value.updatedAt === skip.updatedAt && value.videoId === skip.videoId) {
+            skipping = false;
+          }
+          cursorObject.continue();
+          return;
+        }
+        items.push(value);
+        if (items.length === limitPlusOne) {
+          const lastItem = items[pageSize - 1];
+          items.pop();
+          nextCursor = {
+            state: state || null,
+            updatedAt: lastItem.updatedAt,
+            videoId: lastItem.videoId
+          };
+          hasMore = true;
+          finish({ items, hasMore, nextCursor });
+          return;
         }
         cursorObject.continue();
-        return;
-      }
-      items.push(value);
-      if (items.length === limitPlusOne) {
-        const lastItem = items[pageSize - 1];
-        items.pop();
-        nextCursor = {
-          state: state || null,
-          updatedAt: lastItem.updatedAt,
-          videoId: lastItem.videoId
-        };
-        hasMore = true;
-        finish({ items, hasMore, nextCursor });
-        return;
-      }
-      cursorObject.continue();
-    };
-    request.onerror = () => {
-      fail(request.error);
-    };
-  }));
+      };
+      request.onerror = () => {
+        fail(request.error);
+      };
+    }),
+    30000, // 30 seconds for pagination cursor
+    'Pagination cursor'
+  ));
 }
 // Use cursor for stats calculation on large databases (configurable threshold)
 const STATS_CURSOR_THRESHOLD = INDEXEDDB_CONFIG.STATS_CURSOR_THRESHOLD;
@@ -399,26 +435,32 @@ async function getHiddenVideosStatsCount() {
  * @returns {Promise<Object>} - Stats object with total, dimmed, hidden counts
  */
 async function getHiddenVideosStatsCursor() {
-  return withStore('readonly', (store) => new Promise((resolve, reject) => {
-    const counts = { total: 0, dimmed: 0, hidden: 0 };
-    const request = store.openCursor();
+  // FIXED: Add 60s timeout for cursor scan on large databases (100K+ records)
+  // Without timeout, this operation can exceed default 5s message timeout
+  return withStore('readonly', (store) => withTimeout(
+    new Promise((resolve, reject) => {
+      const counts = { total: 0, dimmed: 0, hidden: 0 };
+      const request = store.openCursor();
 
-    request.onsuccess = (event) => {
-      const cursor = event.target.result;
-      if (!cursor) {
-        resolve(counts);
-        return;
-      }
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (!cursor) {
+          resolve(counts);
+          return;
+        }
 
-      counts.total++;
-      if (cursor.value.state === 'dimmed') counts.dimmed++;
-      if (cursor.value.state === 'hidden') counts.hidden++;
+        counts.total++;
+        if (cursor.value.state === 'dimmed') counts.dimmed++;
+        if (cursor.value.state === 'hidden') counts.hidden++;
 
-      cursor.continue();
-    };
+        cursor.continue();
+      };
 
-    request.onerror = () => reject(request.error);
-  }));
+      request.onerror = () => reject(request.error);
+    }),
+    60000, // 60 seconds for large database stats scan
+    'Stats cursor scan'
+  ));
 }
 
 /**
