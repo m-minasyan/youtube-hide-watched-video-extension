@@ -10,7 +10,7 @@ import {
   deletePendingRequest,
   clearPendingRequests as clearPendingRequestsCache
 } from './cache.js';
-import { sendHiddenVideosMessage, isExtensionContextValid } from '../../shared/messaging.js';
+import { sendHiddenVideosMessage } from '../../shared/messaging.js';
 import { logError, classifyError, ErrorType } from '../../shared/errorHandler.js';
 import { showNotification } from '../../shared/notifications.js';
 
