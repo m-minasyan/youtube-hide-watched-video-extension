@@ -510,7 +510,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function refreshStats() {
-    const result = await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.GET_STATS);
+    // FIXED: Use 60s timeout for stats on large databases (100K+ records)
+    // Stats uses cursor scan which can be slow on large databases
+    const result = await sendHiddenVideosMessage(
+      HIDDEN_VIDEO_MESSAGES.GET_STATS,
+      {},
+      60000 // 60 seconds for large database stats
+    );
     hiddenVideoStats = {
       total: result?.total || 0,
       dimmed: result?.dimmed || 0,
@@ -1077,7 +1083,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   clearAllBtn.addEventListener('click', async () => {
     if (confirm('Are you sure you want to remove all hidden videos?')) {
-      await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.CLEAR_ALL);
+      // Use extended timeout for clearing large databases (100K+ records)
+      await sendHiddenVideosMessage(
+        HIDDEN_VIDEO_MESSAGES.CLEAR_ALL,
+        {},
+        60000 // 60 seconds for clearing large databases
+      );
 
       // MEMORY LEAK FIX: Clear search memory after clear all
       // All videos have been removed from database, so cached search data is now stale
@@ -1163,9 +1174,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       exportBtn.disabled = true;
       exportBtn.textContent = 'Exporting...';
 
-      // Fetch all data from background
+      // Fetch all data from background with extended timeout
+      // Use longer timeout for large databases (100K+ records)
       const exportData = await sendHiddenVideosMessage(
-        HIDDEN_VIDEO_MESSAGES.EXPORT_ALL
+        HIDDEN_VIDEO_MESSAGES.EXPORT_ALL,
+        {},
+        60000 // 60 seconds for large database exports
       );
 
       // Show notification for large exports
@@ -1290,10 +1304,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       importState.file = file;
       importState.data = data;
 
-      // Validate import data with backend
+      // Validate import data with backend with extended timeout
+      // Validation calls getHiddenVideosStats() which may be slow on large databases
       const validationResult = await sendHiddenVideosMessage(
         HIDDEN_VIDEO_MESSAGES.VALIDATE_IMPORT,
-        { data }
+        { data },
+        30000 // 30 seconds for validation
       );
 
       importState.validationResult = validationResult;
@@ -1566,13 +1582,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           records: batch
         };
 
-        // Import this batch
+        // Import this batch with extended timeout
+        // Each batch may trigger stats lookup on large databases, so use 120s timeout
         const batchResult = await sendHiddenVideosMessage(
           HIDDEN_VIDEO_MESSAGES.IMPORT_RECORDS,
           {
             data: batchData,
             conflictStrategy: importState.selectedStrategy
-          }
+          },
+          120000 // 120 seconds timeout - handles stats lookup on large databases
         );
 
         // Aggregate results
