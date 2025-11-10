@@ -592,7 +592,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   clearAllBtn.addEventListener('click', async () => {
     if (confirm('Are you sure you want to remove all hidden videos?')) {
-      await sendHiddenVideosMessage(HIDDEN_VIDEO_MESSAGES.CLEAR_ALL);
+      // Use extended timeout for clearing large databases (100K+ records)
+      await sendHiddenVideosMessage(
+        HIDDEN_VIDEO_MESSAGES.CLEAR_ALL,
+        {},
+        60000 // 60 seconds for clearing large databases
+      );
       hiddenVideosState.pageCursors = [null];
       hiddenVideosState.currentPage = 1;
       await refreshStats();
@@ -634,9 +639,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       exportBtn.disabled = true;
       exportBtn.textContent = 'Exporting...';
 
-      // Fetch all data from background
+      // Fetch all data from background with extended timeout
+      // Use longer timeout for large databases (100K+ records)
       const exportData = await sendHiddenVideosMessage(
-        HIDDEN_VIDEO_MESSAGES.EXPORT_ALL
+        HIDDEN_VIDEO_MESSAGES.EXPORT_ALL,
+        {},
+        60000 // 60 seconds for large database exports
       );
 
       // Create JSON blob
@@ -713,10 +721,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       importState.file = file;
       importState.data = data;
 
-      // Validate import data with backend
+      // Validate import data with backend with extended timeout
+      // Validation calls getHiddenVideosStats() which may be slow on large databases
       const validationResult = await sendHiddenVideosMessage(
         HIDDEN_VIDEO_MESSAGES.VALIDATE_IMPORT,
-        { data }
+        { data },
+        30000 // 30 seconds for validation
       );
 
       importState.validationResult = validationResult;
