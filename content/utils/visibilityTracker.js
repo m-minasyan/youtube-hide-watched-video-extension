@@ -1,5 +1,5 @@
 import { INTERSECTION_OBSERVER_CONFIG } from './constants.js';
-import { logDebug } from './logger.js';
+import { logDebug } from '../../shared/logger.js';
 
 // Track visibility state of video containers
 const visibleVideos = new Set();

@@ -1,6 +1,22 @@
 import { STORAGE_KEYS, DEFAULT_SETTINGS } from './shared/constants.js';
 import { ensurePromise, buildDefaultSettings } from './shared/utils.js';
 import { initTheme, toggleTheme } from './shared/theme.js';
+import { error as logError } from './shared/logger.js';
+
+/**
+ * Check if an error should be suppressed when sending messages to content scripts
+ * These errors are expected when:
+ * - Tab doesn't have content script loaded yet
+ * - Tab is loading/navigating
+ * - Tab is suspended/inactive
+ * - Extension context is invalidated
+ */
+function shouldSuppressTabMessageError(error) {
+  const message = error.message?.toLowerCase() || '';
+  return message.includes('context invalidated') ||
+         message.includes('receiving end does not exist') ||
+         message.includes('could not establish connection');
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
   const thresholdSlider = document.getElementById('threshold');
@@ -119,7 +135,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const data = {};
     data[key] = value;
     await chrome.storage.sync.set(data);
-    
+
     if (key !== STORAGE_KEYS.THEME) {
       chrome.tabs.query({url: '*://*.youtube.com/*'}, (tabs) => {
         tabs.forEach(tab => {
@@ -127,7 +143,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             action: 'settingsUpdated',
             key: key,
             value: value
-          })).catch(() => {});
+          })).catch((error) => {
+            // Suppress expected errors (tabs without content script, loading, etc.)
+            if (!shouldSuppressTabMessageError(error)) {
+              logError('[Popup] Tab message failed:', error);
+            }
+          });
         });
       });
     }
@@ -159,7 +180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const allSettings = await chrome.storage.sync.get(null);
         updateQuickToggleStates(allSettings);
       }).catch(error => {
-        console.error('Failed to save settings:', error);
+        logError('[Popup] Failed to save settings:', error);
         siblingButtons.forEach(btn => btn.classList.remove('active'));
         loadSettings();
       });
@@ -208,12 +229,17 @@ document.addEventListener('DOMContentLoaded', async () => {
               action: 'settingsUpdated',
               key: key,
               value: mode
-            })).catch(() => {});
+            })).catch((error) => {
+              // Suppress expected errors (tabs without content script, loading, etc.)
+              if (!shouldSuppressTabMessageError(error)) {
+                logError('[Popup] Tab message failed:', error);
+              }
+            });
           });
         });
       });
     }).catch(error => {
-      console.error('Failed to save type mode settings:', error);
+      logError('[Popup] Failed to save type mode settings:', error);
       loadSettings();
     });
   }
@@ -257,9 +283,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       });
       button.classList.add('active');
-      
+
       setTypeToMode(type, mode).catch(error => {
-        console.error('Failed to set type mode:', error);
+        logError('[Popup] Failed to set type mode:', error);
         loadSettings();
       });
     });
@@ -275,7 +301,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE_ENABLED, enabled).catch(error => {
-      console.error('Failed to save individual mode toggle:', error);
+      logError('[Popup] Failed to save individual mode toggle:', error);
       individualModeToggle.checked = !enabled;
       if (!enabled) {
         individualModeOptions.classList.remove('disabled');
@@ -291,9 +317,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       individualModeButtons.forEach(btn => btn.classList.remove('active'));
       button.classList.add('active');
-      
+
       saveSettings(STORAGE_KEYS.INDIVIDUAL_MODE, mode).catch(error => {
-        console.error('Failed to save individual mode:', error);
+        logError('[Popup] Failed to save individual mode:', error);
         initIndividualMode();
       });
     });
@@ -309,7 +335,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         await chrome.runtime.sendMessage({ type: 'HIDDEN_VIDEOS_CLEAR_ALL' });
       } catch (error) {
-        console.error('Failed to clear hidden videos data', error);
+        logError('[Popup] Failed to clear hidden videos data', error);
       }
 
       const defaultData = buildDefaultSettings(STORAGE_KEYS, DEFAULT_SETTINGS);
@@ -321,7 +347,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       chrome.tabs.query({url: '*://*.youtube.com/*'}, (tabs) => {
         tabs.forEach(tab => {
-          ensurePromise(chrome.tabs.sendMessage(tab.id, {action: 'resetSettings'})).catch(() => {});
+          ensurePromise(chrome.tabs.sendMessage(tab.id, {action: 'resetSettings'})).catch((error) => {
+            // Suppress expected errors (tabs without content script, loading, etc.)
+            if (!shouldSuppressTabMessageError(error)) {
+              logError('[Popup] Tab message failed:', error);
+            }
+          });
         });
       });
     }

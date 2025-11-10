@@ -1,6 +1,6 @@
 {
   "name": "youtube-hide-watched-video-extension",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "description": "Browser extension to hide watched videos on YouTube",
   "scripts": {
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
@@ -9,8 +9,11 @@
     "build:content": "webpack --config webpack.content.config.js",
     "build:content:watch": "webpack --config webpack.content.config.js --watch",
     "build:content:prod": "webpack --config webpack.content.config.js --mode production",
-    "build": "npm run build:content:prod",
-    "dev": "npm run build:content:watch"
+    "build:background": "webpack --config webpack.background.config.js",
+    "build:background:watch": "webpack --config webpack.background.config.js --watch",
+    "build:background:prod": "webpack --config webpack.background.config.js --mode production",
+    "build": "npm run build:content:prod && npm run build:background:prod",
+    "dev": "npm run build:content:watch & npm run build:background:watch"
   },
   "devDependencies": {
     "@babel/core": "^7.28.4",

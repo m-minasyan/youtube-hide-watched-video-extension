@@ -13,6 +13,10 @@ import {
 import { sendHiddenVideosMessage } from '../../shared/messaging.js';
 import { logError, classifyError, ErrorType } from '../../shared/errorHandler.js';
 import { showNotification } from '../../shared/notifications.js';
+// FIXED P3-4: Import UI timing constants
+import { UI_TIMING } from '../../shared/constants.js';
+// FIXED: Import debug function that was being used but not imported
+import { debug } from '../../shared/logger.js';
 
 // Re-export sendHiddenVideosMessage for backward compatibility
 export { sendHiddenVideosMessage };
@@ -41,8 +45,10 @@ export async function fetchHiddenVideoStates(videoIds) {
     if (hasPendingRequest(videoId)) {
       waiters.push(getPendingRequest(videoId).then((record) => {
         result[videoId] = record;
-      }).catch(() => {
+      }).catch((err) => {
+        // FIXED P1-6: Log pending request failures for diagnostics
         // If pending request fails, we'll try to fetch again
+        debug('ContentMessaging', `Pending request failed for ${videoId}:`, err.message);
         missing.push(videoId);
       }));
       return;
@@ -51,9 +57,26 @@ export async function fetchHiddenVideoStates(videoIds) {
   });
 
   if (missing.length > 0) {
-    // Note: We don't set a timeout to delete pending requests because that could
-    // cause race conditions if the fetch takes longer than the timeout.
-    // The finally block will clean up pending requests when the fetch completes.
+    // FIXED P2-6: Add timeout cleanup for pending requests
+    // While the finally block cleans up on completion, we need a timeout
+    // to prevent memory leaks if the fetch hangs indefinitely
+    // FIXED P3-4: Use constant instead of magic number
+    const PENDING_REQUEST_TIMEOUT = UI_TIMING.PENDING_REQUEST_TIMEOUT_MS;
+
+    // Create timeout cleanup handlers for each pending request
+    const timeoutIds = new Map();
+    missing.forEach((videoId) => {
+      const timeoutId = setTimeout(() => {
+        deletePendingRequest(videoId);
+        logError('ContentMessaging', new Error('Pending request timeout'), {
+          operation: 'fetchHiddenVideoStates',
+          videoId,
+          timeout: PENDING_REQUEST_TIMEOUT
+        });
+      }, PENDING_REQUEST_TIMEOUT);
+      timeoutIds.set(videoId, timeoutId);
+    });
+
     const fetchPromise = sendHiddenVideosMessage(
       HIDDEN_VIDEO_MESSAGES.GET_MANY,
       { ids: missing }
@@ -78,14 +101,26 @@ export async function fetchHiddenVideoStates(videoIds) {
 
       throw error;
     }).finally(() => {
-      // Clean up pending requests after fetch completes (success or failure)
-      missing.forEach((videoId) => deletePendingRequest(videoId));
+      // FIXED P2-6: Clean up both pending requests AND timeout handlers
+      missing.forEach((videoId) => {
+        deletePendingRequest(videoId);
+        // Clear the timeout to prevent it from firing after successful completion
+        const timeoutId = timeoutIds.get(videoId);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutIds.delete(videoId);
+        }
+      });
     });
 
     missing.forEach((videoId) => {
       const promise = fetchPromise
         .then(() => getCachedHiddenVideo(videoId))
-        .catch(() => null);
+        .catch((err) => {
+          // FIXED P1-6: Log fetch failures (already logged above, returning null)
+          debug('ContentMessaging', `Fetch failed for ${videoId}, returning null`);
+          return null;
+        });
       setPendingRequest(videoId, promise);
       waiters.push(promise.then((record) => {
         result[videoId] = record;
