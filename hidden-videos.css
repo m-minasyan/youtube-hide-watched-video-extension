@@ -184,7 +184,7 @@ header {
 }
 
 .search-loading {
-  display: flex;
+  /* display property removed - controlled by JavaScript and .display-none class */
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
@@ -427,6 +427,32 @@ header {
   background: var(--bg-secondary);
   border-radius: 4px;
   object-fit: cover;
+  flex-shrink: 0;
+}
+
+.video-thumbnail.error {
+  background: var(--bg-secondary);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-thumbnail.error::before {
+  content: '';
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  background: var(--text-secondary);
+  opacity: 0.3;
+  mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>');
+  -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>');
+  mask-size: contain;
+  -webkit-mask-size: contain;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  mask-position: center;
+  -webkit-mask-position: center;
 }
 
 .video-details {

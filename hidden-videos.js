@@ -690,7 +690,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     thumbnail.src = thumbnailUrl;
     thumbnail.alt = 'Video thumbnail';
     thumbnail.className = 'video-thumbnail';
-    thumbnail.onerror = function() { this.style.display = 'none'; };
+    thumbnail.onerror = function() {
+      this.classList.add('error');
+      this.removeAttribute('src');
+    };
 
     // Create video details
     const videoDetails = document.createElement('div');
