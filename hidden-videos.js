@@ -871,13 +871,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       progressDiv.style.display = 'block';
       progressText.textContent = 'Importing records...';
 
-      // Execute import
+      // Execute import with extended timeout
+      // FIXED: Use 120 second timeout for import operations to prevent timeout
+      // when fetching existing records from large databases (100K+ records)
+      // during "Keep Newer" conflict resolution
       const result = await sendHiddenVideosMessage(
         HIDDEN_VIDEO_MESSAGES.IMPORT_RECORDS,
         {
           data: importState.data,
           conflictStrategy: importState.selectedStrategy
-        }
+        },
+        120000 // 120 seconds for large database imports
       );
 
       // Update completion message
