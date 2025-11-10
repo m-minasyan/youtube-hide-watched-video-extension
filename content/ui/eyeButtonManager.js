@@ -1,5 +1,5 @@
 import { CSS_CLASSES, SELECTOR_CHAINS } from '../../shared/constants.js';
-import { logDebug } from '../utils/logger.js';
+import { logDebug } from '../../shared/logger.js';
 import { getCachedHiddenVideo } from '../storage/cache.js';
 import { fetchHiddenVideoStates, setHiddenVideoState } from '../storage/messaging.js';
 import { isIndividualModeEnabled } from '../storage/settings.js';

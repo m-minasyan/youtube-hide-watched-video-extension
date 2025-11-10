@@ -14,11 +14,11 @@ module.exports = (env = {}, argv = {}) => {
   const isProduction = mode === 'production';
 
   return {
-    entry: './content/index.js',
+    entry: './background.js',
     output: {
-      filename: 'content.js',
+      filename: 'background.bundle.js',
       path: path.resolve(__dirname, '.'),
-      iife: true,
+      iife: false, // Keep as module for service worker
       clean: false
     },
     mode: mode, // Use validated mode
@@ -43,10 +43,6 @@ module.exports = (env = {}, argv = {}) => {
               drop_debugger: isProduction,
               // Remove only non-critical console methods in production
               // Keep console.error and console.warn for production debugging
-              // This works in combination with DefinePlugin to strip debug code:
-              // 1. DefinePlugin replaces __DEV__ with false
-              // 2. Dead code elimination removes if (false) blocks
-              // 3. pure_funcs removes remaining non-critical console methods
               pure_funcs: isProduction ? [
                 'console.log',
                 'console.info',
@@ -60,13 +56,15 @@ module.exports = (env = {}, argv = {}) => {
           extractComments: false,
         }),
       ],
+      // FIXED P3-3: Service Workers require self-contained bundles, no runtime chunk splitting
       moduleIds: 'deterministic'
     },
-    // FIXED P3-3: Bundle size monitoring for content script
+    // FIXED P3-3: Bundle size monitoring
     performance: {
-      maxEntrypointSize: 256000, // 256KB warning threshold for content script (smaller than background)
-      maxAssetSize: 256000, // 256KB warning threshold
-      hints: isProduction ? 'error' : 'warning',
+      maxEntrypointSize: 512000, // 512KB warning threshold for background script
+      maxAssetSize: 512000, // 512KB warning threshold for individual assets
+      hints: isProduction ? 'error' : 'warning', // Error in production, warning in dev
+      // Filter to only warn about JavaScript bundles
       assetFilter: function(assetFilename) {
         return assetFilename.endsWith('.js');
       }

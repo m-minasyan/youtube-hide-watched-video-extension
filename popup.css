@@ -503,17 +503,35 @@ footer {
   margin-bottom: 0;
 }
 
+/* Scrollbar styles - only show when hovering/scrolling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: var(--primary-gradient) var(--bg-secondary);
+}
+
 ::-webkit-scrollbar {
   width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--primary-gradient);
+  background: transparent;
   border-radius: 4px;
+}
+
+*:hover::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--primary-gradient);
 }
 
 ::-webkit-scrollbar-thumb:hover {

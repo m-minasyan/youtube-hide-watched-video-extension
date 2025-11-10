@@ -1,5 +1,5 @@
 import { CSS_CLASSES, INTERSECTION_OBSERVER_CONFIG } from '../utils/constants.js';
-import { logDebug } from '../utils/logger.js';
+import { logDebug } from '../../shared/logger.js';
 import { getCachedHiddenVideo, hasCachedVideo } from '../storage/cache.js';
 import { fetchHiddenVideoStates } from '../storage/messaging.js';
 import { isIndividualModeEnabled } from '../storage/settings.js';

@@ -5,6 +5,114 @@ All notable changes to the YouTube Hide Watched Video Extension will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.0] - 2025-11-06
+
+### Added
+
+- Unified cache layer between background and content scripts for improved performance and consistency
+- Comprehensive debug logging system with build-time stripping for production builds
+- Comprehensive timeout protection for all IndexedDB operations to prevent hanging on slow devices
+- Enhanced resilient DOM query system with fallback selectors and health monitoring (inherited from 2.11.0)
+
+### Fixed
+
+#### Memory Leaks
+- Fixed critical memory leak in cache access order tracking that caused unbounded memory growth
+- Fixed memory leak in import/export functionality for large datasets
+- Fixed search memory leak with mobile optimization and comprehensive cleanup
+- Fixed memory overflow in import function that caused worker crashes with large datasets
+
+#### Race Conditions
+- Fixed Service Worker initialization race condition that prevented proper extension startup
+- Fixed content script initialization race condition causing videos to not hide properly
+- Fixed race condition in migration system preventing proper database upgrades
+- Fixed race condition in LRU eviction causing cache inconsistencies
+- Fixed race condition in initialization lock using atomic assignment
+- Fixed race condition in processFallbackStorage with proper validation for MAX_RETRY_ATTEMPTS
+- Fixed infinite recursion in quota retry mechanism
+
+#### IndexedDB & Storage
+- Fixed IndexedDB connection not closing on service worker suspend causing database blocking
+- Fixed graceful IndexedDB shutdown to prevent connection leaks
+- Increased IndexedDB timeout values for slow devices and large databases
+- Implemented comprehensive quota management to prevent data loss
+- Fixed cache clearing on database reset to prevent stale data serving
+- Implemented exponential backoff for quota notification spam prevention
+- Added validation and error handling for storage operations
+
+#### Messaging & Communication
+- Fixed "No response from background script" errors by registering message listener synchronously
+- Fixed async sendResponse compatibility issues with Chrome Manifest V3
+- Replaced async sendResponse with Promise-based API for better reliability
+- Fixed message handling to ensure full initialization before processing
+- Suppressed expected tab messaging errors in popup.js
+- Fixed sendResponse callback pattern to properly deliver message responses
+
+#### Security
+- Fixed XSS vulnerability in search highlighting by using DOM-based rendering
+- Fixed potential CSS selector injection vulnerability in event handler
+- Enhanced security by removing user-facing notifications from YouTube page
+
+#### Build & Configuration
+- Fixed manifest loading error with proper build instructions
+- Fixed "process is not defined" error in popup by adding browser-safe check for process.env.NODE_ENV
+- Fixed background service worker bundle build process
+- Fixed all console errors and improved error formatting
+
+#### Service Worker & Lifecycle
+- Fixed service worker keep-alive mechanism (set to Chrome API minimum of 1 minute)
+- Fixed alarm management to stop keep-alive alarm when initialization fails
+- Reduced service worker keep-alive interval for better resource management
+- Improved initialization error notifications
+
+#### Error Handling
+- Fixed empty catch handlers with proper error logging throughout codebase
+- Fixed console error/warn message formatting to avoid [object Object] output
+- Added explicit transaction abort handling in IndexedDB withStore function
+- Improved error messages and user feedback
+
+#### Performance
+- Fixed memory-efficient streaming import to prevent service worker crashes
+- Implemented memory leak prevention in cacheAccessOrder by only tracking cache hits
+- Added synchronization to LRU eviction to prevent cache inconsistencies
+
+### Changed
+
+- Eliminated ~80% code duplication between cache implementations through unified cache architecture
+- Removed user-facing notifications from YouTube page for cleaner user experience
+- Kept error notifications only for critical video state operations
+- Restored initialization error notifications for better debugging
+- Improved overall stability and performance through comprehensive bug fixes
+
+### Technical Details
+
+- Created unified cache layer shared between background and content scripts
+- Implemented build-time debug logging stripping for production performance
+- Added comprehensive timeout protection across all IndexedDB operations
+- Refactored cache implementations to eliminate code duplication
+- Enhanced error handling and recovery mechanisms throughout the extension
+- Improved service worker lifecycle management for better reliability
+- Added validation for storage operations and quota management
+- Enhanced security with proper input sanitization and XSS prevention
+- Optimized memory usage with proper cleanup and leak prevention
+- Fixed all race conditions in initialization and storage operations
+
+### Performance Impact
+
+- Reduced memory footprint through leak fixes and efficient caching
+- Improved startup reliability through race condition fixes
+- Better handling of slow devices with increased timeout values
+- Reduced notification spam with exponential backoff
+- More efficient IndexedDB operations with proper connection management
+- Cleaner browser console with improved error formatting
+
+### Migration Notes
+
+- No user action required - all fixes are backward compatible
+- Database migrations handled automatically on extension update
+- Legacy data properly migrated with validation
+- Settings and hidden videos preserved during update
+
 ## [2.11.0] - 2025-10-10
 
 ### Added

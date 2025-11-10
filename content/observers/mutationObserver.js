@@ -3,6 +3,9 @@ import { CSS_CLASSES, DEBUG, CACHE_CONFIG } from '../utils/constants.js';
 import { invalidateElementCache, invalidateVideoContainerCaches, clearAllCaches, logCacheStats } from '../utils/domCache.js';
 import { observeVideoContainers, unobserveVideoContainers } from './intersectionObserver.js';
 
+// FIXED P1-7: Track interval ID for cleanup
+let cacheStatsInterval = null;
+
 export function setupMutationObserver(applyHiding) {
   const debouncedApplyHiding = debounce(applyHiding, 250);
 
@@ -109,12 +112,23 @@ export function setupMutationObserver(applyHiding) {
     attributeFilter: ['aria-hidden']
   });
 
-  // Log cache stats periodically in debug mode
-  if (DEBUG) {
-    setInterval(() => {
+  // FIXED P1-7: Track interval for cleanup, only start if not already running
+  if (DEBUG && !cacheStatsInterval) {
+    cacheStatsInterval = setInterval(() => {
       logCacheStats();
     }, CACHE_CONFIG.STATS_LOG_INTERVAL);
   }
 
   return observer;
+}
+
+/**
+ * FIXED P1-7: Cleanup function to stop cache stats interval
+ * Should be called on navigation/cleanup to prevent memory leaks
+ */
+export function cleanupMutationObserver() {
+  if (cacheStatsInterval) {
+    clearInterval(cacheStatsInterval);
+    cacheStatsInterval = null;
+  }
 }
