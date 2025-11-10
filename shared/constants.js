@@ -63,10 +63,15 @@ export const CSS_CLASSES = {
 };
 
 // Selectors (content script specific)
+// NOTE: SELECTORS.PROGRESS_BAR is deprecated - use SELECTOR_CHAINS.PROGRESS_BAR instead
+// This is kept for backward compatibility and tests only
 export const SELECTORS = {
   PROGRESS_BAR: [
-    '.ytd-thumbnail-overlay-resume-playback-renderer',
     '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
+    '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
+    'ytd-thumbnail-overlay-resume-playback-renderer',
+    'yt-thumbnail-overlay-resume-playback-renderer',
+    '.ytd-thumbnail-overlay-resume-playback-renderer',
     '.ytd-thumbnail-overlay-resume-playback-progress-renderer',
     '.ytp-progress-bar-played'
   ],
@@ -430,41 +435,38 @@ export const SELECTOR_CHAINS = {
   ],
 
   PROGRESS_BAR: [
-    // PRIORITY 1: Actual progress bar elements with width (2025+)
-    // These are the child elements that contain the actual progress width
-    'div[id="progress"][style*="width"]',
-    '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar[style*="width"]',
-    '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment[style*="width"]',
-    '[class*="progress"][class*="bar"][style*="width"]',
-
-    // PRIORITY 2: Progress bar elements without inline style (may use CSS)
-    'div[id="progress"]',
-    '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
+    // PRIORITY 1: Modern specific progress bar classes (highest reliability, 2025+)
     '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
+    '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
 
-    // PRIORITY 3: Overlay CONTAINERS (need to search for child progress bar)
-    // These selectors find containers that wrap the actual progress bar
+    // PRIORITY 2: Progress bar elements with common patterns
+    'div[id="progress"]',
+    '#progress-bar',
+
+    // PRIORITY 3: Overlay CONTAINERS (will search for child progress bar inside)
+    // These are common containers that wrap the actual progress bar
     'ytd-thumbnail-overlay-resume-playback-renderer',
     'yt-thumbnail-overlay-resume-playback-renderer',
     '.ytd-thumbnail-overlay-resume-playback-renderer',
     '.yt-thumbnail-overlay-resume-playback-renderer',
 
-    // PRIORITY 4: Variations and legacy selectors
+    // PRIORITY 4: Progress renderer variations
     '.ytd-thumbnail-overlay-resume-playback-progress-renderer',
     '.yt-thumbnail-overlay-resume-playback-progress-renderer',
+
+    // PRIORITY 5: Legacy and mobile selectors
     '.ytp-progress-bar-played',
     '.ytm-thumbnail-overlay-resume-playback-renderer',
     'ytm-thumbnail-overlay-resume-playback-renderer',
 
-    // PRIORITY 5: Container-based selectors
+    // PRIORITY 6: Container-based selectors (broader matching)
     '[class*="thumbnail-overlay"][class*="resume"]',
     '[class*="thumbnail-overlay"][class*="playback"]',
 
-    // PRIORITY 6: ID-based selectors
-    '#progress-bar',
+    // PRIORITY 7: ID-based fallbacks
     '#resume-playback-progress',
 
-    // PRIORITY 7: Generic fallbacks (most permissive)
+    // PRIORITY 8: Generic fallbacks (most permissive, use with caution)
     '[class*="resume"][class*="playback"]',
     '[class*="watched"][class*="progress"]',
     '[aria-label*="progress"]'

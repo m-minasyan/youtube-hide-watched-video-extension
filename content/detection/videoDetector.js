@@ -49,12 +49,12 @@ function extractProgressPercentage(element) {
   }
 
   // Method 2: Check for child progress bar elements
+  // Search for actual progress bar within container
   const progressBarSelectors = [
     'div[id="progress"]',
     '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
     '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
-    '[class*="progress"][class*="bar"]',
-    '[style*="width"]'
+    '[class*="progress"][class*="bar"]'
   ];
 
   for (const selector of progressBarSelectors) {
@@ -69,13 +69,15 @@ function extractProgressPercentage(element) {
     }
   }
 
-  // Method 3: Check computed style
+  // Method 3: Check computed style (only for elements with percentage-based width)
   try {
     const computedStyle = window.getComputedStyle(element);
     const width = computedStyle.width;
     if (width && width.endsWith('%')) {
       const percentage = parseFloat(width);
-      if (!isNaN(percentage)) return percentage;
+      if (!isNaN(percentage) && percentage > 0 && percentage <= 100) {
+        return percentage;
+      }
     }
   } catch (e) {
     // getComputedStyle failed, continue
@@ -85,17 +87,43 @@ function extractProgressPercentage(element) {
   const ariaValue = element.getAttribute('aria-valuenow');
   if (ariaValue) {
     const value = parseInt(ariaValue, 10);
-    if (!isNaN(value)) return value;
+    if (!isNaN(value) && value >= 0 && value <= 100) {
+      return value;
+    }
   }
 
-  // Method 5: If we found a container but no width, assume it's watched (any progress = watched)
-  // This handles cases where YouTube changed the structure completely
-  if (element.tagName && element.tagName.toLowerCase().includes('overlay')) {
-    logDebug('Found progress bar container without width, assuming 100% watched');
-    return 100;
-  }
-
+  // No progress found - return -1 to indicate not watched/no progress bar
   return -1;
+}
+
+/**
+ * Check if progress bar element is within a video thumbnail/container
+ * Prevents false positives from progress bars elsewhere on the page
+ * @param {Element} element - Progress bar element
+ * @returns {boolean} True if element is part of video thumbnail
+ */
+function isWithinVideoThumbnail(element) {
+  if (!element) return false;
+
+  // Check if element or its parents are within video thumbnail containers
+  const videoContainerSelectors = [
+    'ytd-rich-item-renderer',
+    'ytd-video-renderer',
+    'ytd-grid-video-renderer',
+    'ytd-compact-video-renderer',
+    'ytd-thumbnail',
+    'yt-thumbnail-view-model',
+    'a[href*="/watch"]',
+    'a[href*="/shorts"]'
+  ];
+
+  for (const selector of videoContainerSelectors) {
+    if (element.closest(selector)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export function findWatchedElements() {
@@ -107,12 +135,26 @@ export function findWatchedElements() {
   );
 
   const threshold = getThreshold();
+
+  // Filter by threshold and validate they're within video thumbnails
   const withThreshold = progressBars.filter((bar) => {
+    // First check if it's within a video thumbnail to avoid false positives
+    if (!isWithinVideoThumbnail(bar)) {
+      logDebug('Progress bar found outside video thumbnail, skipping');
+      return false;
+    }
+
     const progress = extractProgressPercentage(bar);
-    return progress >= 0 && progress >= threshold;
+    const meetsThreshold = progress >= 0 && progress >= threshold;
+
+    if (meetsThreshold) {
+      logDebug(`Valid watched element found: ${progress}% >= ${threshold}%`);
+    }
+
+    return meetsThreshold;
   });
 
-  logDebug(`Found ${progressBars.length} watched elements (${withThreshold.length} within threshold ${threshold}%)`);
+  logDebug(`Found ${progressBars.length} progress bars (${withThreshold.length} valid watched elements within threshold ${threshold}%)`);
 
   return withThreshold;
 }
