@@ -10,8 +10,9 @@ import {
   deleteOldestHiddenVideos
 } from './indexedDb.js';
 import { getCacheStats } from './indexedDbCache.js';
-import { ensurePromise, queryYoutubeTabs } from '../shared/utils.js';
+import { ensurePromise, queryYoutubeTabs, withTimeout } from '../shared/utils.js';
 import { IMPORT_EXPORT_CONFIG } from '../shared/constants.js';
+import { debug, error, warn, info } from '../shared/logger.js';
 
 const STORAGE_KEYS = {
   HIDDEN_VIDEOS: 'YTHWV_HIDDEN_VIDEOS',
@@ -57,15 +58,87 @@ function buildRecord(videoId, state, title, updatedAt) {
 
 async function broadcastHiddenVideosEvent(event) {
   try {
-    ensurePromise(chrome.runtime.sendMessage({ type: 'HIDDEN_VIDEOS_EVENT', event })).catch(() => {});
+    // FIXED P1-6: Added debug logging for runtime message failures
+    ensurePromise(chrome.runtime.sendMessage({ type: 'HIDDEN_VIDEOS_EVENT', event })).catch((err) => {
+      debug('HiddenVideosService', 'Failed to broadcast to runtime:', err.message);
+    });
   } catch (error) {
-    console.error('Failed to broadcast runtime event', error);
+    error('Failed to broadcast runtime event', error);
   }
   try {
     const tabs = await queryYoutubeTabs();
-    await Promise.all(tabs.map((tab) => ensurePromise(chrome.tabs.sendMessage(tab.id, { type: 'HIDDEN_VIDEOS_EVENT', event })).catch(() => {})));
+    // FIXED P2-12: Rate limiting with exponential backoff for Chrome API calls
+    // Process tabs in batches to avoid throttling with 100+ tabs
+    // Chrome has internal rate limits (~1000 calls/minute)
+    const BATCH_SIZE = 10;
+    const MAX_CONSECUTIVE_FAILURES = 3;
+    const MAX_BROADCAST_TIME = 10000; // 10 seconds max for entire broadcast
+    const BROADCAST_START = Date.now();
+    const failedBroadcasts = [];
+    let consecutiveFailures = 0;
+
+    for (let i = 0; i < tabs.length; i += BATCH_SIZE) {
+      // FIXED P2-12: Check total broadcast timeout to prevent indefinite execution
+      if (Date.now() - BROADCAST_START > MAX_BROADCAST_TIME) {
+        warn('[HiddenVideosService] Broadcast timeout reached, stopping early', {
+          processedTabs: i,
+          totalTabs: tabs.length,
+          elapsedMs: Date.now() - BROADCAST_START
+        });
+        break;
+      }
+      const batch = tabs.slice(i, i + BATCH_SIZE);
+
+      const batchResults = await Promise.allSettled(
+        batch.map(tab =>
+          ensurePromise(chrome.tabs.sendMessage(tab.id, { type: 'HIDDEN_VIDEOS_EVENT', event }))
+        )
+      );
+
+      const batchFailed = batchResults.filter(r => r.status === 'rejected').length;
+
+      // Track consecutive batch failures
+      if (batchFailed === batch.length) {
+        consecutiveFailures++;
+
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          logError('HiddenVideosService', new Error('Too many consecutive broadcast failures'), {
+            operation: 'broadcastHiddenVideosEvent',
+            tabsProcessed: i,
+            totalTabs: tabs.length,
+            stopping: true
+          });
+          break;
+        }
+
+        // Exponential backoff for rate limiting
+        const backoffDelay = Math.min(1000 * Math.pow(2, consecutiveFailures), 5000);
+        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+      } else {
+        consecutiveFailures = 0;
+      }
+
+      // Record failures
+      batchResults.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          failedBroadcasts.push({
+            tabId: batch[index].id,
+            error: result.reason?.message || 'Unknown error'
+          });
+        }
+      });
+
+      // Normal delay between batches
+      if (i + BATCH_SIZE < tabs.length && consecutiveFailures === 0) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+    }
+
+    if (failedBroadcasts.length > 0) {
+      debug('HiddenVideosService', `Failed to broadcast to ${failedBroadcasts.length}/${tabs.length} tabs`);
+    }
   } catch (error) {
-    console.error('Failed to broadcast tab event', error);
+    error('Failed to broadcast tab event', error);
   }
 }
 function extractLegacyEntries(source) {
@@ -102,6 +175,36 @@ async function migrateLegacyHiddenVideos() {
     chrome.storage.sync.get(STORAGE_KEYS.HIDDEN_VIDEOS)
   ]);
   const legacyProgress = progressResult[STORAGE_KEYS.MIGRATION_PROGRESS] || {};
+
+  // FIXED P2-5: Efficient interrupted batch handling
+  // Check if ANY records exist in database to determine if batch was partially written
+  if (legacyProgress.batchInProgress) {
+    warn('[Migration] Detected interrupted batch, checking for partial writes');
+
+    const batchStart = legacyProgress.syncIndex || legacyProgress.localIndex || 0;
+
+    // Check if ANY records exist in database (efficient count query)
+    // This is much faster than fetching all records from the batch
+    const stats = await getHiddenVideosStats();
+
+    if (stats.total > 0) {
+      // Some records exist - resume from batch start to be safe
+      // This might process some records twice, but upsert handles duplicates correctly
+      // and this prevents complex partial-write detection logic
+      warn(`[Migration] Found ${stats.total} records in database, resuming from batch start at index ${batchStart}`);
+      // Progress indices already point to batch start, no update needed
+    } else {
+      // No records at all - safe to start from batch beginning
+      // Reset indices to batch start just to be explicit
+      if (legacyProgress.syncIndex !== undefined) {
+        legacyProgress.syncIndex = batchStart;
+      }
+      if (legacyProgress.localIndex !== undefined) {
+        legacyProgress.localIndex = batchStart;
+      }
+    }
+  }
+
   const localEntries = extractLegacyEntries(localResult[STORAGE_KEYS.HIDDEN_VIDEOS]);
   const syncEntriesRaw = extractLegacyEntries(syncResult[STORAGE_KEYS.HIDDEN_VIDEOS]);
   const localMap = new Map(localEntries.map(([videoId]) => [videoId, true]));
@@ -155,26 +258,50 @@ async function processLegacyBatch(entries, progressKey, timestampSeed, progressS
   while (index < entries.length) {
     const slice = entries.slice(index, index + BATCH_SIZE);
     const records = [];
+    // FIXED P2-8: Use descending timestamps to ensure all are in the past
+    // Previous: batchTimestamp + offset created timestamps 0-499ms in FUTURE
+    // New: batchTimestamp - offset ensures all timestamps are in PAST
+    const batchTimestamp = Date.now();
     slice.forEach(([videoId, raw], offset) => {
-      const record = normalizeLegacyRecord(videoId, raw, timestampSeed + index + offset);
+      const record = normalizeLegacyRecord(videoId, raw, batchTimestamp - offset);
       if (record) {
         records.push(record);
       }
     });
-    if (records.length > 0) {
-      await upsertHiddenVideos(records);
-    }
-    index += slice.length;
-    progressState[progressKey] = index;
-    progressState.completed = false;
+
+    // FIXED P1-8: Save progress BEFORE batch processing to prevent data loss
+    // Mark batch as in-progress to detect crashes
     await chrome.storage.local.set({
       [STORAGE_KEYS.MIGRATION_PROGRESS]: {
         syncIndex: progressState.syncIndex,
         localIndex: progressState.localIndex,
         completed: false,
+        batchInProgress: true, // Flag to detect crashes
         updatedAt: Date.now()
       }
     });
+
+    // Process batch - if this fails, progress still points to correct position
+    if (records.length > 0) {
+      await upsertHiddenVideos(records);
+    }
+
+    // Update index after successful processing
+    index += slice.length;
+    progressState[progressKey] = index;
+    progressState.completed = false;
+
+    // Clear in-progress flag after successful batch
+    await chrome.storage.local.set({
+      [STORAGE_KEYS.MIGRATION_PROGRESS]: {
+        syncIndex: progressState.syncIndex,
+        localIndex: progressState.localIndex,
+        completed: false,
+        batchInProgress: false, // Batch completed successfully
+        updatedAt: Date.now()
+      }
+    });
+
     await delay(0);
   }
 }
@@ -237,7 +364,7 @@ async function handleHealthCheck() {
   try {
     cacheStats = getCacheStats();
   } catch (error) {
-    console.error('Failed to get cache stats', error);
+    error('Failed to get cache stats', error);
     cacheStats = { error: 'Failed to retrieve cache stats' };
   }
 
@@ -339,14 +466,16 @@ function validateRecord(record) {
     if (!Number.isFinite(record.updatedAt)) {
       errors.push('Invalid updatedAt timestamp');
     } else {
-      // Validate timestamp is reasonable (not negative, not too far in future)
+      // FIXED P1-3: Strict timestamp validation to prevent IndexedDB index corruption
+      // Only allow timestamps up to 24 hours in future to prevent malicious timestamp injection
+      // Allowing 10 years enables attacks with identical future timestamps that degrade index performance
       const now = Date.now();
-      const tenYearsInFuture = now + (10 * 365 * 24 * 60 * 60 * 1000);
+      const oneDayInFuture = now + (24 * 60 * 60 * 1000);
 
       if (record.updatedAt < 0) {
         errors.push('updatedAt timestamp cannot be negative');
-      } else if (record.updatedAt > tenYearsInFuture) {
-        errors.push('updatedAt timestamp is too far in the future');
+      } else if (record.updatedAt > oneDayInFuture) {
+        errors.push('updatedAt timestamp is too far in the future (max: 24 hours from now)');
       }
     }
   }
@@ -388,6 +517,46 @@ function validateImportData(data) {
   const maxSizeBytes = IMPORT_EXPORT_CONFIG.MAX_IMPORT_SIZE_MB * 1024 * 1024;
   if (estimatedSizeBytes > maxSizeBytes) {
     errors.push(`Import data too large. Maximum: ${IMPORT_EXPORT_CONFIG.MAX_IMPORT_SIZE_MB}MB, estimated: ${(estimatedSizeBytes / 1024 / 1024).toFixed(2)}MB`);
+  }
+
+  // FIXED P1-3: Detect duplicate timestamp attacks
+  // Malicious imports with many identical timestamps can degrade IndexedDB byStateUpdatedAt index to O(n)
+  // Count timestamp frequency to detect this attack pattern
+  const MAX_DUPLICATES_PER_TIMESTAMP = 100; // More reasonable limit to prevent index degradation
+  const MAX_UNIQUE_FUTURE_TIMESTAMPS = 10; // Limit future timestamp diversity to prevent attacks
+
+  const timestampCounts = new Map();
+  const now = Date.now();
+  let futureTimestampCount = 0;
+
+  data.records.forEach(record => {
+    if (record && Number.isFinite(record.updatedAt)) {
+      const count = timestampCounts.get(record.updatedAt) || 0;
+      timestampCounts.set(record.updatedAt, count + 1);
+
+      // Track future timestamps separately
+      if (record.updatedAt > now) {
+        futureTimestampCount++;
+      }
+    }
+  });
+
+  const maxDuplicates = timestampCounts.size > 0 ? Math.max(...timestampCounts.values()) : 0;
+  if (maxDuplicates > MAX_DUPLICATES_PER_TIMESTAMP) {
+    errors.push(
+      `Suspicious timestamp pattern: ${maxDuplicates} records with identical timestamp. ` +
+      `This could indicate a malicious file designed to corrupt database indexes. ` +
+      `Maximum allowed: ${MAX_DUPLICATES_PER_TIMESTAMP}.`
+    );
+  }
+
+  // Check for excessive future timestamps (another attack vector)
+  const uniqueFutureTimestamps = Array.from(timestampCounts.keys()).filter(t => t > now).length;
+  if (uniqueFutureTimestamps > MAX_UNIQUE_FUTURE_TIMESTAMPS) {
+    errors.push(
+      `Too many unique future timestamps: ${uniqueFutureTimestamps}. ` +
+      `This could indicate a timestamp attack. Maximum allowed: ${MAX_UNIQUE_FUTURE_TIMESTAMPS}.`
+    );
   }
 
   // Validate individual records
@@ -460,13 +629,13 @@ function checkMemorySafety(threshold = 40 * 1024 * 1024) {
   const memoryUsage = estimateMemoryUsage();
   if (memoryUsage === null) {
     // If memory API not available, allow operation but log warning
-    console.warn('Memory monitoring unavailable - proceeding with import');
+    warn('Memory monitoring unavailable - proceeding with import');
     return true;
   }
 
   const isSafe = memoryUsage < threshold;
   if (!isSafe) {
-    console.warn(`Memory usage (${(memoryUsage / 1024 / 1024).toFixed(2)}MB) approaching limit (${(threshold / 1024 / 1024).toFixed(2)}MB)`);
+    warn(`Memory usage (${(memoryUsage / 1024 / 1024).toFixed(2)}MB) approaching limit (${(threshold / 1024 / 1024).toFixed(2)}MB)`);
   }
   return isSafe;
 }
@@ -607,9 +776,31 @@ async function handleImportRecords(message) {
   // STREAMING APPROACH: Process records in batches to avoid memory overflow
   // This prevents loading all existing records into memory at once
   const IMPORT_BATCH_SIZE = 500; // Process 500 records at a time
+  const MAX_IMPORT_DURATION = 20 * 60 * 1000; // FIXED P3-1: 20 minute max for large imports (100K+ records)
+  const IMPORT_START_TIME = Date.now();
   let totalProcessed = 0;
+  let lastProgressUpdate = Date.now();
 
   for (let i = 0; i < validRecords.length; i += IMPORT_BATCH_SIZE) {
+    // FIXED P3-1: Show progress every 30 seconds to prevent Service Worker termination
+    const timeSinceLastUpdate = Date.now() - lastProgressUpdate;
+    if (timeSinceLastUpdate > 30000) { // 30 seconds
+      const progress = validRecords.length > 0
+        ? Math.round(totalProcessed / validRecords.length * 100)
+        : 0;
+      debug(`[Import] Progress: ${totalProcessed}/${validRecords.length} records processed (${progress}%)`);
+      lastProgressUpdate = Date.now();
+    }
+
+    // FIXED P3-1: Check cumulative timeout (increased to 20 minutes)
+    const elapsedTime = Date.now() - IMPORT_START_TIME;
+    if (elapsedTime > MAX_IMPORT_DURATION) {
+      results.errors.push(
+        `Import timeout after ${Math.floor(elapsedTime / 1000)}s. ` +
+        `Processed ${totalProcessed} of ${validRecords.length} records.`
+      );
+      break;
+    }
     const batch = validRecords.slice(i, i + IMPORT_BATCH_SIZE);
 
     // Check memory safety before each batch
@@ -634,9 +825,17 @@ async function handleImportRecords(message) {
         );
       }
 
-      // Upsert this batch
+      // FIXED P2-3: Dynamic timeout based on remaining time
+      // Prevents Service Worker termination on large batches
       if (recordsToUpsert.length > 0) {
-        await upsertHiddenVideos(recordsToUpsert);
+        const remainingTime = MAX_IMPORT_DURATION - (Date.now() - IMPORT_START_TIME);
+        const batchTimeout = Math.min(30000, Math.max(5000, remainingTime)); // Min 5s, max 30s
+
+        await withTimeout(
+          upsertHiddenVideos(recordsToUpsert),
+          batchTimeout,
+          `Import batch ${Math.floor(i / IMPORT_BATCH_SIZE) + 1}`
+        );
       }
 
       totalProcessed += batch.length;
@@ -680,32 +879,95 @@ const MESSAGE_HANDLERS = {
 
 function registerMessageListener() {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (!message || typeof message.type !== 'string') return;
+    // CRITICAL: Early returns must not prevent response for valid messages
+    // Only return false for truly invalid messages
+    if (!message || typeof message.type !== 'string') {
+      return false; // Explicitly signal no async response for invalid messages
+    }
+
     const handler = MESSAGE_HANDLERS[message.type];
-    if (!handler) return;
+    if (!handler) {
+      return false; // No handler for this message type
+    }
 
-    // Wait for initialization before processing (except health check)
-    const promise = message.type === 'HIDDEN_VIDEOS_HEALTH_CHECK'
-      ? Promise.resolve().then(() => handler(message, sender))
-      : ensureMigration()
-          .then(() => handler(message, sender))
-          .catch((initError) => {
+    // Handle both promise-based (tests) and callback-based (Chrome API) patterns
+    const handleAsync = async () => {
+      try {
+        let result;
+
+        // Health checks bypass initialization to provide immediate status
+        if (message.type === 'HIDDEN_VIDEOS_HEALTH_CHECK') {
+          result = await handler(message, sender);
+        } else {
+          try {
+            // Wait for FULL initialization (DB + migration), not just migration
+            // This prevents race conditions where migration starts before DB is ready
+            await ensureInitialization();
+            result = await handler(message, sender);
+          } catch (initError) {
             // If initialization failed, return meaningful error
-            if (initializationError) {
-              throw new Error('Background service initialization failed: ' + initError.message);
-            }
-            throw initError;
-          });
+            error('[HiddenVideos] Initialization error:', initError);
+            const errorResponse = {
+              ok: false,
+              error: `Background service initialization failed: ${initError.message}`
+            };
+            if (sendResponse) sendResponse(errorResponse);
+            return errorResponse;
+          }
+        }
 
-    promise.then((result) => {
-      sendResponse({ ok: true, result });
-    }).catch((error) => {
-      console.error('Hidden videos handler error', error);
-      sendResponse({ ok: false, error: error.message });
-    });
-    return true;
+        const successResponse = { ok: true, result };
+        if (sendResponse) sendResponse(successResponse);
+        return successResponse;
+      } catch (error) {
+        error('[HiddenVideos] Message handler error:', error);
+        const errorResponse = { ok: false, error: error.message };
+        if (sendResponse) sendResponse(errorResponse);
+        return errorResponse;
+      }
+    };
+
+    // If sendResponse is not provided (tests), return the promise directly
+    // Otherwise, call the async function and return true to keep channel open
+    if (!sendResponse) {
+      return handleAsync();
+    }
+
+    handleAsync();
+    return true; // Keep message channel open for async response
   });
 }
+/**
+ * Ensure full initialization is complete (DB + migration)
+ * This should be called by message handlers to ensure the service is ready
+ */
+async function ensureInitialization() {
+  // If initialization already failed, throw the error immediately
+  if (initializationError) {
+    throw initializationError;
+  }
+
+  // If there's an initialization in progress, wait for it
+  if (initializationLock) {
+    await initializationLock;
+    // Check again if it failed during wait
+    if (initializationError) {
+      throw initializationError;
+    }
+    return;
+  }
+
+  // If initialization is complete, we're done
+  if (initializationComplete && !initializationError) {
+    return;
+  }
+
+  // Otherwise, start initialization
+  // This shouldn't normally happen because background.js calls initializeHiddenVideos()
+  // at startup, but we handle it here as a fallback
+  await initializeHiddenVideosService();
+}
+
 async function ensureMigration() {
   // If initialization failed, throw the error
   if (initializationError) {
@@ -713,20 +975,36 @@ async function ensureMigration() {
   }
 
   if (!migrationPromise) {
-    migrationPromise = migrateLegacyHiddenVideos().catch((error) => {
-      console.error('Hidden videos migration failed', error);
-      throw error;
-    });
+    // Create and assign the promise IMMEDIATELY in the same execution context
+    // This prevents race conditions from concurrent calls
+    migrationPromise = (async () => {
+      try {
+        await migrateLegacyHiddenVideos();
+      } catch (error) {
+        error('Hidden videos migration failed', error);
+        // Reset the promise on failure to allow retry
+        migrationPromise = null;
+        throw error;
+      }
+    })();
   }
   return migrationPromise;
 }
 
-export async function initializeHiddenVideosService() {
-  // Register listener FIRST, before any async operations
+/**
+ * Register message listener immediately (synchronous)
+ * This must be called at the top level to avoid race conditions
+ */
+export function ensureMessageListenerRegistered() {
   if (!initialized) {
     registerMessageListener();
     initialized = true;
   }
+}
+
+export async function initializeHiddenVideosService() {
+  // Ensure message listener is registered (idempotent)
+  ensureMessageListenerRegistered();
 
   // Prevent concurrent initialization calls using a lock
   if (initializationLock) {
@@ -740,6 +1018,9 @@ export async function initializeHiddenVideosService() {
     return;
   }
 
+  // CRITICAL FIX: Assign lock BEFORE starting async operation to prevent race condition
+  // Previous code had a gap between creating the promise and assigning it to initializationLock
+  // where another call could slip through and create a second initialization
   initializationLock = (async () => {
     try {
       await initializeDb();

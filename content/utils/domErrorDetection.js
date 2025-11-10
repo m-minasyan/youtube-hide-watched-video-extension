@@ -1,18 +1,37 @@
 import { checkCriticalSelectorsHealth, getSelectorHealth } from './domSelectorHealth.js';
-import { showNotification, NotificationType } from '../../shared/notifications.js';
 import { SELECTOR_HEALTH_CONFIG } from '../../shared/constants.js';
+import { error, warn } from '../../shared/logger.js';
 
 // Track notification timestamps to prevent spam
 const lastNotifications = new Map();
+
+// FIXED P1-7: Track interval ID for cleanup
+let healthCheckInterval = null;
 
 /**
  * Setup periodic DOM health monitoring
  */
 export function setupDOMHealthMonitoring() {
+  // FIXED P1-7: Only start if not already running
+  if (healthCheckInterval) {
+    return;
+  }
+
   // Check selector health periodically
-  setInterval(() => {
+  healthCheckInterval = setInterval(() => {
     performHealthCheck();
   }, SELECTOR_HEALTH_CONFIG.HEALTH_CHECK_INTERVAL);
+}
+
+/**
+ * FIXED P1-7: Stop DOM health monitoring to prevent memory leaks
+ * Should be called on navigation/cleanup
+ */
+export function stopDOMHealthMonitoring() {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+    healthCheckInterval = null;
+  }
 }
 
 /**
@@ -74,15 +93,12 @@ function getSeverity(successRate) {
  * @param {Object} health - Health statistics
  */
 function showCriticalSelectorFailure(selectorKey, health) {
-  const message = 'YouTube structure changed. Some videos may not be detected. Please report this issue.';
-
-  console.error('[YT-HWV] Critical selector failure:', {
-    selector: selectorKey,
-    successRate: health.successRate,
-    queries: health.queries
-  });
-
-  showNotification(message, NotificationType.ERROR, 8000);
+  // Log error to console only, no user-facing notification
+  error('[YT-HWV] Critical selector failure:',
+    'selector:', selectorKey,
+    'successRate:', health.successRate,
+    'queries:', health.queries
+  );
 }
 
 /**
@@ -92,14 +108,11 @@ function showCriticalSelectorFailure(selectorKey, health) {
  * @param {Object} health - Health statistics
  */
 function showSelectorWarning(selectorKey, health) {
-  const message = 'Extension may not detect all videos. YouTube might have changed their layout.';
-
-  console.warn('[YT-HWV] Selector degradation:', {
-    selector: selectorKey,
-    successRate: health.successRate
-  });
-
-  showNotification(message, NotificationType.WARNING, 5000);
+  // Log warning to console only, no user-facing notification
+  warn('[YT-HWV] Selector degradation:',
+    'selector:', selectorKey,
+    'successRate:', health.successRate
+  );
 }
 
 /**
@@ -110,7 +123,8 @@ export function testDOMHealth() {
   const unhealthySelectors = checkCriticalSelectorsHealth();
 
   if (unhealthySelectors.length === 0) {
-    showNotification('All DOM selectors are healthy', NotificationType.SUCCESS, 3000);
+    // All selectors are healthy, log to console only
+    console.log('[YT-HWV] All DOM selectors are healthy');
     return true;
   }
 

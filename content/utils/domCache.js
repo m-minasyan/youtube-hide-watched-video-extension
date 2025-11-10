@@ -1,5 +1,6 @@
 import { trackSelectorQuery } from './domSelectorHealth.js';
 import { DEBUG } from '../utils/constants.js';
+import { debug, warn } from '../../shared/logger.js';
 
 // WeakMap caches for different query types
 const elementParentCache = new WeakMap();
@@ -47,7 +48,7 @@ export function cachedClosest(element, selector) {
     return result;
   } catch (error) {
     // Invalid selector or element - fall back to uncached query
-    console.warn('[YT-HWV Cache] Error in cachedClosest:', error);
+    warn('[YT-HWV Cache] Error in cachedClosest:', error);
     try {
       return element.closest(selector);
     } catch (fallbackError) {
@@ -84,7 +85,7 @@ export function cachedQuerySelector(element, selector) {
     return result;
   } catch (error) {
     // Invalid selector or element - fall back to uncached query
-    console.warn('[YT-HWV Cache] Error in cachedQuerySelector:', error);
+    warn('[YT-HWV Cache] Error in cachedQuerySelector:', error);
     try {
       return element.querySelector(selector);
     } catch (fallbackError) {
@@ -122,7 +123,7 @@ export function cachedQuerySelectorAll(element, selector) {
     return result;
   } catch (error) {
     // Invalid selector or element - fall back to uncached query
-    console.warn('[YT-HWV Cache] Error in cachedQuerySelectorAll:', error);
+    warn('[YT-HWV Cache] Error in cachedQuerySelectorAll:', error);
     try {
       return Array.from(element.querySelectorAll(selector));
     } catch (fallbackError) {
@@ -166,7 +167,7 @@ export function cachedDocumentQuery(selector, ttl = 1000) {
     return results;
   } catch (error) {
     // Invalid selector - fall back to uncached query
-    console.warn('[YT-HWV Cache] Error in cachedDocumentQuery:', error);
+    warn('[YT-HWV Cache] Error in cachedDocumentQuery:', error);
     try {
       return Array.from(document.querySelectorAll(selector));
     } catch (fallbackError) {
@@ -314,7 +315,7 @@ export function resetCacheStats() {
  */
 export function logCacheStats() {
   const stats = getCacheStats();
-  console.log('[YT-HWV DOM Cache]', {
+  debug('[YT-HWV DOM Cache]', {
     'Hit Rate': `${stats.hitRate}%`,
     'Hits': stats.hits,
     'Misses': stats.misses,
@@ -348,13 +349,13 @@ export function cachedDocumentQueryWithFallback(selectorKey, selectors, ttl = 10
 
         // Log if using fallback selector (not the first one)
         if (i > 0 && DEBUG) {
-          console.log(`[YT-HWV] Using fallback selector #${i} for ${selectorKey}:`, selector);
+          debug(`[YT-HWV] Using fallback selector #${i} for ${selectorKey}:`, selector);
         }
 
         return results;
       }
     } catch (error) {
-      console.warn(`[YT-HWV] Selector failed: ${selector}`, error);
+      warn(`[YT-HWV] Selector failed: ${selector}`, error);
     }
   }
 
@@ -381,12 +382,12 @@ export function cachedQuerySelectorWithFallback(element, selectorKey, selectors)
       const result = cachedQuerySelector(element, selector);
       if (result) {
         if (i > 0 && DEBUG) {
-          console.log(`[YT-HWV] Using fallback selector #${i} for ${selectorKey}:`, selector);
+          debug(`[YT-HWV] Using fallback selector #${i} for ${selectorKey}:`, selector);
         }
         return result;
       }
     } catch (error) {
-      console.warn(`[YT-HWV] Selector failed: ${selector}`, error);
+      warn(`[YT-HWV] Selector failed: ${selector}`, error);
     }
   }
 
