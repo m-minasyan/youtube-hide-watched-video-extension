@@ -430,32 +430,44 @@ export const SELECTOR_CHAINS = {
   ],
 
   PROGRESS_BAR: [
-    // Modern selectors (2025+)
-    '.ytd-thumbnail-overlay-resume-playback-renderer',
+    // PRIORITY 1: Actual progress bar elements with width (2025+)
+    // These are the child elements that contain the actual progress width
+    'div[id="progress"][style*="width"]',
+    '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar[style*="width"]',
+    '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment[style*="width"]',
+    '[class*="progress"][class*="bar"][style*="width"]',
+
+    // PRIORITY 2: Progress bar elements without inline style (may use CSS)
+    'div[id="progress"]',
     '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
     '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
-    // Variations with "progress" in class name
+
+    // PRIORITY 3: Overlay CONTAINERS (need to search for child progress bar)
+    // These selectors find containers that wrap the actual progress bar
+    'ytd-thumbnail-overlay-resume-playback-renderer',
+    'yt-thumbnail-overlay-resume-playback-renderer',
+    '.ytd-thumbnail-overlay-resume-playback-renderer',
+    '.yt-thumbnail-overlay-resume-playback-renderer',
+
+    // PRIORITY 4: Variations and legacy selectors
     '.ytd-thumbnail-overlay-resume-playback-progress-renderer',
     '.yt-thumbnail-overlay-resume-playback-progress-renderer',
-    // Element tag selectors
-    'yt-thumbnail-overlay-resume-playback-renderer',
-    'ytd-thumbnail-overlay-resume-playback-renderer',
-    // Legacy selectors
     '.ytp-progress-bar-played',
     '.ytm-thumbnail-overlay-resume-playback-renderer',
     'ytm-thumbnail-overlay-resume-playback-renderer',
-    // Container-based selectors
+
+    // PRIORITY 5: Container-based selectors
     '[class*="thumbnail-overlay"][class*="resume"]',
     '[class*="thumbnail-overlay"][class*="playback"]',
-    // ID-based selectors (YouTube sometimes uses these)
+
+    // PRIORITY 6: ID-based selectors
     '#progress-bar',
     '#resume-playback-progress',
-    // Generic fallbacks (most permissive)
-    '[class*="progress"][class*="bar"]',
+
+    // PRIORITY 7: Generic fallbacks (most permissive)
     '[class*="resume"][class*="playback"]',
     '[class*="watched"][class*="progress"]',
-    '[aria-label*="progress"]',
-    '[style*="width"][class*="overlay"]'
+    '[aria-label*="progress"]'
   ],
 
   VIDEO_THUMBNAIL: [
