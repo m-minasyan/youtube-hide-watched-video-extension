@@ -203,8 +203,8 @@ describe('clearHiddenVideosStore Function Behavior', () => {
   test('should clear database and cache without dynamic import', async () => {
     // Add some records
     await dbModule.upsertHiddenVideos([
-      { videoId: 'test1', state: 'hidden', title: 'Test 1', updatedAt: Date.now() },
-      { videoId: 'test2', state: 'dimmed', title: 'Test 2', updatedAt: Date.now() }
+      { videoId: 'test-video-1', state: 'hidden', title: 'Test 1', updatedAt: Date.now() },
+      { videoId: 'test-video-2', state: 'dimmed', title: 'Test 2', updatedAt: Date.now() }
     ]);
 
     // Verify records exist
