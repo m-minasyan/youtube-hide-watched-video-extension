@@ -65,9 +65,10 @@ export const CSS_CLASSES = {
 // Selectors (content script specific)
 export const SELECTORS = {
   PROGRESS_BAR: [
+    // Modern wiz-style selectors (most specific, highest priority)
     '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
     '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
-    'ytd-thumbnail-overlay-resume-playback-renderer [style*="width"]',
+    // Standard selectors (legacy and current)
     '.ytd-thumbnail-overlay-resume-playback-renderer',
     '.ytd-thumbnail-overlay-resume-playback-progress-renderer',
     '.ytp-progress-bar-played'
@@ -432,19 +433,14 @@ export const SELECTOR_CHAINS = {
   ],
 
   PROGRESS_BAR: [
-    // Modern wiz-style selectors (2025+) - Most specific first
+    // Modern wiz-style selectors (2025+) - Most specific and current
     '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
     '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
-    // Nested progress bars within containers (modern structure)
-    'ytd-thumbnail-overlay-resume-playback-renderer [style*="width"]',
-    'yt-thumbnail-overlay-resume-playback-renderer [style*="width"]',
-    '.ytd-thumbnail-overlay-resume-playback-renderer [style*="width"]',
-    // Direct container selectors (fallback if nested elements not found)
+    // Standard class selectors (legacy and current compatibility)
     '.ytd-thumbnail-overlay-resume-playback-renderer',
-    // Variations with "progress" in class name
     '.ytd-thumbnail-overlay-resume-playback-progress-renderer',
     '.yt-thumbnail-overlay-resume-playback-progress-renderer',
-    // Element tag selectors
+    // Element tag selectors (no class prefix)
     'yt-thumbnail-overlay-resume-playback-renderer',
     'ytd-thumbnail-overlay-resume-playback-renderer',
     // Mobile/responsive selectors
@@ -452,22 +448,18 @@ export const SELECTOR_CHAINS = {
     'ytm-thumbnail-overlay-resume-playback-renderer',
     // Legacy player selectors
     '.ytp-progress-bar-played',
-    // Container-based selectors with attribute filters
-    '[class*="thumbnail-overlay"][class*="resume"][style*="width"]',
-    '[class*="thumbnail-overlay"][class*="playback"][style*="width"]',
+    // Attribute-based selectors (more specific first - class + attribute combination)
+    '.ytd-thumbnail-overlay-resume-playback-renderer[style*="width"]',
     '[class*="thumbnail-overlay"][class*="resume"]',
     '[class*="thumbnail-overlay"][class*="playback"]',
     // ID-based selectors (YouTube sometimes uses these)
     '#progress-bar',
     '#resume-playback-progress',
-    // Generic fallbacks (most permissive)
-    '[class*="progress"][class*="bar"][style*="width"]',
-    '[class*="resume"][class*="playback"][style*="width"]',
-    '[class*="watched"][class*="progress"]',
+    // Generic fallbacks (most permissive - use class containment only)
     '[class*="progress"][class*="bar"]',
     '[class*="resume"][class*="playback"]',
-    '[aria-label*="progress"]',
-    '[style*="width"][class*="overlay"]'
+    '[class*="watched"][class*="progress"]',
+    '[aria-label*="progress"]'
   ],
 
   VIDEO_THUMBNAIL: [
