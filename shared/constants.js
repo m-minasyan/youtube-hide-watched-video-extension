@@ -442,17 +442,18 @@ export const SELECTOR_CHAINS = {
   ],
 
   PROGRESS_BAR: [
-    // PRIORITY 1: Attribute-based selectors that GUARANTEE style.width exists
-    // These should be tried first to ensure threshold detection works correctly
-    // Most specific first - target "Watched" progress bars (YouTube 2025 structure)
+    // PRIORITY 1: Most specific and fastest - exact class names with style.width guarantee
+    '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment[style*="width"]',
+    '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
+
+    // PRIORITY 2: Attribute-based selectors (slower but more flexible)
     '[class*="Watched"][class*="Progress"][style*="width"]',
-    '[class*="watched"][class*="progress"][style*="width"]',
     '[id="progress"][style*="width"]',
     '.ytd-thumbnail-overlay-resume-playback-renderer[style*="width"]',
     '[class*="thumbnail-overlay"][class*="resume"][style*="width"]',
     '[class*="progress"][style*="width"]',
 
-    // PRIORITY 2: Most common modern selectors (2025+)
+    // PRIORITY 3: Most common modern selectors (2025+)
     // These are likely to have style.width in most cases
     '#progress',
     '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
