@@ -442,63 +442,64 @@ export const SELECTOR_CHAINS = {
   ],
 
   PROGRESS_BAR: [
-    // Modern wiz-style selectors (2025+) - Most specific and current
-    // These are the most common patterns in YouTube's current implementation
-    '#progress',
-    '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
-    '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
-
-    // Progress bar within thumbnail containers (context-specific)
-    'yt-thumbnail-view-model #progress',
-    'yt-thumbnail-view-model .ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
-    'ytd-thumbnail #progress',
-    'ytd-thumbnail .progress-bar',
-
-    // Standard overlay renderers with various prefixes
-    'ytd-thumbnail-overlay-resume-playback-renderer',
-    '.ytd-thumbnail-overlay-resume-playback-renderer',
-    'yt-thumbnail-overlay-resume-playback-renderer',
-    '.yt-thumbnail-overlay-resume-playback-renderer',
-
-    // Progress elements within overlay containers
-    'ytd-thumbnail-overlay-resume-playback-renderer #progress',
-    'yt-thumbnail-overlay-resume-playback-renderer #progress',
-    'ytd-thumbnail-overlay-resume-playback-renderer .progress-bar',
-    'yt-thumbnail-overlay-resume-playback-renderer .progress-bar',
-
-    // Alternative progress renderer names
-    '.ytd-thumbnail-overlay-resume-playback-progress-renderer',
-    '.yt-thumbnail-overlay-resume-playback-progress-renderer',
-    'ytd-thumbnail-overlay-resume-playback-progress-renderer',
-    'yt-thumbnail-overlay-resume-playback-progress-renderer',
-
-    // Mobile/responsive selectors
-    '.ytm-thumbnail-overlay-resume-playback-renderer',
-    'ytm-thumbnail-overlay-resume-playback-renderer',
-    'ytm-thumbnail #progress',
-
-    // Attribute-based selectors (progress indicators with width style)
+    // PRIORITY 1: Attribute-based selectors that GUARANTEE style.width exists
+    // These should be tried first to ensure threshold detection works correctly
     '[id="progress"][style*="width"]',
     '.ytd-thumbnail-overlay-resume-playback-renderer[style*="width"]',
     '[class*="thumbnail-overlay"][class*="resume"][style*="width"]',
     '[class*="progress"][style*="width"]',
 
-    // Generic class-based selectors
+    // PRIORITY 2: Most common modern selectors (2025+)
+    // These are likely to have style.width in most cases
+    '#progress',
+    '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
+    '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
+
+    // PRIORITY 3: Context-specific selectors (within thumbnail containers)
+    'yt-thumbnail-view-model #progress',
+    'yt-thumbnail-view-model .ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
+    'ytd-thumbnail #progress',
+    'ytd-thumbnail .progress-bar',
+
+    // PRIORITY 4: Progress elements within overlay containers
+    'ytd-thumbnail-overlay-resume-playback-renderer #progress',
+    'yt-thumbnail-overlay-resume-playback-renderer #progress',
+    'ytd-thumbnail-overlay-resume-playback-renderer .progress-bar',
+    'yt-thumbnail-overlay-resume-playback-renderer .progress-bar',
+
+    // PRIORITY 5: Container elements (may require child element check)
+    'ytd-thumbnail-overlay-resume-playback-renderer',
+    '.ytd-thumbnail-overlay-resume-playback-renderer',
+    'yt-thumbnail-overlay-resume-playback-renderer',
+    '.yt-thumbnail-overlay-resume-playback-renderer',
+
+    // PRIORITY 6: Alternative progress renderer names
+    '.ytd-thumbnail-overlay-resume-playback-progress-renderer',
+    '.yt-thumbnail-overlay-resume-playback-progress-renderer',
+    'ytd-thumbnail-overlay-resume-playback-progress-renderer',
+    'yt-thumbnail-overlay-resume-playback-progress-renderer',
+
+    // PRIORITY 7: Mobile/responsive selectors
+    '.ytm-thumbnail-overlay-resume-playback-renderer',
+    'ytm-thumbnail-overlay-resume-playback-renderer',
+    'ytm-thumbnail #progress',
+
+    // PRIORITY 8: Generic class-based selectors
     '[class*="thumbnail-overlay"][class*="resume"]',
     '[class*="thumbnail-overlay"][class*="playback"]',
     '[class*="overlay"][class*="progress"]',
 
-    // ID-based selectors (YouTube sometimes uses these)
+    // PRIORITY 9: ID-based selectors
     '#resume-playback-progress',
     '#playback-progress',
 
-    // Generic fallbacks (most permissive)
+    // PRIORITY 10: Generic fallbacks (most permissive)
     '[class*="progress"][class*="bar"]',
     '[class*="resume"][class*="playback"]',
     '[class*="watched"][class*="progress"]',
     '.progress-bar',
 
-    // Aria-label fallback (last resort)
+    // PRIORITY 11: Aria-label fallback (last resort)
     '[aria-label*="progress"]',
     '[aria-label*="watched"]'
   ],
