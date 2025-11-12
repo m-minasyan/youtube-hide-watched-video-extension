@@ -444,6 +444,9 @@ export const SELECTOR_CHAINS = {
   PROGRESS_BAR: [
     // PRIORITY 1: Attribute-based selectors that GUARANTEE style.width exists
     // These should be tried first to ensure threshold detection works correctly
+    // Most specific first - target "Watched" progress bars (YouTube 2025 structure)
+    '[class*="Watched"][class*="Progress"][style*="width"]',
+    '[class*="watched"][class*="progress"][style*="width"]',
     '[id="progress"][style*="width"]',
     '.ytd-thumbnail-overlay-resume-playback-renderer[style*="width"]',
     '[class*="thumbnail-overlay"][class*="resume"][style*="width"]',

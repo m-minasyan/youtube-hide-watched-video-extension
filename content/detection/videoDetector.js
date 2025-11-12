@@ -68,20 +68,8 @@ export function findWatchedElements() {
       progressChild = bar.shadowRoot.querySelector(progressSelectors);
     }
 
-    if (progressChild) {
-      // Check if progress child has style.width
-      if (progressChild.style.width) {
-        return parseInt(progressChild.style.width, 10) >= threshold;
-      }
-
-      // Debug logging when progress element found but no style.width
-      logDebug(`[YT-HWV] Progress element found without style.width:`, {
-        tagName: progressChild.tagName,
-        className: progressChild.className,
-        id: progressChild.id,
-        style: progressChild.getAttribute('style'),
-        parentTagName: bar.tagName
-      });
+    if (progressChild && progressChild.style.width) {
+      return parseInt(progressChild.style.width, 10) >= threshold;
     }
 
     // No width found
