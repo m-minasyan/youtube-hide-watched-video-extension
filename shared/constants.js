@@ -65,13 +65,22 @@ export const CSS_CLASSES = {
 // Selectors (content script specific)
 export const SELECTORS = {
   PROGRESS_BAR: [
-    // Modern wiz-style selectors (most specific, highest priority)
+    // Modern selectors (2025+) - Most common and specific
+    '#progress',
     '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
     '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
-    // Standard selectors (legacy and current)
+    // Context-specific selectors
+    'yt-thumbnail-view-model #progress',
+    'ytd-thumbnail #progress',
+    // Standard overlay renderers
+    'ytd-thumbnail-overlay-resume-playback-renderer',
     '.ytd-thumbnail-overlay-resume-playback-renderer',
-    '.ytd-thumbnail-overlay-resume-playback-progress-renderer',
-    '.ytp-progress-bar-played'
+    'yt-thumbnail-overlay-resume-playback-renderer',
+    // Mobile selectors
+    '.ytm-thumbnail-overlay-resume-playback-renderer',
+    // Attribute-based fallbacks
+    '[id="progress"][style*="width"]',
+    '[class*="progress"][style*="width"]'
   ],
   SHORTS_CONTAINERS: [
     'ytd-reel-shelf-renderer',
@@ -434,32 +443,64 @@ export const SELECTOR_CHAINS = {
 
   PROGRESS_BAR: [
     // Modern wiz-style selectors (2025+) - Most specific and current
+    // These are the most common patterns in YouTube's current implementation
+    '#progress',
     '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
     '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar',
-    // Standard class selectors (legacy and current compatibility)
+
+    // Progress bar within thumbnail containers (context-specific)
+    'yt-thumbnail-view-model #progress',
+    'yt-thumbnail-view-model .ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment',
+    'ytd-thumbnail #progress',
+    'ytd-thumbnail .progress-bar',
+
+    // Standard overlay renderers with various prefixes
+    'ytd-thumbnail-overlay-resume-playback-renderer',
     '.ytd-thumbnail-overlay-resume-playback-renderer',
+    'yt-thumbnail-overlay-resume-playback-renderer',
+    '.yt-thumbnail-overlay-resume-playback-renderer',
+
+    // Progress elements within overlay containers
+    'ytd-thumbnail-overlay-resume-playback-renderer #progress',
+    'yt-thumbnail-overlay-resume-playback-renderer #progress',
+    'ytd-thumbnail-overlay-resume-playback-renderer .progress-bar',
+    'yt-thumbnail-overlay-resume-playback-renderer .progress-bar',
+
+    // Alternative progress renderer names
     '.ytd-thumbnail-overlay-resume-playback-progress-renderer',
     '.yt-thumbnail-overlay-resume-playback-progress-renderer',
-    // Element tag selectors (no class prefix)
-    'yt-thumbnail-overlay-resume-playback-renderer',
-    'ytd-thumbnail-overlay-resume-playback-renderer',
+    'ytd-thumbnail-overlay-resume-playback-progress-renderer',
+    'yt-thumbnail-overlay-resume-playback-progress-renderer',
+
     // Mobile/responsive selectors
     '.ytm-thumbnail-overlay-resume-playback-renderer',
     'ytm-thumbnail-overlay-resume-playback-renderer',
-    // Legacy player selectors
-    '.ytp-progress-bar-played',
-    // Attribute-based selectors (more specific first - class + attribute combination)
+    'ytm-thumbnail #progress',
+
+    // Attribute-based selectors (progress indicators with width style)
+    '[id="progress"][style*="width"]',
     '.ytd-thumbnail-overlay-resume-playback-renderer[style*="width"]',
+    '[class*="thumbnail-overlay"][class*="resume"][style*="width"]',
+    '[class*="progress"][style*="width"]',
+
+    // Generic class-based selectors
     '[class*="thumbnail-overlay"][class*="resume"]',
     '[class*="thumbnail-overlay"][class*="playback"]',
+    '[class*="overlay"][class*="progress"]',
+
     // ID-based selectors (YouTube sometimes uses these)
-    '#progress-bar',
     '#resume-playback-progress',
-    // Generic fallbacks (most permissive - use class containment only)
+    '#playback-progress',
+
+    // Generic fallbacks (most permissive)
     '[class*="progress"][class*="bar"]',
     '[class*="resume"][class*="playback"]',
     '[class*="watched"][class*="progress"]',
-    '[aria-label*="progress"]'
+    '.progress-bar',
+
+    // Aria-label fallback (last resort)
+    '[aria-label*="progress"]',
+    '[aria-label*="watched"]'
   ],
 
   VIDEO_THUMBNAIL: [
