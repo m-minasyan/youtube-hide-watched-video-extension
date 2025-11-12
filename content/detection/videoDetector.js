@@ -42,33 +42,7 @@ export function findWatchedElements() {
     CACHE_CONFIG.PROGRESS_BAR_TTL
   );
 
-  // Debug: Log what we found
-  logDebug(`[YT-HWV] findWatchedElements: Found ${progressBars.length} progress bar elements`);
-
-  // Log first 10 elements to understand what we're finding
-  if (progressBars.length > 0) {
-    const samplesToLog = Math.min(progressBars.length, 10);
-    logDebug(`[YT-HWV] Logging first ${samplesToLog} progress bar elements:`);
-
-    for (let i = 0; i < samplesToLog; i++) {
-      const bar = progressBars[i];
-      logDebug(`[YT-HWV] Progress bar ${i}:`, {
-        tagName: bar.tagName,
-        className: bar.className,
-        id: bar.id,
-        hasStyleWidth: !!bar.style.width,
-        styleWidth: bar.style.width,
-        styleWidthParsed: parseInt(bar.style.width, 10),
-        hasChildren: bar.children.length,
-        hasShadowRoot: !!bar.shadowRoot,
-        outerHTML: bar.outerHTML.substring(0, 200)
-      });
-    }
-  }
-
   const threshold = getThreshold();
-  logDebug(`[YT-HWV] Threshold: ${threshold}%`);
-
   const withThreshold = progressBars.filter((bar) => {
     // First, check if the element itself has style.width
     if (bar.style.width) {
@@ -94,20 +68,8 @@ export function findWatchedElements() {
       progressChild = bar.shadowRoot.querySelector(progressSelectors);
     }
 
-    if (progressChild) {
-      // Check if progress child has style.width
-      if (progressChild.style.width) {
-        return parseInt(progressChild.style.width, 10) >= threshold;
-      }
-
-      // Debug logging when progress element found but no style.width
-      logDebug(`[YT-HWV] Progress element found without style.width:`, {
-        tagName: progressChild.tagName,
-        className: progressChild.className,
-        id: progressChild.id,
-        style: progressChild.getAttribute('style'),
-        parentTagName: bar.tagName
-      });
+    if (progressChild && progressChild.style.width) {
+      return parseInt(progressChild.style.width, 10) >= threshold;
     }
 
     // No width found
