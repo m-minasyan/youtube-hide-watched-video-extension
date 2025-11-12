@@ -74,8 +74,8 @@ describe('DOM Diagnostics', () => {
 
     it('should count elements for each fallback', () => {
       document.body.innerHTML = `
-        <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment">Test 1</div>
-        <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment">Test 2</div>
+        <div id="progress" style="width: 50%">Test 1</div>
+        <div id="progress" style="width: 75%">Test 2</div>
       `;
 
       const report = generateDOMDiagnosticReport();
@@ -305,9 +305,8 @@ describe('DOM Diagnostics', () => {
         <ytd-rich-item-renderer>
           <yt-thumbnail-view-model>
             <a href="/watch?v=test123">Video</a>
+            <div id="progress" style="width: 50%"></div>
           </yt-thumbnail-view-model>
-          <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment"
-               style="width: 50%"></div>
         </ytd-rich-item-renderer>
       `;
 
@@ -319,7 +318,7 @@ describe('DOM Diagnostics', () => {
       // Should find thumbnails
       expect(report.elementCounts.VIDEO_THUMBNAIL.fallback_0).toBeGreaterThan(0);
 
-      // Should find progress bars (now using modern selector as fallback_0)
+      // Should find progress bars (now using #progress as fallback_0)
       expect(report.elementCounts.PROGRESS_BAR.fallback_0).toBeGreaterThan(0);
 
       // Should have sample data
