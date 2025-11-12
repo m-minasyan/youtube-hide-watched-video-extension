@@ -53,15 +53,35 @@ export function findWatchedElements() {
     // This handles cases where the selector returns a container element
     // but the actual progress bar with width is nested inside
     // Use specific known YouTube progress bar selectors in order of reliability
-    const progressChild = bar.querySelector(
+    const progressSelectors =
       '#progress, ' +
       '.ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment, ' +
       '.yt-thumbnail-overlay-resume-playback-renderer-wiz__progress-bar, ' +
-      '.progress-bar'
-    );
+      '.progress-bar';
 
-    if (progressChild && progressChild.style.width) {
-      return parseInt(progressChild.style.width, 10) >= threshold;
+    // Try regular DOM first
+    let progressChild = bar.querySelector(progressSelectors);
+
+    // If not found in regular DOM, try Shadow DOM
+    // YouTube uses Shadow DOM for some custom elements
+    if (!progressChild && bar.shadowRoot) {
+      progressChild = bar.shadowRoot.querySelector(progressSelectors);
+    }
+
+    if (progressChild) {
+      // Check if progress child has style.width
+      if (progressChild.style.width) {
+        return parseInt(progressChild.style.width, 10) >= threshold;
+      }
+
+      // Debug logging when progress element found but no style.width
+      logDebug(`[YT-HWV] Progress element found without style.width:`, {
+        tagName: progressChild.tagName,
+        className: progressChild.className,
+        id: progressChild.id,
+        style: progressChild.getAttribute('style'),
+        parentTagName: bar.tagName
+      });
     }
 
     // No width found
