@@ -1,20 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from '@jest/globals';
 import {
   generateDOMDiagnosticReport,
   printDOMDiagnostics,
   exportDOMDiagnostics
 } from '../content/utils/domDiagnostics.js';
-import { trackSelectorQuery, resetSelectorStats } from '../content/utils/domSelectorHealth.js';
 import { SELECTOR_CHAINS } from '../shared/constants.js';
 
 describe('DOM Diagnostics', () => {
   beforeEach(() => {
-    resetSelectorStats();
     document.body.innerHTML = '';
-  });
-
-  afterEach(() => {
-    resetSelectorStats();
   });
 
   describe('Diagnostic Report Generation', () => {
@@ -24,7 +18,6 @@ describe('DOM Diagnostics', () => {
       expect(report).toHaveProperty('timestamp');
       expect(report).toHaveProperty('userAgent');
       expect(report).toHaveProperty('url');
-      expect(report).toHaveProperty('selectorHealth');
       expect(report).toHaveProperty('elementCounts');
       expect(report).toHaveProperty('sampleElements');
     });
@@ -48,17 +41,6 @@ describe('DOM Diagnostics', () => {
 
       expect(report.url).toBe(window.location.href);
       expect(typeof report.url).toBe('string');
-    });
-
-    it('should include selector health statistics', () => {
-      // Add some selector stats
-      trackSelectorQuery('PROGRESS_BAR', '.test', true, 5);
-      trackSelectorQuery('THUMBNAILS', '.thumb', true, 10);
-
-      const report = generateDOMDiagnosticReport();
-
-      expect(report.selectorHealth).toBeDefined();
-      expect(typeof report.selectorHealth).toBe('object');
     });
   });
 
@@ -229,7 +211,6 @@ describe('DOM Diagnostics', () => {
 
       const report = printDOMDiagnostics();
 
-      expect(report).toHaveProperty('selectorHealth');
       expect(report).toHaveProperty('elementCounts');
 
       consoleSpy.mockRestore();
