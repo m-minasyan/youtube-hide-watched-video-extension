@@ -12,7 +12,6 @@ async function loadBackgroundModule() {
 describe('Background Script - Settings Initialization', () => {
   let storageData;
   let onInstalledCallback;
-  let onStartupCallback;
   let backgroundModule;
 
   beforeEach(async () => {
@@ -23,8 +22,8 @@ describe('Background Script - Settings Initialization', () => {
     chrome.runtime.onInstalled.addListener.mockImplementation((callback) => {
       onInstalledCallback = callback;
     });
-    chrome.runtime.onStartup.addListener.mockImplementation((callback) => {
-      onStartupCallback = callback;
+    chrome.runtime.onStartup.addListener.mockImplementation(() => {
+      // No-op: onStartup is not used in current implementation
     });
     backgroundModule = await loadBackgroundModule();
   });
@@ -92,14 +91,23 @@ describe('Background Script - Settings Initialization', () => {
     expect(chrome.runtime.onMessage.addListener.mock.calls.length).toBeGreaterThan(0);
   });
 
-  test('reuses hidden videos initialization on runtime startup event', async () => {
+  test('reuses hidden videos initialization when called multiple times', async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     const initialListenerCount = chrome.runtime.onMessage.addListener.mock.calls.length;
-    await onStartupCallback();
+
+    // Call initialization multiple times - should reuse the same promise
     if (backgroundModule && typeof backgroundModule.__getHiddenVideosInitializationPromiseForTests === 'function') {
-      await backgroundModule.__getHiddenVideosInitializationPromiseForTests();
+      const promise1 = backgroundModule.__getHiddenVideosInitializationPromiseForTests();
+      const promise2 = backgroundModule.__getHiddenVideosInitializationPromiseForTests();
+
+      // Should return the same promise instance (reused)
+      expect(promise1).toBe(promise2);
+
+      await Promise.all([promise1, promise2]);
     }
+
     await new Promise((resolve) => setTimeout(resolve, 0));
+    // Should not register additional listeners
     expect(chrome.runtime.onMessage.addListener.mock.calls.length).toBe(initialListenerCount);
   });
 });

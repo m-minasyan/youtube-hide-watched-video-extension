@@ -156,7 +156,7 @@ describe('Service Worker Import Compatibility', () => {
   describe('No Circular Dependencies', () => {
     test('should not have circular dependencies between indexedDb and indexedDbCache', async () => {
       // This test ensures modules can be loaded in any order
-      let error = null;
+      let caughtError = null;
 
       try {
         // Try loading in different orders
@@ -168,11 +168,11 @@ describe('Service Worker Import Compatibility', () => {
 
         await import('../background/indexedDb.js');
         await import('../background/indexedDbCache.js');
-      } catch (e) {
-        error = e;
+      } catch (error) {
+        caughtError = error;
       }
 
-      expect(error).toBeNull();
+      expect(caughtError).toBeNull();
     });
   });
 });
@@ -203,8 +203,8 @@ describe('clearHiddenVideosStore Function Behavior', () => {
   test('should clear database and cache without dynamic import', async () => {
     // Add some records
     await dbModule.upsertHiddenVideos([
-      { videoId: 'test1', state: 'hidden', title: 'Test 1', updatedAt: Date.now() },
-      { videoId: 'test2', state: 'dimmed', title: 'Test 2', updatedAt: Date.now() }
+      { videoId: 'test-video-1', state: 'hidden', title: 'Test 1', updatedAt: Date.now() },
+      { videoId: 'test-video-2', state: 'dimmed', title: 'Test 2', updatedAt: Date.now() }
     ]);
 
     // Verify records exist

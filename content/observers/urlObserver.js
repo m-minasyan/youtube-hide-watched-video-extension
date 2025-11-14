@@ -2,6 +2,7 @@ import { debounce } from '../utils/debounce.js';
 import { clearAllCaches, logCacheStats } from '../utils/domCache.js';
 import { DEBUG } from '../utils/constants.js';
 import { reconnectIntersectionObserver } from './intersectionObserver.js';
+import { debug } from '../../shared/logger.js';
 
 export function setupUrlObserver(applyHiding) {
   const debouncedApplyHiding = debounce(applyHiding, 100);
@@ -11,7 +12,7 @@ export function setupUrlObserver(applyHiding) {
     const url = location.href;
     if (url !== lastUrl) {
       if (DEBUG) {
-        console.log('[YT-HWV] URL changed, clearing DOM cache and reconnecting IntersectionObserver');
+        debug('[YT-HWV] URL changed, clearing DOM cache and reconnecting IntersectionObserver');
         logCacheStats();
       }
 

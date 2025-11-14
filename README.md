@@ -60,15 +60,23 @@ A powerful Chrome extension that automatically hides, dims, or manages watched v
 
    ```bash
    git clone https://github.com/m-minasyan/youtube-hide-watched-video-extension.git
+   cd youtube-hide-watched-video-extension
    ```
 
-2. Open Chrome and navigate to `chrome://extensions/`
+2. Install dependencies and build the extension:
 
-3. Enable "Developer mode" in the top right corner
+   ```bash
+   npm install
+   ./scripts/build-extension.sh
+   ```
 
-4. Click "Load unpacked"
+3. Open Chrome and navigate to `chrome://extensions/`
 
-5. Select the extension directory
+4. Enable "Developer mode" in the top right corner
+
+5. Click "Load unpacked"
+
+6. Select the `dist/unpacked` directory (or extract and load from the generated ZIP file in `dist/`)
 
 ### Method 3: From Release Package
 
@@ -201,10 +209,18 @@ npm test
 
 ## 🩺 Troubleshooting
 
-- View Hidden Videos opens ERR_FILE_NOT_FOUND:
+- **Could not load background script / Could not load manifest**:
+  - Cause: Trying to load the extension before building it, or loading from a non-existent/incomplete directory.
+  - Fix:
+    1. Run `npm install` to install dependencies
+    2. Run `./scripts/build-extension.sh` to build the extension
+    3. Load the `dist/unpacked` directory in Chrome (not the project root)
+  - Note: The `dist` directory is generated during build and is gitignored - you must build it locally first.
+
+- **View Hidden Videos opens ERR_FILE_NOT_FOUND**:
   - Cause: An older build package missed bundling the Hidden Videos Manager page (`hidden-videos.html/css/js`).
   - Status: Fixed in v2.4.3 by updating the build script to include these files.
-  - Fix locally: Reload the unpacked extension from the repo root or rebuild using `./scripts/build-extension.sh`, then click “Reload” in `chrome://extensions/`.
+  - Fix locally: Reload the unpacked extension from the repo root or rebuild using `./scripts/build-extension.sh`, then click "Reload" in `chrome://extensions/`.
 
 ## 🔒 Privacy & Security
 

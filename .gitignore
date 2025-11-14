@@ -11,4 +11,9 @@ npm-debug.log*
 .env.production.local
 package-lock.json
 *.backup
+
+# Webpack bundled files
+content.js
 content.js.map
+background.bundle.js
+background.bundle.js.map
