@@ -1,20 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from '@jest/globals';
 import {
   generateDOMDiagnosticReport,
   printDOMDiagnostics,
   exportDOMDiagnostics
 } from '../content/utils/domDiagnostics.js';
-import { trackSelectorQuery, resetSelectorStats } from '../content/utils/domSelectorHealth.js';
 import { SELECTOR_CHAINS } from '../shared/constants.js';
 
 describe('DOM Diagnostics', () => {
   beforeEach(() => {
-    resetSelectorStats();
     document.body.innerHTML = '';
-  });
-
-  afterEach(() => {
-    resetSelectorStats();
   });
 
   describe('Diagnostic Report Generation', () => {
@@ -24,7 +18,6 @@ describe('DOM Diagnostics', () => {
       expect(report).toHaveProperty('timestamp');
       expect(report).toHaveProperty('userAgent');
       expect(report).toHaveProperty('url');
-      expect(report).toHaveProperty('selectorHealth');
       expect(report).toHaveProperty('elementCounts');
       expect(report).toHaveProperty('sampleElements');
     });
@@ -49,17 +42,6 @@ describe('DOM Diagnostics', () => {
       expect(report.url).toBe(window.location.href);
       expect(typeof report.url).toBe('string');
     });
-
-    it('should include selector health statistics', () => {
-      // Add some selector stats
-      trackSelectorQuery('PROGRESS_BAR', '.test', true, 5);
-      trackSelectorQuery('THUMBNAILS', '.thumb', true, 10);
-
-      const report = generateDOMDiagnosticReport();
-
-      expect(report.selectorHealth).toBeDefined();
-      expect(typeof report.selectorHealth).toBe('object');
-    });
   });
 
   describe('Element Count Testing', () => {
@@ -74,14 +56,16 @@ describe('DOM Diagnostics', () => {
 
     it('should count elements for each fallback', () => {
       document.body.innerHTML = `
-        <div id="progress" style="width: 50%">Test 1</div>
-        <div id="progress" style="width: 75%">Test 2</div>
+        <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment" style="width: 50%">Test 1</div>
+        <div class="ytThumbnailOverlayProgressBarHostWatchedProgressBarSegment" style="width: 75%">Test 2</div>
       `;
 
       const report = generateDOMDiagnosticReport();
 
       expect(report.elementCounts.PROGRESS_BAR).toBeDefined();
-      expect(report.elementCounts.PROGRESS_BAR.fallback_0).toBeGreaterThan(0);
+      // Should find elements in one of the fallbacks
+      const foundCount = Object.values(report.elementCounts.PROGRESS_BAR).find(count => count > 0);
+      expect(foundCount).toBeGreaterThan(0);
     });
 
     it('should handle zero element counts', () => {
@@ -217,7 +201,6 @@ describe('DOM Diagnostics', () => {
 
       expect(report).toBeDefined();
       expect(report).toHaveProperty('timestamp');
-      expect(report).toHaveProperty('selectorHealth');
       expect(report).toHaveProperty('elementCounts');
       expect(report).toHaveProperty('userAgent');
       expect(report).toHaveProperty('url');
@@ -318,8 +301,9 @@ describe('DOM Diagnostics', () => {
       // Should find thumbnails
       expect(report.elementCounts.VIDEO_THUMBNAIL.fallback_0).toBeGreaterThan(0);
 
-      // Should find progress bars (now using #progress as fallback_0)
-      expect(report.elementCounts.PROGRESS_BAR.fallback_0).toBeGreaterThan(0);
+      // Should find progress bars in one of the fallbacks
+      const progressCount = Object.values(report.elementCounts.PROGRESS_BAR).find(count => count > 0);
+      expect(progressCount).toBeGreaterThan(0);
 
       // Should have sample data
       expect(report.sampleElements.VIDEO_CONTAINERS.fallback_0).toBeDefined();

@@ -1,17 +1,15 @@
 import { SELECTOR_CHAINS } from '../../shared/constants.js';
-import { getAllSelectorStats } from './domSelectorHealth.js';
 import { debug } from '../../shared/logger.js';
 
 /**
  * Generate comprehensive DOM diagnostic report
- * @returns {Object} Diagnostic report with selector health and element counts
+ * @returns {Object} Diagnostic report with element counts
  */
 export function generateDOMDiagnosticReport() {
   const report = {
     timestamp: new Date().toISOString(),
     userAgent: navigator.userAgent,
     url: window.location.href,
-    selectorHealth: getAllSelectorStats(),
     elementCounts: {},
     sampleElements: {}
   };

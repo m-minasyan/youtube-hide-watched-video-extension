@@ -1,4 +1,3 @@
-import { trackSelectorQuery } from './domSelectorHealth.js';
 import { DEBUG } from '../utils/constants.js';
 import { debug, warn } from '../../shared/logger.js';
 
@@ -334,7 +333,6 @@ export function logCacheStats() {
  */
 export function cachedDocumentQueryWithFallback(selectorKey, selectors, ttl = 1000) {
   if (!selectors || selectors.length === 0) {
-    trackSelectorQuery(selectorKey, null, false, 0);
     return [];
   }
 
@@ -345,8 +343,6 @@ export function cachedDocumentQueryWithFallback(selectorKey, selectors, ttl = 10
       const results = cachedDocumentQuery(selector, ttl);
 
       if (results.length > 0) {
-        trackSelectorQuery(selectorKey, selector, true, results.length);
-
         // Log if using fallback selector (not the first one)
         if (i > 0 && DEBUG) {
           debug(`[YT-HWV] Using fallback selector #${i} for ${selectorKey}:`, selector);
@@ -360,7 +356,6 @@ export function cachedDocumentQueryWithFallback(selectorKey, selectors, ttl = 10
   }
 
   // All selectors failed
-  trackSelectorQuery(selectorKey, selectors[0], false, 0);
   return [];
 }
 

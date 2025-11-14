@@ -10,8 +10,6 @@ import { sendHiddenVideosMessage } from '../shared/messaging.js';
 import { HIDDEN_VIDEO_MESSAGES } from '../shared/constants.js';
 import { logError } from '../shared/errorHandler.js';
 import { showNotification } from '../shared/notifications.js';
-import { setupDOMHealthMonitoring } from './utils/domErrorDetection.js';
-import { resetSelectorStats } from './utils/domSelectorHealth.js';
 
 /**
  * Wait for background script to be ready
@@ -73,12 +71,6 @@ async function init() {
     }
 
     await loadSettings();
-
-    // Reset selector stats on page navigation
-    resetSelectorStats();
-
-    // Setup DOM health monitoring
-    setupDOMHealthMonitoring();
 
     // Apply initial hiding before setting up IntersectionObserver
     // This prevents race condition where observer callbacks fire
